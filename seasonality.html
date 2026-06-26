@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center</title>
+<style>
+  :root{
+    --orange:#FF4A00; --charcoal:#2B2B2B; --ink:#3a3a3a; --muted:#7c7c78;
+    --bg:#f3f2ee; --card:#ffffff; --line:#e3e1da; --hol:#9a9893;
+    --full:#FF4A00; --half:#f0a25a; --third:#e6c84f; --skip:#b9b6ae;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.5}
+  .app{max-width:980px;margin:0 auto;padding:28px 22px 60px}
+  header{margin-bottom:22px}
+  h1{margin:0;font-size:28px;font-weight:700;color:var(--charcoal);letter-spacing:-.3px}
+  h1 .accent{color:var(--orange)}
+  .tagline{margin:2px 0 0;font-size:13px;color:var(--muted);font-style:italic;letter-spacing:.2px}
+  .controls{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;
+    background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .field{display:flex;flex-direction:column;gap:5px}
+  .field label{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600}
+  input,select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+  input[type=text]{min-width:200px}
+  .weeks-ctl{display:flex;align-items:center;gap:6px}
+  .weeks-ctl button{width:32px;height:34px;border:1px solid var(--line);background:#fff;border-radius:8px;
+    font-size:18px;cursor:pointer;color:var(--charcoal)}
+  .weeks-ctl button:hover{background:#faf3ef;border-color:var(--orange)}
+  .weeks-ctl input{width:54px;text-align:center}
+  .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+  .stat{flex:1;min-width:150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 14px}
+  .stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .stat .v{font-size:22px;font-weight:700;color:var(--charcoal);margin-top:2px}
+  .stat .v small{font-size:13px;font-weight:400;color:var(--muted)}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin:0 2px 14px}
+  .legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+  .row{display:flex;align-items:stretch;gap:0;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;margin-bottom:7px;overflow:hidden;position:relative}
+  .row.holiday::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(45deg,rgba(120,118,112,.16) 0 7px,rgba(120,118,112,0) 7px 14px)}
+  .row.evt{border:2px solid var(--orange)}
+  .wk{flex:0 0 70px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:#faf9f6;border-right:1px solid var(--line);padding:10px 4px}
+  .wk .n{font-size:17px;font-weight:700;color:var(--charcoal)}
+  .wk .e{font-size:10px;color:var(--muted)}
+  .row.evt .wk{background:var(--orange)}
+  .row.evt .wk .n,.row.evt .wk .e{color:#fff}
+  .mid{flex:1;padding:9px 14px;display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0;z-index:1}
+  .dates{font-size:13px;color:var(--ink)}
+  .bar{height:7px;background:#edeae3;border-radius:4px;overflow:hidden;max-width:240px}
+  .bar i{display:block;height:100%}
+  .badges{display:flex;flex-wrap:wrap;gap:5px}
+  .bdg{font-size:11px;padding:2px 8px;border-radius:20px;background:#f1efe8;color:#5f5e5a;border:1px solid var(--line)}
+  .bdg.hol{background:#fdeee6;color:#9a3b13;border-color:#f3cbb6}
+  .cap{flex:0 0 92px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    border-left:1px solid var(--line);padding:8px 4px;z-index:1}
+  .cap .x{font-size:18px;font-weight:700}
+  .cap .lbl{font-size:10px;color:var(--muted);text-align:center;margin-top:1px}
+  .note{font-size:12px;color:var(--muted);margin-top:18px;line-height:1.6}
+  .note b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>RENMAD <span class="accent">Dispatch Center</span></h1>
+    <p class="tagline">where the magic gets orchestrated</p>
+  </header>
+
+  <div class="controls">
+    <div class="field">
+      <label>Evento</label>
+      <input type="text" id="name" value="RENMAD UsefulAI 2027" />
+    </div>
+    <div class="field">
+      <label>Fecha de celebración</label>
+      <input type="date" id="date" value="2027-06-02" />
+    </div>
+    <div class="field">
+      <label>País</label>
+      <select id="country">
+        <option value="ES" selected>España</option>
+        <option value="PL">Polonia</option>
+        <option value="IT">Italia</option>
+        <option value="MX">México</option>
+        <option value="CL">Chile</option>
+        <option value="BR">Brasil</option>
+        <option value="DO">Rep. Dominicana</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Semanas de timeline</label>
+      <div class="weeks-ctl">
+        <button id="minus" title="quitar semana">&minus;</button>
+        <input type="number" id="weeks" value="20" min="4" max="52" />
+        <button id="plus" title="añadir semana">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="legend">
+    <span><span class="sw" style="background:var(--full)"></span>semana completa &times;1</span>
+    <span><span class="sw" style="background:var(--half)"></span>julio &times;&frac12;</span>
+    <span><span class="sw" style="background:var(--third)"></span>agosto / navidad &times;&#8531;</span>
+    <span><span class="sw" style="background:var(--skip)"></span>Semana Santa &mdash; no cuenta</span>
+    <span><span class="sw hol" style="background:#fdeee6;border:1px solid #f3cbb6"></span>festivo nacional</span>
+  </div>
+
+  <div id="timeline"></div>
+
+  <p class="note">
+    <b>Cómo funciona:</b> eliges la fecha de celebración y el timeline aparece solo, contando hacia atrás semana a semana hasta <b>W0</b> (semana del evento). Sube o baja el número de semanas con + / &minus;.
+    El sistema reconoce por sí mismo la <b>capacidad real</b> de cada semana: agosto y navidad valen &#8531;, julio &frac12;, y la <b>Semana Santa</b> no se cuenta (queda rayada en gris). Los <b>festivos nacionales</b> del país elegido aparecen marcados.
+    <br><br><b>Prototipo Stage&nbsp;0</b> &mdash; sin base de datos, sin login. Festivos 2026/2027 aproximados, a verificar.
+  </p>
+</div>
+
+<script>
+const MONTHS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const FRAC={1:'×1',0.5:'×½',[1/3]:'×⅓',0:'skip'};
+const CAPLBL={1:'completa',0.5:'julio',[1/3]:'',0:'Semana Santa'};
+
+// Fixed-date national holidays (MM-DD)
+const HOL={
+ ES:[['01-01','Año Nuevo'],['01-06','Reyes'],['05-01','Día del Trabajo'],['08-15','Asunción'],['10-12','Fiesta Nacional'],['11-01','Todos los Santos'],['12-06','Constitución'],['12-08','Inmaculada'],['12-25','Navidad']],
+ PL:[['01-01','Nowy Rok'],['01-06','Trzech Króli'],['05-01','Święto Pracy'],['05-03','Konstytucji 3 Maja'],['08-15','Wniebowzięcie'],['11-01','Wszystkich Świętych'],['11-11','Niepodległości'],['12-25','Boże Narodzenie'],['12-26','II dzień']],
+ IT:[['01-01','Capodanno'],['01-06','Epifania'],['04-25','Liberazione'],['05-01','Festa del Lavoro'],['06-02','Festa Repubblica'],['08-15','Ferragosto'],['11-01','Ognissanti'],['12-08','Immacolata'],['12-25','Natale'],['12-26','Santo Stefano']],
+ MX:[['01-01','Año Nuevo'],['02-02','Constitución'],['03-16','Benito Juárez'],['05-01','Día del Trabajo'],['09-16','Independencia'],['11-16','Revolución'],['12-25','Navidad']],
+ CL:[['01-01','Año Nuevo'],['05-01','Día del Trabajo'],['05-21','Glorias Navales'],['06-20','Pueblos Indígenas'],['06-29','San Pedro y San Pablo'],['07-16','Virgen del Carmen'],['08-15','Asunción'],['09-18','Independencia'],['09-19','Glorias del Ejército'],['10-12','Encuentro 2 Mundos'],['11-01','Todos los Santos'],['12-08','Inmaculada'],['12-25','Navidad']],
+ BR:[['01-01','Confraternização'],['04-21','Tiradentes'],['05-01','Dia do Trabalho'],['09-07','Independência'],['10-12','N. Sra. Aparecida'],['11-02','Finados'],['11-15','República'],['11-20','Consciência Negra'],['12-25','Natal']],
+ DO:[['01-01','Año Nuevo'],['01-06','Reyes'],['01-21','Altagracia'],['01-26','Duarte'],['02-27','Independencia'],['05-01','Día del Trabajo'],['08-16','Restauración'],['09-24','Mercedes'],['11-06','Constitución'],['12-25','Navidad']]
+};
+// Movable feasts, as day-offsets from Easter Sunday (computed per year)
+const MOV={
+ ES:[[-2,'Viernes Santo']],
+ PL:[[1,'Pon. Wielkanocny'],[60,'Boże Ciało']],
+ IT:[[1,'Lun. dell’Angelo']],
+ MX:[],
+ CL:[[-2,'Viernes Santo'],[-1,'Sábado Santo']],
+ BR:[[-48,'Carnaval'],[-47,'Carnaval'],[-2,'Sexta-feira Santa'],[60,'Corpus Christi']],
+ DO:[[-2,'Viernes Santo'],[60,'Corpus Christi']]
+};
+
+function easter(Y){
+  const a=Y%19,b=Math.floor(Y/100),c=Y%100,d=Math.floor(b/4),e=b%4,
+    f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,
+    i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),
+    mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;
+  return new Date(Y,mo-1,da);
+}
+function monday(dt){const x=new Date(dt);const off=(x.getDay()+6)%7;x.setDate(x.getDate()-off);x.setHours(0,0,0,0);return x;}
+function addDays(dt,n){const x=new Date(dt);x.setDate(x.getDate()+n);return x;}
+function pad(n){return String(n).padStart(2,'0');}
+function fmt(dt){return pad(dt.getDate())+' '+MONTHS[dt.getMonth()];}
+
+function weekInfo(mon){
+  const sun=addDays(mon,6);
+  // capacity weight
+  let w=1, reason='';
+  const em=monday(easter(mon.getFullYear()));
+  const em2=monday(easter(sun.getFullYear()));
+  if(+mon===+em || +mon===+em2){ w=0; reason='Semana Santa'; }
+  else {
+    let aug=false,jul=false,xmas=false;
+    for(let i=0;i<7;i++){const d=addDays(mon,i);const mo=d.getMonth(),da=d.getDate();
+      if(mo===7)aug=true;
+      if(mo===6)jul=true;
+      if((mo===11&&da>=22)||(mo===0&&da<=6))xmas=true;
+    }
+    if(aug){w=1/3;reason='agosto';}
+    else if(xmas){w=1/3;reason='navidad';}
+    else if(jul){w=0.5;reason='julio';}
+  }
+  // bank holidays this week (fixed + computed movable feasts)
+  const bh=[];
+  const cc=document.getElementById('country').value;
+  const fixed=HOL[cc]||[], mov=MOV[cc]||[];
+  const days=[]; for(let i=0;i<7;i++)days.push(addDays(mon,i));
+  const years=new Set([mon.getFullYear(),sun.getFullYear()]);
+  years.forEach(y=>{
+    const es=easter(y);
+    fixed.forEach(([k,n])=>{const p=k.split('-').map(Number);const hd=new Date(y,p[0]-1,p[1]);
+      days.forEach(d=>{ if(+d===+hd) bh.push(n+' ('+fmt(d)+')'); });});
+    mov.forEach(([off,n])=>{const hd=addDays(es,off);hd.setHours(0,0,0,0);
+      days.forEach(d=>{ if(+d===+hd) bh.push(n+' ('+fmt(d)+')'); });});
+  });
+  return {w,reason,bh,mon,sun};
+}
+
+function barColor(w){return w===1?'var(--full)':w===0.5?'var(--half)':w>0?'var(--third)':'var(--skip)';}
+
+function render(){
+  const name=document.getElementById('name').value;
+  const dv=document.getElementById('date').value;
+  let N=parseInt(document.getElementById('weeks').value)||20;
+  N=Math.max(4,Math.min(52,N));
+  if(!dv){return;}
+  const parts=dv.split('-').map(Number);
+  const evt=new Date(parts[0],parts[1]-1,parts[2]);
+  const evtMon=monday(evt);
+
+  let effective=0, holWeeks=0, bhCount=0;
+  const tl=document.getElementById('timeline'); tl.innerHTML='';
+  for(let i=N;i>=0;i--){
+    const mon=addDays(evtMon,-7*i);
+    const info=weekInfo(mon);
+    if(i>0) effective+=info.w;
+    if(info.w<1) holWeeks++;
+    bhCount+=info.bh.length;
+
+    const row=document.createElement('div');
+    row.className='row'+(info.w<1?' holiday':'')+(i===0?' evt':'');
+    const label=i===0?'W0':('W-'+i);
+    const elabel=i===0?'evento':'';
+    const capx=FRAC[info.w]!==undefined?FRAC[info.w]:'×'+info.w.toFixed(2);
+    const caplbl=info.reason||(CAPLBL[info.w]||'');
+    let badges='';
+    info.bh.forEach(b=> badges+='<span class="bdg hol">'+b+'</span>');
+    row.innerHTML=
+      '<div class="wk"><span class="n">'+label+'</span><span class="e">'+elabel+'</span></div>'+
+      '<div class="mid">'+
+        '<div class="dates">'+fmt(info.mon)+' &ndash; '+fmt(info.sun)+' '+info.sun.getFullYear()+'</div>'+
+        '<div class="bar"><i style="width:'+Math.max(info.w*100,6)+'%;background:'+barColor(info.w)+'"></i></div>'+
+        (badges?'<div class="badges">'+badges+'</div>':'')+
+      '</div>'+
+      '<div class="cap"><span class="x" style="color:'+barColor(info.w)+'">'+capx+'</span><span class="lbl">'+caplbl+'</span></div>';
+    tl.appendChild(row);
+  }
+
+  document.getElementById('summary').innerHTML=
+    '<div class="stat"><div class="k">'+name+'</div><div class="v">'+fmt(evt)+' '+evt.getFullYear()+'</div></div>'+
+    '<div class="stat"><div class="k">Semanas de calendario</div><div class="v">'+N+'</div></div>'+
+    '<div class="stat"><div class="k">Semanas efectivas de trabajo</div><div class="v">'+effective.toFixed(1)+' <small>de '+N+'</small></div></div>'+
+    '<div class="stat"><div class="k">Semanas con festivos</div><div class="v">'+holWeeks+' <small>&middot; '+bhCount+' festivos</small></div></div>';
+}
+
+document.getElementById('plus').onclick=()=>{const w=document.getElementById('weeks');w.value=Math.min(52,(+w.value)+1);render();};
+document.getElementById('minus').onclick=()=>{const w=document.getElementById('weeks');w.value=Math.max(4,(+w.value)-1);render();};
+['name','date','country','weeks'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+render();
+</script>
+</body>
+</html>

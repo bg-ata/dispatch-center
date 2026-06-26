@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Event</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#E24B4A;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 90px;max-width:1140px;margin:0 auto}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  button{font:inherit;cursor:pointer}
+  .btn{padding:6px 12px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);font-size:13px}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn.sm{padding:3px 9px;font-size:12px}
+  .btn:hover{filter:brightness(.97)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:8px}
+  .chip{width:13px;height:13px;border-radius:4px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+  .phead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .phead h3{margin:0;font-size:15px}
+  .team{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .member{display:flex;align-items:center;gap:6px;background:#f6f5f1;border:1px solid var(--line);border-radius:20px;padding:3px 5px 3px 11px;font-size:13px}
+  .member b{font-weight:600} .member select{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:12px;padding:2px 5px;background:#fff}
+  .member .x{border:none;background:none;color:#bbb;cursor:pointer;font-size:15px} .member .x:hover{color:var(--red)}
+  .addmem{display:flex;gap:6px;align-items:center}
+  select,input{font:inherit}
+  .lanehd{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:18px 0 8px}
+  .stage{border-left:5px solid #ccc;border-radius:0 8px 8px 0;background:#fbfaf7;border:1px solid var(--line);margin-bottom:10px;overflow:hidden}
+  .stage>.sh{display:flex;align-items:center;gap:8px;padding:7px 12px;font-weight:600;color:#fff}
+  .stage>.sh .addsub{margin-left:auto;background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer}
+  .stage>.sh .addsub:hover{background:rgba(255,255,255,.45)}
+  .substage{border-top:1px solid var(--line);padding:8px 12px}
+  .subhd{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .subhd input{font-weight:600;border:1px solid transparent;border-radius:6px;padding:3px 6px;font-size:13px;background:transparent;flex:1 1 auto}
+  .subhd input:hover,.subhd input:focus{border-color:var(--line);background:#fff}
+  .subhd .mv{border:none;background:none;color:#b8b6ae;cursor:pointer;font-size:13px;padding:0 2px} .subhd .mv:hover{color:var(--charcoal)}
+  .subhd .del{border:none;background:none;color:#c9c6bd;cursor:pointer;font-size:15px} .subhd .del:hover{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{text-align:left;padding:4px 6px;border-bottom:1px solid #eee}
+  th{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px}
+  td input,td select{font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;width:100%}
+  td .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}.td .del:hover{color:var(--red)}
+  .empty{color:var(--muted);font-size:12px;font-style:italic;padding:4px 2px}
+  #modalp{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modalp.on{display:flex}
+</style>
+</head>
+<body>
+<div class="app"><div id="nav"></div><div id="content"></div></div>
+<script src="store.js"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('');
+const id=+new URLSearchParams(location.search).get('id');
+let ev=null;
+const C=document.getElementById('content');
+const LANE_ORDER=['project','sales','logistics'];
+boot(()=>{ev=DB.event(id);if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();});
+
+function peopleOpts(sel){return '<option value="">— unassigned —</option>'+DB.people.map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+p.name+'</option>').join('');}
+
+function render(){
+  if(!ev.team)ev.team=[];
+  let h='<h1><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span>'+ev.name+'</h1>'+
+    '<p class="sub">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>';
+
+  // TEAM
+  h+='<div class="panel"><div class="phead"><h3>Team</h3></div><div class="team" id="team"></div>'+
+     '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>';
+
+  // WORK
+  h+='<div class="panel"><div class="phead"><h3>Stages, substages &amp; tasks</h3></div>';
+  LANE_ORDER.forEach(lane=>{
+    h+='<div class="lanehd">'+LANE_LABEL[lane]+'</div>';
+    STAGES[lane].forEach(st=>{
+      h+='<div class="stage" style="border-left-color:'+st.color+'">'+
+         '<div class="sh" style="background:'+st.color+'">'+st.name+
+         '<button class="addsub" data-lane="'+lane+'" data-stage="'+st.key+'">+ substage</button></div>';
+      const subs=DB.subsFor(ev.id,lane,st.key);
+      if(!subs.length)h+='<div class="substage empty">No substages yet — add one.</div>';
+      subs.forEach((sub,i)=>{
+        h+='<div class="substage">'+
+           '<div class="subhd">'+
+             '<button class="mv" data-mv="up" data-sub="'+sub.id+'" '+(i===0?'disabled style="opacity:.3"':'')+'>▲</button>'+
+             '<button class="mv" data-mv="down" data-sub="'+sub.id+'" '+(i===subs.length-1?'disabled style="opacity:.3"':'')+'>▼</button>'+
+             '<input data-subname="'+sub.id+'" value="'+(sub.name||'').replace(/"/g,'&quot;')+'">'+
+             '<button class="btn sm" data-addtask="'+sub.id+'">+ task</button>'+
+             '<button class="del" data-delsub="'+sub.id+'">×</button>'+
+           '</div>';
+        const tks=DB.tasksForSub(sub.id);
+        if(tks.length){
+          h+='<table><tr><th>Task</th><th style="width:150px">Allocated to</th><th style="width:135px">Deadline</th><th style="width:115px">Status</th><th style="width:24px"></th></tr>';
+          tks.forEach(t=>{h+='<tr>'+
+            '<td><input data-tf="title" data-id="'+t.id+'" value="'+(t.title||'').replace(/"/g,'&quot;')+'"></td>'+
+            '<td><select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select></td>'+
+            '<td><input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'"></td>'+
+            '<td><select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
+            '<td><button class="del" data-deltask="'+t.id+'">×</button></td></tr>';});
+          h+='</table>';
+        } else h+='<div class="empty">No tasks — add one.</div>';
+        h+='</div>';
+      });
+      h+='</div>';
+    });
+  });
+  h+='</div>';
+  C.innerHTML=h;
+  renderTeam();wire();
+}
+
+function renderTeam(){
+  const t=document.getElementById('team');
+  t.innerHTML=ev.team.map(m=>{const p=DB.person(m.personId);if(!p)return '';
+    return '<span class="member"><b>'+p.name+'</b><select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>';}).join('')||'<span class="empty">No one attached yet.</span>';
+  const inTeam=ev.team.map(m=>m.personId);
+  document.getElementById('newp').innerHTML=DB.people.filter(p=>!inTeam.includes(p.id)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('')||'<option value="">(all attached)</option>';
+  t.querySelectorAll('[data-role]').forEach(s=>s.onchange=()=>{ev.team.find(m=>m.personId==s.dataset.role).role=s.value;DB.save();});
+  t.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ev.team=ev.team.filter(m=>m.personId!=b.dataset.rm);DB.save();renderTeam();});
+}
+
+function wire(){
+  document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(ev.name.replace(/[^\w]+/g,'_')+'.xlsx',[
+    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage),Substage:s?s.name:'',Task:t.title,Allocated:DB.personName(t.assignee),Deadline:t.deadline,Status:t.status};})},
+    {name:'Team',rows:ev.team.map(m=>({Name:DB.personName(m.personId),Role:m.role}))}]);};
+  document.getElementById('addmem').onclick=()=>{const v=document.getElementById('newp').value;if(!v)return;ev.team.push({personId:+v,role:document.getElementById('newr').value});DB.save();renderTeam();};
+  C.querySelectorAll('.addsub').forEach(b=>b.onclick=()=>{const subs=DB.subsFor(ev.id,b.dataset.lane,b.dataset.stage);DB.substages.push({id:DB.data.nextSub++,eventId:ev.id,lane:b.dataset.lane,stage:b.dataset.stage,name:'New substage',order:subs.length});DB.save();render();});
+  C.querySelectorAll('[data-subname]').forEach(inp=>inp.onchange=()=>{DB.substages.find(s=>s.id==inp.dataset.subname).name=inp.value;DB.save();});
+  C.querySelectorAll('[data-delsub]').forEach(b=>b.onclick=()=>{DB.data.substages=DB.substages.filter(s=>s.id!=b.dataset.delsub);DB.data.tasks=DB.tasks.filter(t=>t.substageId!=b.dataset.delsub);DB.save();render();});
+  C.querySelectorAll('[data-mv]').forEach(b=>b.onclick=()=>{moveSub(+b.dataset.sub,b.dataset.mv);});
+  C.querySelectorAll('[data-addtask]').forEach(b=>b.onclick=()=>{const sub=DB.substages.find(s=>s.id==b.dataset.addtask);DB.tasks.push({id:DB.data.nextTask++,eventId:ev.id,lane:sub.lane,stage:sub.stage,substageId:sub.id,title:'New task',assignee:null,deadline:'',status:'To do'});DB.save();render();});
+  C.querySelectorAll('[data-tf]').forEach(el=>el.onchange=()=>{const t=DB.tasks.find(x=>x.id==el.dataset.id);let v=el.value;if(el.dataset.tf==='assignee')v=v?+v:null;t[el.dataset.tf]=v;DB.save();});
+  C.querySelectorAll('[data-deltask]').forEach(b=>b.onclick=()=>{DB.data.tasks=DB.tasks.filter(t=>t.id!=b.dataset.deltask);DB.save();render();});
+}
+function moveSub(subId,dir){const s=DB.substages.find(x=>x.id==subId);const sibs=DB.subsFor(ev.id,s.lane,s.stage);const i=sibs.findIndex(x=>x.id==subId);const j=dir==='up'?i-1:i+1;if(j<0||j>=sibs.length)return;const a=sibs[i],b=sibs[j];const t=a.order;a.order=b.order;b.order=t;DB.save();render();}
+</script>
+</body>
+</html>

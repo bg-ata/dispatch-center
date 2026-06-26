@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Overview</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;
+    --p1:#B5D4F4;--p2:#378ADD;--p3:#185FA5;--s1:#C0DD97;--s2:#639922;--s3:#3B6D11;--red:#E24B4A;--postP:#9DB8CF;--postS:#A9C48C;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 90px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 0;font-size:23px;font-weight:700;color:var(--charcoal)} h1 .accent{color:var(--orange)}
+  .tagline{margin:1px 0 0;font-size:12px;color:var(--muted);font-style:italic}
+  button{font:inherit;cursor:pointer}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal)}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  .bar-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 8px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+  .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+  .legend .hatch{background:repeating-linear-gradient(45deg,#cdcac2 0 4px,#e9e6df 4px 8px)}
+  .crit{font-size:12px;color:var(--muted);margin:0 0 10px}.crit b{color:var(--ink)}
+  .gwrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;overflow-y:hidden}
+  .grid{position:relative;font-size:12px}
+  .row{display:flex;align-items:stretch;border-bottom:1px solid var(--line)} .row:last-child{border-bottom:none}
+  .head{position:sticky;left:0;z-index:5;flex:0 0 218px;background:var(--card);border-right:2px solid var(--line);padding:8px 9px 8px 12px;display:flex;flex-direction:column;gap:3px;justify-content:center}
+  .head .nm{font-weight:700;font-size:13px;line-height:1.15;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--charcoal)}
+  .head .nm:hover .t{text-decoration:underline;color:var(--orange)}
+  .head .chip{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+  .head .ln{font-size:11px;color:var(--muted)}
+  .head .edit{position:absolute;top:5px;right:7px;border:none;background:none;color:#bdbab2;font-size:14px}
+  .head .edit:hover{color:var(--orange)}
+  .prov{background:#fff7d6;color:#7a5b00;font-size:9px;padding:1px 4px;border-radius:4px;font-weight:600}
+  .corner{flex:0 0 218px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
+  .hbody{position:relative}
+  .mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}
+  .wtick{position:absolute;top:20px;height:14px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #efece5}
+  .body{position:relative;flex:1 1 auto}
+  .gridbg{position:absolute;inset:0;z-index:0}
+  .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.20) 0 5px,rgba(150,147,140,0) 5px 10px)}
+  .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.34) 0 5px,rgba(120,118,112,.06) 5px 10px)}
+  .lanes{position:absolute;inset:0;z-index:2}
+  .lane{position:absolute;left:0;right:0;height:26px}.lane.p{top:6px}.lane.s{top:36px}
+  .seg{position:absolute;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;overflow:hidden;white-space:nowrap;cursor:grab;user-select:none}
+  .seg .lbl{pointer-events:none;font-weight:600;padding:0 4px}
+  .seg.w0{background:#111;color:#fff;border-radius:3px}
+  .seg .pm{position:absolute;display:flex;gap:1px;z-index:3}.seg .pm.l{left:1px}.seg .pm.r{right:1px}
+  .seg .pm button{width:13px;height:13px;border:none;border-radius:3px;background:rgba(255,255,255,.5);color:#000;font-size:11px;line-height:11px;padding:0;font-weight:700}
+  .seg .pm button:hover{background:#fff}
+  .mile{position:absolute;height:30px;top:-2px;width:0;z-index:6;background:var(--red);color:#fff;border-radius:3px;box-shadow:0 0 0 1px #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:grab;user-select:none}
+  .mile:active{cursor:grabbing}
+  .mile.s{top:28px}
+  .crit-bad{outline:2px solid var(--red);outline-offset:-2px}
+  .htick{position:absolute;bottom:1px;width:7px;height:7px;border-radius:50%;background:var(--red);transform:translateX(-50%);z-index:3;cursor:help}
+  .laneTag{position:absolute;left:3px;font-size:8px;font-weight:700;letter-spacing:.5px;z-index:3;opacity:.55}
+  .laneTag.p{top:8px;color:var(--p3)}.laneTag.s{top:38px;color:var(--s3)}
+  #tip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:3px 7px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
+  .card{background:#fff;border-radius:14px;padding:20px 22px;width:500px;max-width:92vw;max-height:90vh;overflow:auto}
+  .card h3{margin:0 0 14px;font-size:17px}
+  .frm{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .frm label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  .frm input,.frm select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .frm .full{grid-column:1/3}
+  .mrow{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+  .note{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>RENMAD <span class="accent">Dispatch Center</span></h1>
+  <p class="tagline">where the magic gets orchestrated</p>
+  <div class="bar-top">
+    <button class="btn primary" id="addBtn">+ Add event</button>
+    <button class="btn" id="xlsBtn">⬇ Download Excel</button>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--p2)"></span>Project / marketing</span>
+      <span><span class="sw" style="background:var(--s2)"></span>Sales (SPX)</span>
+      <span><span class="sw" style="background:var(--red)"></span>Milestone — drag to move</span>
+      <span><span class="sw" style="background:#111"></span>Event week</span>
+      <span><span class="sw hatch"></span>Holiday week</span>
+    </div>
+  </div>
+  <p class="crit">Click an event name to open it. Drag a <b>stage</b> to move the whole event · drag a red <b>G/L milestone</b> to reposition it freely · +/− to resize a stage · hover a week for its <b>W-number</b>.</p>
+  <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
+  <p class="note">Bird's-eye view shows event data only (name, city, country, dates). People &amp; tasks live inside each event. <span class="prov">prov</span> 2027 dates are provisional — drag/edit to confirm.</p>
+</div>
+<div id="tip"></div>
+<div id="modal"><div class="card">
+  <h3 id="m_title">Edit event</h3>
+  <div class="frm">
+    <label class="full">Event name<input type="text" id="m_name"></label>
+    <label>Topic<select id="m_topic"></select></label>
+    <label>Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
+    <label>Start date<input type="date" id="m_date"></label>
+    <label>City<input type="text" id="m_city"></label>
+    <label>Country<select id="m_country"></select></label>
+    <label class="full" style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">Lead people (manage the full team inside the event)</label>
+    <label>PM (organizer)<input type="text" id="m_pm"></label>
+    <label>Lead (optional)<input type="text" id="m_lead"></label>
+    <label>Salesperson<input type="text" id="m_sales"></label>
+  </div>
+  <div class="mrow">
+    <button class="btn" id="m_delete" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
+    <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span>
+  </div>
+</div></div>
+
+<script src="store.js"></script>
+<script>
+const WEEKW=24;
+document.getElementById('nav').innerHTML=navBar('overview');
+let drag=null, dragM=null, editingId=null, GS=null;
+
+function preWeeks(ev){
+  const pp=Math.max(ev.proj.research+ev.proj.prep+ev.proj.marketing, ev.proj.goNoGoOff, ev.proj.launchOff);
+  const sp=Math.max(ev.salesT.prospecting+ev.salesT.outreach+ev.salesT.closing, ev.salesT.goNoGoOff);
+  return Math.max(pp,sp);
+}
+function bounds(){
+  let mins=[],maxs=[];
+  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-preWeeks(ev)*7));maxs.push(addDays(em,(1+Math.max(POST_PM,POST_SALES))*7));});
+  let start=monday(new Date(Math.min(...mins.map(d=>+d)))), end=new Date(Math.max(...maxs.map(d=>+d)));
+  return {start:addDays(start,-6*7),end:addDays(end,20*7)};
+}
+function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
+
+function render(){
+  const grid=document.getElementById('grid');const {start,end}=bounds();GS=start;
+  const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
+  grid.innerHTML='';
+  const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:36px"></div>';
+  const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:36px';
+  for(let w=0;w<NW;w++){const d=addDays(start,w*7);
+    if(d.getDate()<=7){const ml=document.createElement('div');ml.className='mlabel';ml.style.left=(w*WEEKW)+'px';ml.textContent=MON[d.getMonth()]+(d.getMonth()===0?" '"+String(d.getFullYear()).slice(2):'');hb.appendChild(ml);}
+    const wt=document.createElement('div');wt.className='wtick';wt.style.cssText='left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';wt.textContent=d.getDate();hb.appendChild(wt);}
+  hrow.appendChild(hb);grid.appendChild(hrow);
+
+  DB.events.forEach(ev=>{
+    const row=document.createElement('div');row.className='row';
+    const head=document.createElement('div');head.className='head';
+    head.innerHTML='<button class="edit" title="edit">✎</button>'+
+      '<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+ev.name+'</span>'+(ev.prov?' <span class="prov">prov</span>':'')+'</div>'+
+      '<div class="ln">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+'</div>';
+    head.querySelector('.edit').onclick=e=>{e.stopPropagation();openModal(ev.id);};
+    head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
+
+    const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:68px';
+    const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
+    for(let w=0;w<NW;w++){const d=addDays(start,w*7);if(d.getDate()<=7){const t=document.createElement('div');t.style.cssText='position:absolute;top:0;bottom:0;left:'+(w*WEEKW)+'px;border-left:1px solid #ddd9d1;z-index:1';body.appendChild(t);}}
+    for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
+
+    const lanes=document.createElement('div');lanes.className='lanes';
+    lanes.insertAdjacentHTML('beforeend','<span class="laneTag p">PROJECT</span><span class="laneTag s">SALES</span>');
+    const em=monday(ymd(ev.date)), evIdx=wIdx(em,start);
+
+    function buildLane(cls,stages,postWks,postColor){
+      const ln=document.createElement('div');ln.className='lane '+cls;
+      const obj=(cls==='p'?ev.proj:ev.salesT);
+      const totalStage=stages.reduce((a,s)=>a+obj[s.key],0);
+      let cursor=evIdx-totalStage;
+      stages.forEach(s=>{
+        const wks=obj[s.key],x=cursor*WEEKW;
+        const seg=document.createElement('div');seg.className='seg';seg.style.cssText='left:'+x+'px;width:'+(wks*WEEKW)+'px;background:'+s.color+';color:'+(s.light?'#1b3a5c':'#fff');
+        const bad=CRIT[s.key]&&(wks<CRIT[s.key][0]||wks>CRIT[s.key][1]);if(bad)seg.classList.add('crit-bad');
+        seg.innerHTML='<span class="lbl">'+s.label+' '+wks+'</span><div class="pm l"><button data-a="dec">−</button></div><div class="pm r"><button data-a="inc">+</button></div>';
+        seg.querySelectorAll('button').forEach(b=>b.onclick=e2=>{e2.stopPropagation();if(b.dataset.a==='inc')obj[s.key]++;else if(obj[s.key]>1)obj[s.key]--;DB.save();render();});
+        seg.addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')return;drag={ev,startX:e.clientX,dx:0,el:lanes};e.preventDefault();});
+        ln.appendChild(seg);cursor+=wks;
+      });
+      const ew=document.createElement('div');ew.className='seg w0';ew.style.cssText='left:'+(evIdx*WEEKW)+'px;width:'+WEEKW+'px';ew.innerHTML='<span class="lbl">W0</span>';
+      ew.addEventListener('mousedown',e=>{drag={ev,startX:e.clientX,dx:0,el:lanes};e.preventDefault();});ln.appendChild(ew);
+      const post=document.createElement('div');post.className='seg';post.style.cssText='left:'+((evIdx+1)*WEEKW)+'px;width:'+(postWks*WEEKW)+'px;background:'+postColor+';color:#3a3a3a';post.innerHTML='<span class="lbl">Next-yr</span>';ln.appendChild(post);
+      return ln;
+    }
+    lanes.appendChild(buildLane('p',[{key:'research',color:'var(--p1)',label:'Research',light:1},{key:'prep',color:'var(--p2)',label:'Prep'},{key:'marketing',color:'var(--p3)',label:'Marketing'}],POST_PM,'var(--postP)'));
+    lanes.appendChild(buildLane('s',[{key:'prospecting',color:'var(--s1)',label:'Prospect',light:1},{key:'outreach',color:'var(--s2)',label:'Outreach'},{key:'closing',color:'var(--s3)',label:'Closing'}],POST_SALES,'var(--postS)'));
+
+    function milestone(cls,obj,field,label){
+      const m=document.createElement('div');m.className='mile'+(cls==='s'?' s':'');
+      m.style.left=((evIdx-obj[field])*WEEKW)+'px';m.style.width=WEEKW+'px';m.textContent=label;
+      m.title=(label==='G'?'Go/No-Go':'Launch')+' — drag to move';
+      m.addEventListener('mousedown',e=>{e.stopPropagation();dragM={obj,field,startX:e.clientX,dx:0,el:m};e.preventDefault();});
+      lanes.appendChild(m);
+    }
+    milestone('p',ev.proj,'goNoGoOff','G');
+    milestone('p',ev.proj,'launchOff','L');
+    milestone('s',ev.salesT,'goNoGoOff','G');
+
+    const cc=COUNTRIES[ev.country];
+    if(cc){for(let w=0;w<NW;w++){const m=addDays(start,w*7);const bh=bankHols(m,cc);if(bh.length){const dot=document.createElement('div');dot.className='htick';dot.style.left=((w+0.5)*WEEKW)+'px';dot.title=bh.map(x=>x[0]+' ('+fmtD(x[1])+')').join(', ');body.appendChild(dot);} }}
+    body.appendChild(lanes);
+    body.addEventListener('mousemove',e=>{if(drag||dragM)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'Event week (W0)':diff>0?('W-'+diff):('+'+(-diff)+' after'))+' · wk of '+fmtD(wm));});
+    body.addEventListener('mouseleave',hideTip);
+    row.appendChild(head);row.appendChild(body);grid.appendChild(row);
+  });
+}
+const tip=document.getElementById('tip');
+function showTip(x,y,t){tip.textContent=t;tip.style.display='block';tip.style.left=(x+12)+'px';tip.style.top=(y+14)+'px';}
+function hideTip(){tip.style.display='none';}
+document.addEventListener('mousemove',e=>{
+  if(drag){drag.dx=e.clientX-drag.startX;drag.el.style.transform='translateX('+(Math.round(drag.dx/WEEKW)*WEEKW)+'px)';hideTip();}
+  else if(dragM){dragM.dx=e.clientX-dragM.startX;dragM.el.style.transform='translateX('+(Math.round(dragM.dx/WEEKW)*WEEKW)+'px)';hideTip();}
+});
+document.addEventListener('mouseup',()=>{
+  if(drag){const wks=Math.round((drag.dx||0)/WEEKW);drag.el.style.transform='';if(wks){drag.ev.date=toISO(addDays(ymd(drag.ev.date),wks*7));drag.ev.prov=false;DB.save();}drag=null;render();}
+  else if(dragM){const wks=Math.round((dragM.dx||0)/WEEKW);dragM.el.style.transform='';if(wks){dragM.obj[dragM.field]=Math.max(0,dragM.obj[dragM.field]-wks);DB.save();}dragM=null;render();}
+});
+
+const modal=document.getElementById('modal');
+function fillSel(id,obj,sel){const s=document.getElementById(id);s.innerHTML='';Object.keys(obj).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;if(k===sel)o.selected=true;s.appendChild(o);});}
+function openModal(id){editingId=id;const ev=id?DB.event(id):{name:'',topic:'Renewables / AI',pm:'',lead:'',sales:'',city:'',country:'Spain',date:'2027-09-01',days:2};
+  document.getElementById('m_title').textContent=id?'Edit event':'Add event';
+  m_name.value=ev.name;fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
+  m_days.value=ev.days||2;m_date.value=ev.date;m_city.value=ev.city||'';m_pm.value=ev.pm||'';m_lead.value=ev.lead||'';m_sales.value=ev.sales||'';
+  document.getElementById('m_delete').style.display=id?'inline-block':'none';modal.classList.add('on');}
+document.getElementById('addBtn').onclick=()=>openModal(null);
+document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
+modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
+document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
+  if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
+  else{const id=DB.data.nextEvent++;DB.events.push({id,...d,proj:{research:5,prep:5,marketing:18,goNoGoOff:23,launchOff:18},salesT:{prospecting:8,outreach:10,closing:6,goNoGoOff:16},team:[]});}
+  DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
+
+document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
+
+boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Personnel</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#E24B4A;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1000px;margin:0 auto}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 12px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  button{font:inherit;cursor:pointer}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal)}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 4px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  tr:last-child td{border-bottom:none}
+  .who{font-weight:600;color:var(--charcoal);cursor:pointer}.who:hover{color:var(--orange)}
+  .rolepill{font-size:11px;padding:2px 9px;border-radius:20px;background:#eceae3;color:#5f5e5a}
+  .del{border:none;background:none;color:#c9c6bd;font-size:15px;cursor:pointer}.del:hover{color:var(--red)}
+  .assign{background:#faf9f6;font-size:12px;color:var(--muted)}
+  .assign td{padding:6px 18px}
+  .assign .ev{color:var(--ink);font-weight:600}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
+  .card{background:#fff;border-radius:14px;padding:20px 22px;width:420px;max-width:92vw}
+  .card h3{margin:0 0 14px;font-size:17px}
+  .frm{display:flex;flex-direction:column;gap:12px}
+  .frm label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  .frm input,.frm select{font:inherit;padding:8px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .mrow{display:flex;justify-content:space-between;margin-top:16px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>Personnel</h1>
+  <div class="toolbar">
+    <button class="btn primary" id="addBtn">+ Add person</button>
+    <button class="btn" id="xlsBtn">⬇ Download Excel</button>
+  </div>
+  <div class="panel"><table id="tbl"></table></div>
+  <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to see what they're working on. Each person will eventually log in and see only their own events.</p>
+</div>
+<div id="modal"><div class="card">
+  <h3 id="m_title">Edit person</h3>
+  <div class="frm">
+    <label>Name<input id="m_name"></label>
+    <label>Role<select id="m_role"></select></label>
+    <label>Email (login)<input id="m_email" placeholder="name@ata.email"></label>
+  </div>
+  <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
+  <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
+</div></div>
+<script src="store.js"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('people');
+let editingId=null, expanded=null;
+function render(){
+  const tbl=document.getElementById('tbl');
+  let h='<tr><th>Name</th><th>Role</th><th>Email</th><th style="width:90px">Tasks</th><th style="width:30px"></th></tr>';
+  DB.people.forEach(p=>{
+    const ts=DB.tasksOf(p.id);
+    h+='<tr><td><span class="who" data-who="'+p.id+'">'+p.name+'</span></td>'+
+       '<td><span class="rolepill">'+p.role+'</span></td>'+
+       '<td style="color:var(--muted)">'+(p.email||'—')+'</td>'+
+       '<td>'+ts.length+'</td>'+
+       '<td><button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button></td></tr>';
+    if(expanded==p.id){
+      if(ts.length) ts.forEach(t=>{const e=DB.event(t.eventId);
+        h+='<tr class="assign"><td colspan="5"><span class="ev">'+(e?e.name:'?')+'</span> · '+t.lane+' · '+t.title+(t.deadline?' · due '+t.deadline:'')+' · '+t.status+'</td></tr>';});
+      else h+='<tr class="assign"><td colspan="5">No tasks assigned yet.</td></tr>';
+    }
+  });
+  tbl.innerHTML=h;
+  tbl.querySelectorAll('[data-who]').forEach(el=>el.onclick=()=>{expanded=expanded==el.dataset.who?null:+el.dataset.who;render();});
+  tbl.querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>openModal(+el.dataset.edit));
+  tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
+}
+const modal=document.getElementById('modal');
+function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',email:''};
+  document.getElementById('m_title').textContent=idv?'Edit person':'Add person';
+  m_name.value=p.name;const rs=document.getElementById('m_role');rs.innerHTML=ROLES.map(r=>'<option '+(r===p.role?'selected':'')+'>'+r+'</option>').join('');m_email.value=p.email||'';
+  document.getElementById('m_del').style.display=idv?'inline-block':'none';modal.classList.add('on');}
+document.getElementById('addBtn').onclick=()=>openModal(null);
+document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
+modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
+document.getElementById('m_del').onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,email:m_email.value.trim()};
+  if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.data.nextPerson++,...d});DB.save();modal.classList.remove('on');render();};
+document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx',[
+  {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},
+  {name:'Assignments',rows:DB.tasks.filter(t=>t.assignee).map(t=>{const e=DB.event(t.eventId);return{Person:DB.personName(t.assignee),Event:e?e.name:'',Lane:t.lane,Task:t.title,Deadline:t.deadline,Status:t.status};})}
+]);
+boot(render);
+</script>
+</body>
+</html>
