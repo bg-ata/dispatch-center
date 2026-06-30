@@ -58,7 +58,7 @@ document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
 let ev=null;
 const C=document.getElementById('content');
-const LANE_ORDER=['project','sales','logistics'];
+const LANE_ORDER=['project','marketing','sales','logistics'];
 boot(()=>{ev=DB.event(id);if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();});
 
 function peopleOpts(sel){return '<option value="">— unassigned —</option>'+DB.people.map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+p.name+'</option>').join('');}

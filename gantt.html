@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RENMAD Dispatch Center — Overview</title>
 <style>
-  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;
-    --p1:#B5D4F4;--p2:#378ADD;--p3:#185FA5;--s1:#C0DD97;--s2:#639922;--s3:#3B6D11;--red:#E24B4A;--postP:#9DB8CF;--postS:#A9C48C;}
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;--alert:#C9B3E8;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 90px}
@@ -28,7 +27,7 @@
   .gwrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;overflow-y:hidden}
   .grid{position:relative;font-size:12px}
   .row{display:flex;align-items:stretch;border-bottom:1px solid var(--line)} .row:last-child{border-bottom:none}
-  .head{position:sticky;left:0;z-index:5;flex:0 0 218px;background:var(--card);border-right:2px solid var(--line);padding:8px 9px 8px 12px;display:flex;flex-direction:column;gap:3px;justify-content:center}
+  .head{position:sticky;left:0;z-index:5;flex:0 0 210px;background:var(--card);border-right:2px solid var(--line);padding:8px 9px 8px 12px;display:flex;flex-direction:column;gap:3px;justify-content:center}
   .head .nm{font-weight:700;font-size:13px;line-height:1.15;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--charcoal)}
   .head .nm:hover .t{text-decoration:underline;color:var(--orange)}
   .head .chip{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
@@ -36,29 +35,23 @@
   .head .edit{position:absolute;top:5px;right:7px;border:none;background:none;color:#bdbab2;font-size:14px}
   .head .edit:hover{color:var(--orange)}
   .prov{background:#fff7d6;color:#7a5b00;font-size:9px;padding:1px 4px;border-radius:4px;font-weight:600}
-  .corner{flex:0 0 218px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
+  .corner{flex:0 0 210px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
   .hbody{position:relative}
   .mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}
   .wtick{position:absolute;top:20px;height:14px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #efece5}
   .body{position:relative;flex:1 1 auto}
   .gridbg{position:absolute;inset:0;z-index:0}
-  .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.20) 0 5px,rgba(150,147,140,0) 5px 10px)}
-  .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.34) 0 5px,rgba(120,118,112,.06) 5px 10px)}
-  .lanes{position:absolute;inset:0;z-index:2}
-  .lane{position:absolute;left:0;right:0;height:26px}.lane.p{top:6px}.lane.s{top:36px}
-  .seg{position:absolute;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;overflow:hidden;white-space:nowrap;cursor:grab;user-select:none}
-  .seg .lbl{pointer-events:none;font-weight:600;padding:0 4px}
-  .seg.w0{background:#111;color:#fff;border-radius:3px}
-  .seg .pm{position:absolute;display:flex;gap:1px;z-index:3}.seg .pm.l{left:1px}.seg .pm.r{right:1px}
-  .seg .pm button{width:13px;height:13px;border:none;border-radius:3px;background:rgba(255,255,255,.5);color:#000;font-size:11px;line-height:11px;padding:0;font-weight:700}
-  .seg .pm button:hover{background:#fff}
-  .mile{position:absolute;height:30px;top:-2px;width:0;z-index:6;background:var(--red);color:#fff;border-radius:3px;box-shadow:0 0 0 1px #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:grab;user-select:none}
-  .mile:active{cursor:grabbing}
-  .mile.s{top:28px}
-  .crit-bad{outline:2px solid var(--red);outline-offset:-2px}
-  .htick{position:absolute;bottom:1px;width:7px;height:7px;border-radius:50%;background:var(--red);transform:translateX(-50%);z-index:3;cursor:help}
-  .laneTag{position:absolute;left:3px;font-size:8px;font-weight:700;letter-spacing:.5px;z-index:3;opacity:.55}
-  .laneTag.p{top:8px;color:var(--p3)}.laneTag.s{top:38px;color:var(--s3)}
+  .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.18) 0 5px,rgba(150,147,140,0) 5px 10px)}
+  .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.30) 0 5px,rgba(120,118,112,.05) 5px 10px)}
+  .w0line{position:absolute;top:0;bottom:0;width:2px;background:#111;z-index:4}
+  .seg{position:absolute;height:18px;border-radius:4px;display:flex;align-items:center;font-size:10px;color:#43414d;overflow:hidden;white-space:nowrap;cursor:grab;user-select:none;padding:0 5px;font-weight:600}
+  .ltag{position:absolute;left:3px;font-size:8px;font-weight:800;letter-spacing:.4px;color:#9b9890;z-index:3;text-transform:uppercase}
+  .mile{position:absolute;height:24px;width:0;z-index:6;background:var(--red);color:#fff;border-radius:3px;box-shadow:0 0 0 1px #fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:grab;user-select:none}
+  .mile:active,.alertw:active{cursor:grabbing}
+  .alertw{position:absolute;height:16px;z-index:5;background:var(--alert);color:#46307a;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;cursor:grab;user-select:none;box-shadow:0 0 0 1px #fff}
+  .alertw .x{position:absolute;top:-6px;right:-5px;width:12px;height:12px;border-radius:50%;background:#fff;border:1px solid var(--alert);color:#46307a;font-size:9px;line-height:10px;text-align:center;cursor:pointer}
+  .addld{position:absolute;height:16px;z-index:5;background:#fff;border:1px dashed var(--alert);color:#8a6fc0;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;padding:0 5px}
+  .htick{position:absolute;bottom:0;width:6px;height:6px;border-radius:50%;background:var(--red);transform:translateX(-50%);z-index:3;cursor:help}
   #tip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:3px 7px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
   .card{background:#fff;border-radius:14px;padding:20px 22px;width:500px;max-width:92vw;max-height:90vh;overflow:auto}
@@ -80,16 +73,17 @@
     <button class="btn primary" id="addBtn">+ Add event</button>
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
     <div class="legend">
-      <span><span class="sw" style="background:var(--p2)"></span>Project / marketing</span>
-      <span><span class="sw" style="background:var(--s2)"></span>Sales (SPX)</span>
-      <span><span class="sw" style="background:var(--red)"></span>Milestone — drag to move</span>
-      <span><span class="sw" style="background:#111"></span>Event week</span>
-      <span><span class="sw hatch"></span>Holiday week</span>
+      <span><span class="sw" style="background:#A9CBEE"></span>PM</span>
+      <span><span class="sw" style="background:#FFC9A3"></span>Marketing</span>
+      <span><span class="sw" style="background:#BFE0A0"></span>Sales</span>
+      <span><span class="sw" style="background:#ECCA46"></span>Logistics</span>
+      <span><span class="sw" style="background:#C9B3E8"></span>Sales weeks (LD/SE/EB/LC)</span>
+      <span><span class="sw" style="background:#ee2233"></span>Milestone</span>
     </div>
   </div>
-  <p class="crit">Click an event name to open it. Drag a <b>stage</b> to move the whole event · drag a red <b>G/L milestone</b> to reposition it freely · +/− to resize a stage · hover a week for its <b>W-number</b>.</p>
+  <p class="crit">Bird's-eye view. Click an event name to open it. Drag a <b>stage</b> to move the event · drag the red <b>milestones</b> (G/L) or the purple <b>sales weeks</b> to reposition them · the <b>×</b> on LD removes it (re-add with the dashed button). Hover a week for its W-number.</p>
   <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
-  <p class="note">Bird's-eye view shows event data only (name, city, country, dates). People &amp; tasks live inside each event. <span class="prov">prov</span> 2027 dates are provisional — drag/edit to confirm.</p>
+  <p class="note">Stages only here; substages, tasks &amp; owners live inside each event. <span class="prov">prov</span> 2027 dates provisional.</p>
 </div>
 <div id="tip"></div>
 <div id="modal"><div class="card">
@@ -101,7 +95,7 @@
     <label>Start date<input type="date" id="m_date"></label>
     <label>City<input type="text" id="m_city"></label>
     <label>Country<select id="m_country"></select></label>
-    <label class="full" style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">Lead people (manage the full team inside the event)</label>
+    <label class="full" style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">Lead people (full team inside the event)</label>
     <label>PM (organizer)<input type="text" id="m_pm"></label>
     <label>Lead (optional)<input type="text" id="m_lead"></label>
     <label>Salesperson<input type="text" id="m_sales"></label>
@@ -114,25 +108,30 @@
 
 <script src="store.js"></script>
 <script>
-const WEEKW=24;
+const WEEKW=20, ROWH=22, ALERTH=20;
 document.getElementById('nav').innerHTML=navBar('overview');
-let drag=null, dragM=null, editingId=null, GS=null;
+let drag=null, dragM=null, dragA=null, editingId=null;
 
-function preWeeks(ev){
-  const pp=Math.max(ev.proj.research+ev.proj.prep+ev.proj.marketing, ev.proj.goNoGoOff, ev.proj.launchOff);
-  const sp=Math.max(ev.salesT.prospecting+ev.salesT.outreach+ev.salesT.closing, ev.salesT.goNoGoOff);
-  return Math.max(pp,sp);
+// global pre/post span from stage ranges
+const GMAXS=Math.max(...LANES.flatMap(l=>STAGES[l].map(s=>s.s)),30);
+const GMAXPOST=Math.max(0,...LANES.flatMap(l=>STAGES[l].map(s=>-s.e)));
+
+function stack(stages){ // greedy interval stacking -> [{st,row}]
+  const sorted=[...stages].sort((a,b)=>b.s-a.s); const rows=[]; const out=[];
+  sorted.forEach(st=>{ let r=0; for(;;r++){ if(!rows[r]){rows[r]=[];} if(rows[r].every(o=>st.s<=o.e||st.e>=o.s)){rows[r].push(st);break;} } out.push({st,row:r}); });
+  return {placed:out, nrows:rows.length};
 }
+
 function bounds(){
   let mins=[],maxs=[];
-  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-preWeeks(ev)*7));maxs.push(addDays(em,(1+Math.max(POST_PM,POST_SALES))*7));});
-  let start=monday(new Date(Math.min(...mins.map(d=>+d)))), end=new Date(Math.max(...maxs.map(d=>+d)));
-  return {start:addDays(start,-6*7),end:addDays(end,20*7)};
+  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));
+    mins.push(addDays(em,-(GMAXS+2)*7)); maxs.push(addDays(em,(GMAXPOST+2)*7));});
+  return {start:addDays(monday(new Date(Math.min(...mins.map(d=>+d)))),-4*7), end:addDays(new Date(Math.max(...maxs.map(d=>+d))),16*7)};
 }
 function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
 
 function render(){
-  const grid=document.getElementById('grid');const {start,end}=bounds();GS=start;
+  const grid=document.getElementById('grid');const {start,end}=bounds();
   const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
   grid.innerHTML='';
   const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:36px"></div>';
@@ -143,6 +142,12 @@ function render(){
   hrow.appendChild(hb);grid.appendChild(hrow);
 
   DB.events.forEach(ev=>{
+    const em=monday(ymd(ev.date)), evIdx=wIdx(em,start);
+    const logStack=stack(STAGES.logistics);
+    // vertical layout of bands
+    const yProj=4, yMkt=yProj+ROWH, yAlert=yMkt+ROWH, ySales=yAlert+ALERTH, yLog=ySales+ROWH;
+    const bodyH=yLog+logStack.nrows*ROWH+6;
+
     const row=document.createElement('div');row.className='row';
     const head=document.createElement('div');head.className='head';
     head.innerHTML='<button class="edit" title="edit">✎</button>'+
@@ -151,52 +156,55 @@ function render(){
     head.querySelector('.edit').onclick=e=>{e.stopPropagation();openModal(ev.id);};
     head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
 
-    const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:68px';
+    const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
     const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
     for(let w=0;w<NW;w++){const d=addDays(start,w*7);if(d.getDate()<=7){const t=document.createElement('div');t.style.cssText='position:absolute;top:0;bottom:0;left:'+(w*WEEKW)+'px;border-left:1px solid #ddd9d1;z-index:1';body.appendChild(t);}}
     for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
 
-    const lanes=document.createElement('div');lanes.className='lanes';
-    lanes.insertAdjacentHTML('beforeend','<span class="laneTag p">PROJECT</span><span class="laneTag s">SALES</span>');
-    const em=monday(ymd(ev.date)), evIdx=wIdx(em,start);
+    function xw(s,e){const x=(evIdx-s)*WEEKW;return {x, w:(s-e)*WEEKW};}
+    function stageBar(st,y){const {x,w}=xw(st.s,st.e);const seg=document.createElement('div');seg.className='seg';
+      seg.style.cssText='left:'+x+'px;width:'+Math.max(w,8)+'px;top:'+y+'px;background:'+st.color+(st.color==='#111111'?';color:#fff':'');
+      seg.innerHTML='<span style="pointer-events:none">'+st.name+'</span>';
+      seg.addEventListener('mousedown',e=>{drag={ev,startX:e.clientX,dx:0,el:lanes};e.preventDefault();});
+      lanes.appendChild(seg);}
 
-    function buildLane(cls,stages,postWks,postColor){
-      const ln=document.createElement('div');ln.className='lane '+cls;
-      const obj=(cls==='p'?ev.proj:ev.salesT);
-      const totalStage=stages.reduce((a,s)=>a+obj[s.key],0);
-      let cursor=evIdx-totalStage;
-      stages.forEach(s=>{
-        const wks=obj[s.key],x=cursor*WEEKW;
-        const seg=document.createElement('div');seg.className='seg';seg.style.cssText='left:'+x+'px;width:'+(wks*WEEKW)+'px;background:'+s.color+';color:'+(s.light?'#1b3a5c':'#fff');
-        const bad=CRIT[s.key]&&(wks<CRIT[s.key][0]||wks>CRIT[s.key][1]);if(bad)seg.classList.add('crit-bad');
-        seg.innerHTML='<span class="lbl">'+s.label+' '+wks+'</span><div class="pm l"><button data-a="dec">−</button></div><div class="pm r"><button data-a="inc">+</button></div>';
-        seg.querySelectorAll('button').forEach(b=>b.onclick=e2=>{e2.stopPropagation();if(b.dataset.a==='inc')obj[s.key]++;else if(obj[s.key]>1)obj[s.key]--;DB.save();render();});
-        seg.addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')return;drag={ev,startX:e.clientX,dx:0,el:lanes};e.preventDefault();});
-        ln.appendChild(seg);cursor+=wks;
-      });
-      const ew=document.createElement('div');ew.className='seg w0';ew.style.cssText='left:'+(evIdx*WEEKW)+'px;width:'+WEEKW+'px';ew.innerHTML='<span class="lbl">W0</span>';
-      ew.addEventListener('mousedown',e=>{drag={ev,startX:e.clientX,dx:0,el:lanes};e.preventDefault();});ln.appendChild(ew);
-      const post=document.createElement('div');post.className='seg';post.style.cssText='left:'+((evIdx+1)*WEEKW)+'px;width:'+(postWks*WEEKW)+'px;background:'+postColor+';color:#3a3a3a';post.innerHTML='<span class="lbl">Next-yr</span>';ln.appendChild(post);
-      return ln;
-    }
-    lanes.appendChild(buildLane('p',[{key:'research',color:'var(--p1)',label:'Research',light:1},{key:'prep',color:'var(--p2)',label:'Prep'},{key:'marketing',color:'var(--p3)',label:'Marketing'}],POST_PM,'var(--postP)'));
-    lanes.appendChild(buildLane('s',[{key:'prospecting',color:'var(--s1)',label:'Prospect',light:1},{key:'outreach',color:'var(--s2)',label:'Outreach'},{key:'closing',color:'var(--s3)',label:'Closing'}],POST_SALES,'var(--postS)'));
-
-    function milestone(cls,obj,field,label){
-      const m=document.createElement('div');m.className='mile'+(cls==='s'?' s':'');
-      m.style.left=((evIdx-obj[field])*WEEKW)+'px';m.style.width=WEEKW+'px';m.textContent=label;
-      m.title=(label==='G'?'Go/No-Go':'Launch')+' — drag to move';
-      m.addEventListener('mousedown',e=>{e.stopPropagation();dragM={obj,field,startX:e.clientX,dx:0,el:m};e.preventDefault();});
-      lanes.appendChild(m);
-    }
-    milestone('p',ev.proj,'goNoGoOff','G');
-    milestone('p',ev.proj,'launchOff','L');
-    milestone('s',ev.salesT,'goNoGoOff','G');
-
-    const cc=COUNTRIES[ev.country];
-    if(cc){for(let w=0;w<NW;w++){const m=addDays(start,w*7);const bh=bankHols(m,cc);if(bh.length){const dot=document.createElement('div');dot.className='htick';dot.style.left=((w+0.5)*WEEKW)+'px';dot.title=bh.map(x=>x[0]+' ('+fmtD(x[1])+')').join(', ');body.appendChild(dot);} }}
+    const lanes=document.createElement('div');lanes.style.cssText='position:absolute;inset:0;z-index:2';
     body.appendChild(lanes);
-    body.addEventListener('mousemove',e=>{if(drag||dragM)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'Event week (W0)':diff>0?('W-'+diff):('+'+(-diff)+' after'))+' · wk of '+fmtD(wm));});
+    // lane tags (left)
+    [['PM',yProj],['MKT',yMkt],['SALES',ySales],['LOG',yLog]].forEach(([t,y])=>{const tg=document.createElement('div');tg.className='ltag';tg.style.top=(y+4)+'px';tg.textContent=t;lanes.appendChild(tg);});
+    const al=document.createElement('div');al.className='ltag';al.style.cssText='top:'+(yAlert+3)+'px;color:#9a7fce';al.textContent='SALES WKS';lanes.appendChild(al);
+    // stages
+    STAGES.project.forEach(st=>stageBar(st,yProj));
+    STAGES.marketing.forEach(st=>stageBar(st,yMkt));
+    STAGES.sales.forEach(st=>stageBar(st,ySales));
+    logStack.placed.forEach(p=>stageBar(p.st,yLog+p.row*ROWH));
+
+    // W0 black line
+    const w0=document.createElement('div');w0.className='w0line';w0.style.left=(evIdx*WEEKW)+'px';lanes.appendChild(w0);
+
+    // sales alert weeks (purple, movable)
+    ALERT_DEFS.forEach(def=>{const a=ev.alerts[def.key];if(!a||(def.optional&&!a.on))return;
+      const x=(evIdx-a.off)*WEEKW;const wd=(def.ext?2:1)*WEEKW;
+      const blk=document.createElement('div');blk.className='alertw';blk.style.cssText='left:'+x+'px;width:'+wd+'px;top:'+yAlert+'px';
+      blk.innerHTML='<span style="pointer-events:none">'+def.key+(def.ext?' +ext':'')+'</span>'+(def.optional?'<span class="x" title="remove">×</span>':'');
+      blk.title=def.name+' (W-'+a.off+') — drag to move';
+      blk.addEventListener('mousedown',e=>{if(e.target.classList.contains('x'))return;dragA={ev,key:def.key,startX:e.clientX,dx:0,el:blk};e.preventDefault();});
+      const xb=blk.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts[def.key].on=false;DB.save();render();};
+      lanes.appendChild(blk);});
+    if(ev.alerts.LD && !ev.alerts.LD.on){const add=document.createElement('div');add.className='addld';add.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+yAlert+'px';add.textContent='+ LD';add.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};lanes.appendChild(add);}
+
+    // milestones (red, draggable): Go/No-Go, Launch
+    [['G','goNoGo'],['L','launch']].forEach(([lab,key])=>{const off=ev.milestones[key];const x=(evIdx-off)*WEEKW;
+      const m=document.createElement('div');m.className='mile';m.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+(yProj+2)+'px;height:'+(ROWH*2-6)+'px';m.textContent=lab;
+      m.title=(lab==='G'?'Go/No-Go':'Launch')+' (W-'+off+') — drag';
+      m.addEventListener('mousedown',e=>{e.stopPropagation();dragM={ev,key,startX:e.clientX,dx:0,el:m};e.preventDefault();});
+      lanes.appendChild(m);});
+
+    // national-holiday red dots
+    const cc=COUNTRIES[ev.country];
+    if(cc){for(let w=0;w<NW;w++){const m=addDays(start,w*7);const bh=bankHols(m,cc);if(bh.length){const dot=document.createElement('div');dot.className='htick';dot.style.cssText='left:'+((w+0.5)*WEEKW)+'px;top:'+(bodyH-7)+'px';dot.title=bh.map(x=>x[0]+' ('+fmtD(x[1])+')').join(', ');body.appendChild(dot);} }}
+
+    body.addEventListener('mousemove',e=>{if(drag||dragM||dragA)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'Event week (W0)':diff>0?('W-'+diff):('+'+(-diff)+' after'))+' · wk of '+fmtD(wm));});
     body.addEventListener('mouseleave',hideTip);
     row.appendChild(head);row.appendChild(body);grid.appendChild(row);
   });
@@ -207,10 +215,12 @@ function hideTip(){tip.style.display='none';}
 document.addEventListener('mousemove',e=>{
   if(drag){drag.dx=e.clientX-drag.startX;drag.el.style.transform='translateX('+(Math.round(drag.dx/WEEKW)*WEEKW)+'px)';hideTip();}
   else if(dragM){dragM.dx=e.clientX-dragM.startX;dragM.el.style.transform='translateX('+(Math.round(dragM.dx/WEEKW)*WEEKW)+'px)';hideTip();}
+  else if(dragA){dragA.dx=e.clientX-dragA.startX;dragA.el.style.transform='translateX('+(Math.round(dragA.dx/WEEKW)*WEEKW)+'px)';hideTip();}
 });
 document.addEventListener('mouseup',()=>{
   if(drag){const wks=Math.round((drag.dx||0)/WEEKW);drag.el.style.transform='';if(wks){drag.ev.date=toISO(addDays(ymd(drag.ev.date),wks*7));drag.ev.prov=false;DB.save();}drag=null;render();}
-  else if(dragM){const wks=Math.round((dragM.dx||0)/WEEKW);dragM.el.style.transform='';if(wks){dragM.obj[dragM.field]=Math.max(0,dragM.obj[dragM.field]-wks);DB.save();}dragM=null;render();}
+  else if(dragM){const wks=Math.round((dragM.dx||0)/WEEKW);dragM.el.style.transform='';if(wks){dragM.ev.milestones[dragM.key]=Math.max(0,dragM.ev.milestones[dragM.key]-wks);DB.save();}dragM=null;render();}
+  else if(dragA){const wks=Math.round((dragA.dx||0)/WEEKW);dragA.el.style.transform='';if(wks){dragA.ev.alerts[dragA.key].off=Math.max(0,dragA.ev.alerts[dragA.key].off-wks);DB.save();}dragA=null;render();}
 });
 
 const modal=document.getElementById('modal');
@@ -226,7 +236,7 @@ modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
-  else{const id=DB.data.nextEvent++;DB.events.push({id,...d,proj:{research:5,prep:5,marketing:18,goNoGoOff:23,launchOff:18},salesT:{prospecting:8,outreach:10,closing:6,goNoGoOff:16},team:[]});}
+  else{const id=DB.data.nextEvent++;DB.events.push({id,...d,milestones:{goNoGo:21,launch:16},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);

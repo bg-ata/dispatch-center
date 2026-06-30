@@ -1,6 +1,6 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 5;
+const STORE_VERSION = 6;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -8,15 +8,32 @@ const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
 const ROLES=['Lead','PM','Sales','Marketing','Logistics'];
 const STATUS=['To do','In progress','Done'];
 const POST_PM=1, POST_SALES=2;
-/* lanes + stages, coloured to match the overview exactly */
+/* lanes (top→bottom) + stages as week RANGES (s=start, e=end, in weeks before event; W0=0, negative=after).
+   Pastel palette so it never clashes with the bright brand orange. */
+const LANES=['project','marketing','sales','logistics'];
+const LANE_LABEL={project:'PM / Project',marketing:'Marketing',sales:'Sales (SPX)',logistics:'Logistics'};
+const RED='#ee2233';        // bright red — notable dates / milestones (must not be missed)
+const ALERTCOL='#C9B3E8';   // pastel purple — sales alert weeks
 const STAGES={
- project:[{key:'research',name:'Research',color:'#B5D4F4'},{key:'prep',name:'Prep',color:'#378ADD'},{key:'marketing',name:'Marketing',color:'#185FA5'}],
- sales:[{key:'prospecting',name:'Prospecting',color:'#C0DD97'},{key:'outreach',name:'Outreach',color:'#639922'},{key:'closing',name:'Closing',color:'#3B6D11'}],
- logistics:[{key:'venue',name:'Venue & contract',color:'#9a978f'},{key:'onsite',name:'Onsite & materials',color:'#76746d'}],
+ project:[{key:'research',name:'Research',color:'#CFE2F6',s:30,e:24},{key:'prep',name:'Prep',color:'#A9CBEE',s:24,e:18}],
+ marketing:[{key:'prelaunch',name:'Pre-launch prep',color:'#FFE3CC',s:22,e:16},{key:'onmarket',name:'On market',color:'#FFC9A3',s:16,e:0},{key:'recordings',name:'Recordings & year prep',color:'#F7B179',s:0,e:-3}],
+ sales:[{key:'prospecting',name:'Prospecting',color:'#DDEFC9',s:30,e:18},{key:'outreach',name:'Outreach',color:'#BFE0A0',s:18,e:8},{key:'closing',name:'Closing',color:'#9CCF77',s:8,e:0}],
+ logistics:[
+  {key:'sourcing',name:'Venue Sourcing',color:'#FBF1C4',s:30,e:24},
+  {key:'contracting',name:'Contracting',color:'#F8E9A6',s:28,e:23},
+  {key:'supplier',name:'Supplier Management',color:'#F5E08A',s:18,e:2},
+  {key:'mktcoord',name:'Marketing Coordination',color:'#F2D86E',s:10,e:3},
+  {key:'travel',name:'Travel & Accommodation',color:'#EFD15C',s:6,e:5},
+  {key:'venueops',name:'Venue Operations',color:'#ECCA46',s:8,e:1},
+  {key:'prep',name:'Event Preparation',color:'#E8C232',s:1,e:0},
+  {key:'delivery',name:'Event Delivery',color:'#111111',s:0,e:-1},
+  {key:'closing',name:'Event Closing',color:'#E0B520',s:-1,e:-3},
+ ],
 };
-const LANE_LABEL={project:'Project / Marketing',sales:'Sales (SPX)',logistics:'Logistics'};
+const ALERT_DEFS=[{key:'LD',name:'Launch Discount',off:16,optional:true},{key:'SE',name:'Super Early',off:12},{key:'EB',name:'Early Bird',off:8},{key:'LC',name:'Last Chance',off:4,ext:true}];
 function stageColor(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.color:'#b4b2a9';}
 function stageName(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.name:key;}
+function stageDef(lane,key){return (STAGES[lane]||[]).find(s=>s.key===key);}
 
 /* ---- date helpers ---- */
 function ymd(s){const p=s.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);}
@@ -49,12 +66,12 @@ function bankHols(mon,cc){const out=[],fixed=HOL[cc]||[],mov=MOV[cc]||[],sun=add
 
 /* ---- seed ---- */
 const SEED_EVENTS=[
- {id:1,name:'E053 RENMAD Invest',topic:'Investment',pm:'Belén',lead:'',sales:'Sheetal',city:'Madrid',country:'Spain',date:'2027-01-26',days:2,proj:{research:5,prep:5,marketing:16},salesT:{prospecting:8,outreach:10,closing:6},prov:true},
- {id:2,name:'E056 RENMAD Biomethane',topic:'Biomethane',pm:'Jesús R',lead:'',sales:'Ian',city:'Toledo',country:'Spain',date:'2027-02-11',days:2,proj:{research:5,prep:5,marketing:18},salesT:{prospecting:8,outreach:10,closing:6},prov:true},
- {id:3,name:'E057 RENMAD Storage',topic:'Storage',pm:'Ian',lead:'',sales:'Carlos',city:'Seville',country:'Spain',date:'2027-03-25',days:2,proj:{research:5,prep:7,marketing:20},salesT:{prospecting:10,outreach:12,closing:6},prov:true},
- {id:4,name:'E058 RENMAD Storage Italia',topic:'Storage',pm:'Elena',lead:'',sales:'Cristina',city:'Rome',country:'Italy',date:'2027-04-07',days:2,proj:{research:4,prep:5,marketing:18},salesT:{prospecting:8,outreach:10,closing:6},prov:true},
- {id:5,name:'E052 RENMAD UsefulAI',topic:'Renewables / AI',pm:'Belén',lead:'Cintia',sales:'Diego',city:'Madrid',country:'Spain',date:'2027-06-02',days:2,proj:{research:5,prep:5,marketing:18},salesT:{prospecting:8,outreach:10,closing:6},prov:true},
- {id:6,name:'E055 RENMAD Data Centers',topic:'Data Centers',pm:'Cintia',lead:'',sales:'Andrea',city:'Madrid',country:'Spain',date:'2027-07-08',days:2,proj:{research:5,prep:5,marketing:18},salesT:{prospecting:8,outreach:10,closing:6},prov:true},
+ {id:1,name:'E053 RENMAD Invest',topic:'Investment',pm:'Belén',lead:'',sales:'Sheetal',city:'Madrid',country:'Spain',date:'2027-01-26',days:2,prov:true},
+ {id:2,name:'E056 RENMAD Biomethane',topic:'Biomethane',pm:'Jesús R',lead:'',sales:'Ian',city:'Toledo',country:'Spain',date:'2027-02-11',days:2,prov:true},
+ {id:3,name:'E057 RENMAD Storage',topic:'Storage',pm:'Ian',lead:'',sales:'Carlos',city:'Seville',country:'Spain',date:'2027-03-25',days:2,prov:true},
+ {id:4,name:'E058 RENMAD Storage Italia',topic:'Storage',pm:'Elena',lead:'',sales:'Cristina',city:'Rome',country:'Italy',date:'2027-04-07',days:2,prov:true},
+ {id:5,name:'E052 RENMAD UsefulAI',topic:'Renewables / AI',pm:'Belén',lead:'Cintia',sales:'Diego',city:'Madrid',country:'Spain',date:'2027-06-02',days:2,prov:true},
+ {id:6,name:'E055 RENMAD Data Centers',topic:'Data Centers',pm:'Cintia',lead:'',sales:'Andrea',city:'Madrid',country:'Spain',date:'2027-07-08',days:2,prov:true},
 ];
 const SEED_PEOPLE=[
  {id:1,name:'Belén',role:'Lead',email:'belen@ata.email'},{id:2,name:'Jesús R',role:'PM',email:''},{id:3,name:'Cintia',role:'PM',email:''},
@@ -69,22 +86,21 @@ function buildSeed(){
   const byName=n=>{const p=people.find(p=>p.name===n);return p?p.id:null;};
   const subs=[],tasks=[];let sid=1,tid=1;
   const PLAN={
-    project:{research:['Speaker research','Topic scoping'],prep:['Agenda build','Confirm speakers'],marketing:['Content & assets','Email campaign']},
-    sales:{prospecting:['Target list','First calls'],outreach:['Send proposals'],closing:['Negotiate & close']},
-    logistics:{venue:['Venue shortlist','Contract & payments'],onsite:['Badges & lanyards','AV & catering']},
+    project:{research:['Speaker research'],prep:['Agenda build']},
+    marketing:{prelaunch:['Content & assets'],onmarket:['Email campaign','Webinars'],recordings:['Publish recordings','Next-year landing']},
+    sales:{prospecting:['Target list'],outreach:['Send proposals'],closing:['Negotiate & close']},
+    logistics:{sourcing:['Venue search','Hotel comparison'],contracting:['Negotiate & sign','Payment schedule'],supplier:['Find suppliers','Confirm suppliers'],mktcoord:['Materials kick-off','Produce materials'],travel:['Staff travel & hotel'],venueops:['Ops comms & floorplan','Follow-up meetings'],prep:['Run of show','Logistics checklist'],delivery:['Event execution'],closing:['Invoices & reconciliation']},
   };
   events.forEach(ev=>{
-    // free-floating milestone offsets (weeks before event), start at the natural boundaries
-    ev.proj.goNoGoOff=ev.proj.prep+ev.proj.marketing;
-    ev.proj.launchOff=ev.proj.marketing;
-    ev.salesT.goNoGoOff=ev.salesT.outreach+ev.salesT.closing;
-    // team attached to the event
+    // editable, free-floating: milestones, sales alert weeks, marketing markers
+    ev.milestones={goNoGo:21, launch:16};
+    ev.alerts={LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}};
+    ev.markers={lhConnect:17, lhBrochure:17, pmMtg1:17, pmMtg2:9};
     ev.team=[];const add=(n,r)=>{const id=byName(n);if(id&&!ev.team.find(t=>t.personId===id))ev.team.push({personId:id,role:r});};
     add(ev.pm,'PM');if(ev.lead)add(ev.lead,'Lead');add(ev.sales,'Sales');
-    // stages -> substages -> 1 sample task each
     Object.keys(PLAN).forEach(lane=>Object.keys(PLAN[lane]).forEach(stage=>{
       PLAN[lane][stage].forEach((nm,i)=>{const sub={id:sid++,eventId:ev.id,lane,stage,name:nm,order:i};subs.push(sub);
-        const who=lane==='sales'?byName(ev.sales):byName(ev.pm);
+        const who=lane==='sales'?byName(ev.sales):lane==='logistics'?byName('Daniel'):byName(ev.pm);
         tasks.push({id:tid++,eventId:ev.id,lane,stage,substageId:sub.id,title:nm,assignee:who,deadline:'',status:'To do'});});
     }));
   });
