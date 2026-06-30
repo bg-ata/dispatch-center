@@ -189,9 +189,6 @@ function render(){
     marker('W0',0,'#111','','w0');
     if(!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;pointer-events:auto';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};mk.appendChild(a);}
 
-    const cc=COUNTRIES[ev.country];
-    if(cc){for(let w=0;w<NW;w++){const m=addDays(start,w*7);const bh=bankHols(m,cc);if(bh.length){const dot=document.createElement('div');dot.className='htick';dot.style.cssText='left:'+((w+0.5)*WEEKW)+'px;top:'+(bodyH-6)+'px';dot.title=bh.map(x=>x[0]+' ('+fmtD(x[1])+')').join(', ');body.appendChild(dot);} }}
-
     body.addEventListener('mousemove',e=>{if(dragEv||dragMk)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'W0':diff>0?('W-'+diff):('+'+(-diff)))+' · wk of '+fmtD(wm));});
     body.addEventListener('mouseleave',hideTip);
     row.appendChild(head);row.appendChild(body);grid.appendChild(row);
