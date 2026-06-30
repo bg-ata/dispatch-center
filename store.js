@@ -1,6 +1,6 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 6;
+const STORE_VERSION = 7;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -14,20 +14,22 @@ const LANES=['project','marketing','sales','logistics'];
 const LANE_LABEL={project:'PM / Project',marketing:'Marketing',sales:'Sales (SPX)',logistics:'Logistics'};
 const RED='#ee2233';        // bright red — notable dates / milestones (must not be missed)
 const ALERTCOL='#C9B3E8';   // pastel purple — sales alert weeks
+/* each stage has a default duration d (weeks) + phase (pre-event / event-week / post-event).
+   Lanes lay out contiguous, ending at W0; durations are editable per event (ev.dur). */
 const STAGES={
- project:[{key:'research',name:'Research',color:'#CFE2F6',s:30,e:24},{key:'prep',name:'Prep',color:'#A9CBEE',s:24,e:18}],
- marketing:[{key:'prelaunch',name:'Pre-launch',color:'#FFE3CC',s:22,e:16},{key:'onmarket',name:'On market',color:'#FFC9A3',s:16,e:0},{key:'recordings',name:'Recordings',color:'#F7B179',s:0,e:-3}],
- sales:[{key:'prospecting',name:'Prospecting',color:'#DDEFC9',s:30,e:18},{key:'outreach',name:'Outreach',color:'#BFE0A0',s:18,e:8},{key:'closing',name:'Closing',color:'#9CCF77',s:8,e:0}],
+ project:[{key:'research',name:'Research',color:'#CFE2F6',d:10,phase:'pre'},{key:'prep',name:'Prep',color:'#A9CBEE',d:20,phase:'pre'}],
+ marketing:[{key:'prelaunch',name:'Pre-launch',color:'#FFE3CC',d:6,phase:'pre'},{key:'onmarket',name:'On market',color:'#FFC9A3',d:16,phase:'pre'},{key:'recordings',name:'Recordings',color:'#F7B179',d:3,phase:'post'}],
+ sales:[{key:'prospecting',name:'Prospecting',color:'#DDEFC9',d:12,phase:'pre'},{key:'outreach',name:'Outreach',color:'#BFE0A0',d:10,phase:'pre'},{key:'closing',name:'Closing',color:'#9CCF77',d:8,phase:'pre'}],
  logistics:[
-  {key:'sourcing',name:'Venue',color:'#FBF1C4',s:30,e:26},
-  {key:'contracting',name:'Contract',color:'#F8E9A6',s:26,e:23},
-  {key:'supplier',name:'Suppliers',color:'#F5E08A',s:23,e:12},
-  {key:'mktcoord',name:'Materials',color:'#F2D86E',s:12,e:8},
-  {key:'travel',name:'Travel',color:'#EFD15C',s:8,e:7},
-  {key:'venueops',name:'Venue ops',color:'#ECCA46',s:7,e:2},
-  {key:'prep',name:'Prep',color:'#E8C232',s:2,e:0},
-  {key:'delivery',name:'Event',color:'#111111',s:0,e:-1},
-  {key:'closing',name:'Closing',color:'#E0B520',s:-1,e:-3},
+  {key:'sourcing',name:'Venue',color:'#FBF1C4',d:4,phase:'pre'},
+  {key:'contracting',name:'Contract',color:'#F8E9A6',d:3,phase:'pre'},
+  {key:'supplier',name:'Suppliers',color:'#F5E08A',d:11,phase:'pre'},
+  {key:'mktcoord',name:'Materials',color:'#F2D86E',d:4,phase:'pre'},
+  {key:'travel',name:'Travel',color:'#EFD15C',d:1,phase:'pre'},
+  {key:'venueops',name:'Venue ops',color:'#ECCA46',d:5,phase:'pre'},
+  {key:'prep',name:'Prep',color:'#E8C232',d:2,phase:'pre'},
+  {key:'delivery',name:'Event',color:'#111111',d:1,phase:'event'},
+  {key:'closing',name:'Closing',color:'#E0B520',d:2,phase:'post'},
  ],
 };
 const ALERT_DEFS=[{key:'LD',name:'Launch Discount',off:16,optional:true},{key:'SE',name:'Super Early',off:12},{key:'EB',name:'Early Bird',off:8},{key:'LC',name:'Last Chance',off:4,ext:true}];
@@ -96,6 +98,7 @@ function buildSeed(){
     ev.milestones={goNoGo:21, launch:16};
     ev.alerts={LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}};
     ev.markers={lhConnect:17, lhBrochure:17, pmMtg1:17, pmMtg2:9};
+    ev.dur={};LANES.forEach(l=>{ev.dur[l]={};STAGES[l].forEach(s=>ev.dur[l][s.key]=s.d);});
     ev.team=[];const add=(n,r)=>{const id=byName(n);if(id&&!ev.team.find(t=>t.personId===id))ev.team.push({personId:id,role:r});};
     add(ev.pm,'PM');if(ev.lead)add(ev.lead,'Lead');add(ev.sales,'Sales');
     Object.keys(PLAN).forEach(lane=>Object.keys(PLAN[lane]).forEach(stage=>{

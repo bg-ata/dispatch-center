@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RENMAD Dispatch Center — Overview</title>
 <style>
-  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;--alert:#A77BD6;}
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 90px}
@@ -42,13 +42,16 @@
   .gridbg{position:absolute;inset:0;z-index:0}
   .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.16) 0 5px,rgba(150,147,140,0) 5px 10px)}
   .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.28) 0 5px,rgba(120,118,112,.05) 5px 10px)}
-  .seg{position:absolute;border-radius:3px;display:flex;align-items:center;font-size:9px;color:#43414d;overflow:hidden;white-space:nowrap;cursor:grab;user-select:none;padding:0 4px;font-weight:600;z-index:2}
   .ltag{position:absolute;left:3px;font-size:8px;font-weight:800;color:#b4b1a8;z-index:2}
-  .mkline{position:absolute;width:2px;z-index:3;pointer-events:none;opacity:.8}
-  .mkchip{position:absolute;top:0;height:13px;z-index:6;border-radius:3px;font-size:8px;font-weight:800;color:#fff;display:flex;align-items:center;padding:0 3px;cursor:grab;user-select:none;transform:translateX(-1px);white-space:nowrap}
-  .mkchip .x{margin-left:2px;cursor:pointer;opacity:.85}
-  .addld{position:absolute;top:0;height:13px;z-index:6;border:1px dashed var(--alert);color:#7a52ad;background:#fff;border-radius:3px;font-size:8px;font-weight:700;cursor:pointer;padding:0 3px;transform:translateX(-1px)}
-  .htick{position:absolute;width:5px;height:5px;border-radius:50%;background:var(--red);transform:translateX(-50%);z-index:3;cursor:help}
+  .seg{position:absolute;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#43414d;overflow:hidden;white-space:nowrap;font-weight:600;z-index:2}
+  .seg .lbl{pointer-events:none;padding:0 13px}
+  .seg .rb{position:absolute;border:none;background:rgba(255,255,255,.55);color:#000;width:12px;height:100%;font-size:11px;line-height:1;padding:0;font-weight:700;cursor:pointer;z-index:3}
+  .seg .rb.mn{left:0;border-radius:3px 0 0 3px}.seg .rb.pl{right:0;border-radius:0 3px 3px 0}
+  .seg .rb:hover{background:#fff}
+  .mblk{position:absolute;z-index:4;display:flex;align-items:flex-start;justify-content:center;color:#fff;font-size:9px;font-weight:800;cursor:grab;user-select:none;border-radius:2px;box-shadow:0 0 0 1px #fff;padding-top:1px}
+  .mblk:active{cursor:grabbing}
+  .mblk .x{position:absolute;top:-1px;right:-1px;font-size:9px;background:rgba(255,255,255,.85);color:var(--red);border-radius:50%;width:11px;height:11px;line-height:10px;text-align:center;cursor:pointer}
+  .addld{position:absolute;z-index:4;border:1px dashed var(--red);color:var(--red);background:#fff;border-radius:3px;font-size:8px;font-weight:700;cursor:pointer;padding:0 3px;height:13px}
   #tip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:3px 7px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
   .card{background:#fff;border-radius:14px;padding:20px 22px;width:500px;max-width:92vw;max-height:90vh;overflow:auto}
@@ -74,11 +77,11 @@
       <span><span class="sw" style="background:#FFC9A3"></span>Marketing</span>
       <span><span class="sw" style="background:#BFE0A0"></span>Sales</span>
       <span><span class="sw" style="background:#ECCA46"></span>Logistics</span>
-      <span><span class="sw" style="background:#A77BD6"></span>Sales weeks</span>
-      <span><span class="sw" style="background:#ee2233"></span>Milestone</span>
+      <span><span class="sw" style="background:#ee2233"></span>Milestones &amp; discounts</span>
+      <span><span class="sw" style="background:#111"></span>Event week</span>
     </div>
   </div>
-  <p class="crit">4 lines per event (PM · Marketing · Sales · Logistics). Drag a <b>stage</b> to move the event · drag a <b>marker chip</b> (G/L = milestones, LD/SE/EB/LC = sales weeks) to reposition it · <b>×</b> on LD removes it. Click an event name for full detail.</p>
+  <p class="crit">Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane's stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.</p>
   <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
   <p class="note">Stages only — tasks &amp; owners live inside each event. <span class="prov">prov</span> 2027 dates provisional.</p>
 </div>
@@ -105,19 +108,25 @@
 
 <script src="store.js"></script>
 <script>
-const WEEKW=18, LINEH=12, GAP=2, TOPH=15;
+const WEEKW=18, LINEH=15, GAP=2, TOPH=16;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 document.getElementById('nav').innerHTML=navBar('overview');
-let dragEv=null, dragMk=null, editingId=null;
-const GMAXS=Math.max(...LANES.flatMap(l=>STAGES[l].map(s=>s.s)),30);
-const GMAXPOST=Math.max(0,...LANES.flatMap(l=>STAGES[l].map(s=>-s.e)));
-// continuous lanes: each stage runs until the next begins; last pre-event stage runs to W0
-function effStages(lane){const st=[...STAGES[lane]].sort((a,b)=>b.s-a.s);
-  return st.map((s,i)=>{ if(s.s<=0) return {...s}; const e=(i<st.length-1)?st[i+1].s:0; return {...s,e}; });}
+let dragMk=null, dragW0=null, editingId=null;
 
+function laneTotalPre(ev,lane){return STAGES[lane].filter(s=>s.phase==='pre').reduce((a,s)=>a+(ev.dur[lane][s.key]||s.d),0);}
+function preExtent(ev){let m=0;LANES.forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
+function layLane(ev,lane,evIdx){
+  const sts=STAGES[lane],dur=ev.dur[lane];const bars=[];
+  const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
+  pre.forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:cur,w:d});cur+=d;});
+  const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:(dur[evs.key]||evs.d)});}
+  let c2=evIdx+(evs?(dur[evs.key]||evs.d):1);
+  sts.filter(s=>s.phase==='post').forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:c2,w:d});c2+=d;});
+  return bars;
+}
 function bounds(){
   let mins=[],maxs=[];
-  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(GMAXS+2)*7));maxs.push(addDays(em,(GMAXPOST+2)*7));});
+  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,8*7));});
   return {start:addDays(monday(new Date(Math.min(...mins.map(d=>+d)))),-4*7), end:addDays(new Date(Math.max(...maxs.map(d=>+d))),16*7)};
 }
 function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
@@ -125,7 +134,8 @@ function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
 function render(){
   const grid=document.getElementById('grid');const {start,end}=bounds();
   const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
-  const bodyH=TOPH+LANES.length*(LINEH+GAP)+5;
+  const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP)); const bodyH=ys[ys.length-1]+LINEH+6;
+  const topH=ys[2]+LINEH-ys[0]; // red/black columns cover PM+MKT+SALES (first 3 lanes)
   grid.innerHTML='';
   const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:36px"></div>';
   const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:36px';
@@ -148,48 +158,43 @@ function render(){
     const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
     for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
 
-    // 4 continuous lane lines of stage bars
-    const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP));
+    // 4 lanes of resizable stage bars
     LANES.forEach((lane,i)=>{
       const y=ys[i];
-      const lt=document.createElement('div');lt.className='ltag';lt.style.top=(y+2)+'px';lt.textContent=LANE_LETTER[lane];body.appendChild(lt);
-      effStages(lane).forEach(st=>{
-        const x=(evIdx-st.s)*WEEKW, w=(st.s-st.e)*WEEKW;
+      const lt=document.createElement('div');lt.className='ltag';lt.style.top=(y+3)+'px';lt.textContent=LANE_LETTER[lane];body.appendChild(lt);
+      layLane(ev,lane,evIdx).forEach(bar=>{
+        const x=bar.x*WEEKW, w=bar.w*WEEKW;
         const seg=document.createElement('div');seg.className='seg';
-        seg.style.cssText='left:'+x+'px;width:'+Math.max(w,6)+'px;top:'+y+'px;height:'+LINEH+'px;background:'+st.color+(st.color==='#111111'?';color:#fff':'');
-        if(w>46)seg.innerHTML='<span style="pointer-events:none">'+st.name+'</span>';
-        seg.title=st.name;
-        seg.addEventListener('mousedown',e=>{dragEv={ev,startX:e.clientX,dx:0,el:body.querySelector('.mklayer')};e.preventDefault();});
+        seg.style.cssText='left:'+x+'px;width:'+Math.max(w,6)+'px;top:'+y+'px;height:'+LINEH+'px;background:'+bar.s.color+(bar.s.color==='#111111'?';color:#fff':'');
+        seg.title=bar.s.name;
+        const lbl=(w>52)?'<span class="lbl">'+bar.s.name+'</span>':'';
+        seg.innerHTML='<button class="rb mn" data-l="'+lane+'" data-k="'+bar.s.key+'" data-d="-1">−</button>'+lbl+'<button class="rb pl" data-l="'+lane+'" data-k="'+bar.s.key+'" data-d="1">+</button>';
+        seg.querySelectorAll('.rb').forEach(b=>b.onclick=e=>{e.stopPropagation();const o=ev.dur[b.dataset.l];const nv=(o[b.dataset.k]||1)+(+b.dataset.d);o[b.dataset.k]=Math.max(1,nv);DB.save();render();});
         body.appendChild(seg);
       });
     });
 
-    // marker layer (so dragging an event moves stages+markers together)
-    const mk=document.createElement('div');mk.className='mklayer';mk.style.cssText='position:absolute;inset:0;z-index:3;pointer-events:none';body.appendChild(mk);
-    function marker(key,off,color,field,kind){
+    // red / black full-week columns over the top 3 lanes (not logistics)
+    function column(off,label,color,kind,field){
       const x=(evIdx-off)*WEEKW;
-      const line=document.createElement('div');line.className='mkline';line.style.cssText='left:'+x+'px;top:'+(TOPH-1)+'px;height:'+(bodyH-TOPH-2)+'px;background:'+color;mk.appendChild(line);
-      if(kind==='mile'){ys.forEach(yy=>{const n=document.createElement('div');n.style.cssText='position:absolute;left:'+(x-1)+'px;top:'+yy+'px;width:4px;height:'+LINEH+'px;background:'+color+';z-index:5;border-radius:1px;box-shadow:0 0 0 1px #fff';mk.appendChild(n);});}
-      const chip=document.createElement('div');chip.className='mkchip';chip.style.cssText='left:'+x+'px;background:'+color+';pointer-events:auto';
-      chip.innerHTML='<span style="pointer-events:none">'+key+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
-      chip.title=key+' (W-'+off+') — drag to move';
-      if(kind!=='w0'){chip.addEventListener('mousedown',e=>{if(e.target.classList.contains('x'))return;dragMk={ev,field,kind,startX:e.clientX,dx:0,line,chip};e.preventDefault();});}
-      const xb=chip.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();render();};
-      mk.appendChild(chip);
+      const blk=document.createElement('div');blk.className='mblk';blk.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+ys[0]+'px;height:'+topH+'px;background:'+color;
+      blk.innerHTML='<span style="pointer-events:none">'+label+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
+      blk.title=label+' (W-'+off+')'+(kind==='w0'?'':' — drag to move');
+      if(kind==='w0'){blk.addEventListener('mousedown',e=>{dragW0={ev,startX:e.clientX,dx:0,el:blk};e.preventDefault();});}
+      else{blk.addEventListener('mousedown',e=>{if(e.target.classList.contains('x'))return;dragMk={ev,field,kind,startX:e.clientX,dx:0,el:blk};e.preventDefault();});}
+      const xb=blk.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();render();};
+      body.appendChild(blk);
     }
-    // milestones (red) — common across lanes
-    marker('G',ev.milestones.goNoGo,'var(--red)','goNoGo','mile');
-    marker('L',ev.milestones.launch,'var(--red)','launch','mile');
-    // sales weeks (purple)
-    if(ev.alerts.LD.on) marker('LD',ev.alerts.LD.off,'var(--alert)','LD','ld');
-    marker('SE',ev.alerts.SE.off,'var(--alert)','SE','alert');
-    marker('EB',ev.alerts.EB.off,'var(--alert)','EB','alert');
-    marker('LC',ev.alerts.LC.off,'var(--alert)','LC','alert');
-    // W0 (black)
-    marker('W0',0,'#111','','w0');
-    if(!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;pointer-events:auto';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};mk.appendChild(a);}
+    column(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
+    column(ev.milestones.launch,'L','var(--red)','mile','launch');
+    if(ev.alerts.LD.on) column(ev.alerts.LD.off,'LD','var(--red)','ld','LD');
+    column(ev.alerts.SE.off,'SE','var(--red)','alert','SE');
+    column(ev.alerts.EB.off,'EB','var(--red)','alert','EB');
+    column(ev.alerts.LC.off,'LC','var(--red)','alert','LC');
+    column(0,'W0','#111','w0','');
+    if(!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+ys[0]+'px';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};body.appendChild(a);}
 
-    body.addEventListener('mousemove',e=>{if(dragEv||dragMk)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'W0':diff>0?('W-'+diff):('+'+(-diff)))+' · wk of '+fmtD(wm));});
+    body.addEventListener('mousemove',e=>{if(dragMk||dragW0)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'W0':diff>0?('W-'+diff):('+'+(-diff)))+' · wk of '+fmtD(wm));});
     body.addEventListener('mouseleave',hideTip);
     row.appendChild(head);row.appendChild(body);grid.appendChild(row);
   });
@@ -198,12 +203,12 @@ const tip=document.getElementById('tip');
 function showTip(x,y,t){tip.textContent=t;tip.style.display='block';tip.style.left=(x+12)+'px';tip.style.top=(y+14)+'px';}
 function hideTip(){tip.style.display='none';}
 document.addEventListener('mousemove',e=>{
-  if(dragEv){dragEv.dx=e.clientX-dragEv.startX;const px=Math.round(dragEv.dx/WEEKW)*WEEKW;dragEv.el.parentNode.querySelectorAll('.seg,.mklayer').forEach(el=>el.style.transform='translateX('+px+'px)');hideTip();}
-  else if(dragMk){dragMk.dx=e.clientX-dragMk.startX;const px=Math.round(dragMk.dx/WEEKW)*WEEKW;dragMk.line.style.transform='translateX('+px+'px)';dragMk.chip.style.transform='translateX('+px+'px)';hideTip();}
+  if(dragMk){dragMk.dx=e.clientX-dragMk.startX;dragMk.el.style.transform='translateX('+(Math.round(dragMk.dx/WEEKW)*WEEKW)+'px)';hideTip();}
+  else if(dragW0){dragW0.dx=e.clientX-dragW0.startX;dragW0.el.style.transform='translateX('+(Math.round(dragW0.dx/WEEKW)*WEEKW)+'px)';hideTip();}
 });
 document.addEventListener('mouseup',()=>{
-  if(dragEv){const wks=Math.round((dragEv.dx||0)/WEEKW);if(wks){dragEv.ev.date=toISO(addDays(ymd(dragEv.ev.date),wks*7));dragEv.ev.prov=false;DB.save();}dragEv=null;render();}
-  else if(dragMk){const wks=Math.round((dragMk.dx||0)/WEEKW);if(wks){if(dragMk.kind==='mile')dragMk.ev.milestones[dragMk.field]=Math.max(0,dragMk.ev.milestones[dragMk.field]-wks);else dragMk.ev.alerts[dragMk.field].off=Math.max(0,dragMk.ev.alerts[dragMk.field].off-wks);DB.save();}dragMk=null;render();}
+  if(dragMk){const wks=Math.round((dragMk.dx||0)/WEEKW);if(wks){if(dragMk.kind==='mile')dragMk.ev.milestones[dragMk.field]=Math.max(0,dragMk.ev.milestones[dragMk.field]-wks);else dragMk.ev.alerts[dragMk.field].off=Math.max(0,dragMk.ev.alerts[dragMk.field].off-wks);DB.save();}dragMk=null;render();}
+  else if(dragW0){const wks=Math.round((dragW0.dx||0)/WEEKW);if(wks){dragW0.ev.date=toISO(addDays(ymd(dragW0.ev.date),wks*7));dragW0.ev.prov=false;DB.save();}dragW0=null;render();}
 });
 
 const modal=document.getElementById('modal');
@@ -219,7 +224,8 @@ modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
-  else{const id=DB.data.nextEvent++;DB.events.push({id,...d,milestones:{goNoGo:21,launch:16},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},team:[]});}
+  else{const id=DB.data.nextEvent++;const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
+    DB.events.push({id,...d,milestones:{goNoGo:21,launch:16},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
