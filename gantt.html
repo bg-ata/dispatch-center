@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>RENMAD Dispatch Center — Overview</title>
 <style>
-  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;}
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;--purple:#8E5BC9;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 90px}
@@ -77,7 +79,8 @@
       <span><span class="sw" style="background:#FFC9A3"></span>Marketing</span>
       <span><span class="sw" style="background:#BFE0A0"></span>Sales</span>
       <span><span class="sw" style="background:#ECCA46"></span>Logistics</span>
-      <span><span class="sw" style="background:#ee2233"></span>Milestones &amp; discounts</span>
+      <span><span class="sw" style="background:#ee2233"></span>Milestones (G/L)</span>
+      <span><span class="sw" style="background:#8E5BC9"></span>Discount weeks</span>
       <span><span class="sw" style="background:#111"></span>Event week</span>
     </div>
   </div>
@@ -106,7 +109,7 @@
   </div>
 </div></div>
 
-<script src="store.js"></script>
+<script src="store.js?v=8"></script>
 <script>
 const WEEKW=18, LINEH=15, GAP=2, TOPH=16;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
@@ -135,7 +138,7 @@ function render(){
   const grid=document.getElementById('grid');const {start,end}=bounds();
   const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
   const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP)); const bodyH=ys[ys.length-1]+LINEH+6;
-  const topH=ys[2]+LINEH-ys[0]; // red/black columns cover PM+MKT+SALES (first 3 lanes)
+  const topH=ys[ys.length-1]+LINEH-ys[0]; // columns span ALL lanes (full week, every line)
   grid.innerHTML='';
   const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:36px"></div>';
   const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:36px';
@@ -187,10 +190,10 @@ function render(){
     }
     column(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
     column(ev.milestones.launch,'L','var(--red)','mile','launch');
-    if(ev.alerts.LD.on) column(ev.alerts.LD.off,'LD','var(--red)','ld','LD');
-    column(ev.alerts.SE.off,'SE','var(--red)','alert','SE');
-    column(ev.alerts.EB.off,'EB','var(--red)','alert','EB');
-    column(ev.alerts.LC.off,'LC','var(--red)','alert','LC');
+    if(ev.alerts.LD.on) column(ev.alerts.LD.off,'LD','var(--purple)','ld','LD');
+    column(ev.alerts.SE.off,'SE','var(--purple)','alert','SE');
+    column(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
+    column(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
     column(0,'W0','#111','w0','');
     if(!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+ys[0]+'px';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};body.appendChild(a);}
 
