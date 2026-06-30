@@ -16,17 +16,17 @@ const RED='#ee2233';        // bright red — notable dates / milestones (must n
 const ALERTCOL='#C9B3E8';   // pastel purple — sales alert weeks
 const STAGES={
  project:[{key:'research',name:'Research',color:'#CFE2F6',s:30,e:24},{key:'prep',name:'Prep',color:'#A9CBEE',s:24,e:18}],
- marketing:[{key:'prelaunch',name:'Pre-launch prep',color:'#FFE3CC',s:22,e:16},{key:'onmarket',name:'On market',color:'#FFC9A3',s:16,e:0},{key:'recordings',name:'Recordings & year prep',color:'#F7B179',s:0,e:-3}],
+ marketing:[{key:'prelaunch',name:'Pre-launch',color:'#FFE3CC',s:22,e:16},{key:'onmarket',name:'On market',color:'#FFC9A3',s:16,e:0},{key:'recordings',name:'Recordings',color:'#F7B179',s:0,e:-3}],
  sales:[{key:'prospecting',name:'Prospecting',color:'#DDEFC9',s:30,e:18},{key:'outreach',name:'Outreach',color:'#BFE0A0',s:18,e:8},{key:'closing',name:'Closing',color:'#9CCF77',s:8,e:0}],
  logistics:[
-  {key:'sourcing',name:'Venue Sourcing',color:'#FBF1C4',s:30,e:26},
-  {key:'contracting',name:'Contracting',color:'#F8E9A6',s:26,e:23},
-  {key:'supplier',name:'Supplier Mgmt',color:'#F5E08A',s:23,e:12},
-  {key:'mktcoord',name:'Mkt Coordination',color:'#F2D86E',s:12,e:8},
+  {key:'sourcing',name:'Venue',color:'#FBF1C4',s:30,e:26},
+  {key:'contracting',name:'Contract',color:'#F8E9A6',s:26,e:23},
+  {key:'supplier',name:'Suppliers',color:'#F5E08A',s:23,e:12},
+  {key:'mktcoord',name:'Materials',color:'#F2D86E',s:12,e:8},
   {key:'travel',name:'Travel',color:'#EFD15C',s:8,e:7},
-  {key:'venueops',name:'Venue Operations',color:'#ECCA46',s:7,e:2},
-  {key:'prep',name:'Event Prep',color:'#E8C232',s:2,e:0},
-  {key:'delivery',name:'Delivery',color:'#111111',s:0,e:-1},
+  {key:'venueops',name:'Venue ops',color:'#ECCA46',s:7,e:2},
+  {key:'prep',name:'Prep',color:'#E8C232',s:2,e:0},
+  {key:'delivery',name:'Event',color:'#111111',s:0,e:-1},
   {key:'closing',name:'Closing',color:'#E0B520',s:-1,e:-3},
  ],
 };

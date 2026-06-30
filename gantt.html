@@ -111,6 +111,9 @@ document.getElementById('nav').innerHTML=navBar('overview');
 let dragEv=null, dragMk=null, editingId=null;
 const GMAXS=Math.max(...LANES.flatMap(l=>STAGES[l].map(s=>s.s)),30);
 const GMAXPOST=Math.max(0,...LANES.flatMap(l=>STAGES[l].map(s=>-s.e)));
+// continuous lanes: each stage runs until the next begins; last pre-event stage runs to W0
+function effStages(lane){const st=[...STAGES[lane]].sort((a,b)=>b.s-a.s);
+  return st.map((s,i)=>{ if(s.s<=0) return {...s}; const e=(i<st.length-1)?st[i+1].s:0; return {...s,e}; });}
 
 function bounds(){
   let mins=[],maxs=[];
@@ -145,11 +148,12 @@ function render(){
     const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
     for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
 
-    // 4 lane lines of stage bars
+    // 4 continuous lane lines of stage bars
+    const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP));
     LANES.forEach((lane,i)=>{
-      const y=TOPH+i*(LINEH+GAP);
+      const y=ys[i];
       const lt=document.createElement('div');lt.className='ltag';lt.style.top=(y+2)+'px';lt.textContent=LANE_LETTER[lane];body.appendChild(lt);
-      STAGES[lane].forEach(st=>{
+      effStages(lane).forEach(st=>{
         const x=(evIdx-st.s)*WEEKW, w=(st.s-st.e)*WEEKW;
         const seg=document.createElement('div');seg.className='seg';
         seg.style.cssText='left:'+x+'px;width:'+Math.max(w,6)+'px;top:'+y+'px;height:'+LINEH+'px;background:'+st.color+(st.color==='#111111'?';color:#fff':'');
@@ -165,6 +169,7 @@ function render(){
     function marker(key,off,color,field,kind){
       const x=(evIdx-off)*WEEKW;
       const line=document.createElement('div');line.className='mkline';line.style.cssText='left:'+x+'px;top:'+(TOPH-1)+'px;height:'+(bodyH-TOPH-2)+'px;background:'+color;mk.appendChild(line);
+      if(kind==='mile'){ys.forEach(yy=>{const n=document.createElement('div');n.style.cssText='position:absolute;left:'+(x-1)+'px;top:'+yy+'px;width:4px;height:'+LINEH+'px;background:'+color+';z-index:5;border-radius:1px;box-shadow:0 0 0 1px #fff';mk.appendChild(n);});}
       const chip=document.createElement('div');chip.className='mkchip';chip.style.cssText='left:'+x+'px;background:'+color+';pointer-events:auto';
       chip.innerHTML='<span style="pointer-events:none">'+key+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
       chip.title=key+' (W-'+off+') — drag to move';
