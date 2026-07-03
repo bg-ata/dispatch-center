@@ -32,23 +32,23 @@
   .addmem{display:flex;gap:6px;align-items:center}
   select,input{font:inherit}
   .hint{font-size:12px;color:var(--muted);font-weight:400}
-  .tlwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .tlwrap{overflow-x:auto;border:1px solid var(--line);border-radius:0;background:#fff}
   .tl{position:relative}
   .thd{border-bottom:1px solid var(--line);background:#faf9f6}
   .mo{position:absolute;top:2px;font-size:11px;font-weight:600;color:var(--charcoal);border-left:1px solid var(--line);padding-left:4px;height:15px}
   .wn{position:absolute;top:18px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #eee}
   .ll{position:absolute;left:4px;font-size:9px;font-weight:800;color:#b4b1a8;z-index:2}
-  .stg{position:absolute;border-radius:3px;overflow:hidden;z-index:2}
+  .stg{position:absolute;border-radius:0;overflow:hidden;z-index:2}
   .stglab{position:absolute;font-size:10px;font-weight:700;color:#43414d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:14px;z-index:11}
-  .rb{position:absolute;border:none;background:rgba(255,255,255,.85);color:#222;font-size:11px;font-weight:800;padding:0;cursor:pointer;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+  .rb{position:absolute;border:none;background:rgba(255,255,255,.85);color:#222;font-size:11px;font-weight:800;padding:0;cursor:pointer;border-radius:0;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
   .rb:hover{background:#fff}
-  .subpill{position:absolute;height:17px;border-radius:9px;font-size:10px;color:#2b2b2b;font-weight:600;display:flex;align-items:center;padding:0 8px;white-space:nowrap;cursor:grab;user-select:none;border:1px solid rgba(0,0,0,.15);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .subpill{position:absolute;height:17px;border-radius:0;font-size:10px;color:#2b2b2b;font-weight:600;display:flex;align-items:center;padding:0 7px;white-space:nowrap;cursor:grab;user-select:none;border:1px solid rgba(0,0,0,.2)}
   .subpill:active{cursor:grabbing}
-  .subpill.sel{outline:2px solid var(--charcoal);outline-offset:1px;font-weight:700}
-  .addsub{position:absolute;height:15px;border:1px dashed #c9c6bd;background:#fff;color:#8a887f;font-size:9px;border-radius:8px;padding:0 6px;cursor:pointer;z-index:6}
+  .subpill.sel{outline:2px solid var(--charcoal);outline-offset:-1px;font-weight:700}
+  .addsub{position:absolute;height:17px;border:1px dashed #c9c6bd;background:#fff;color:#8a887f;font-size:9px;border-radius:0;padding:0 6px;cursor:pointer;z-index:6}
   .addsub:hover{border-color:var(--orange);color:var(--orange)}
   .colband{position:absolute;z-index:4;opacity:.34;cursor:grab}
-  .colchip{position:absolute;height:14px;z-index:8;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;border-radius:2px;cursor:grab;user-select:none;box-shadow:0 0 0 1px #fff}
+  .colchip{position:absolute;height:14px;z-index:8;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;border-radius:0;cursor:grab;user-select:none;box-shadow:0 0 0 1px #fff}
   .colchip .x{margin-left:3px;background:rgba(255,255,255,.9);color:#333;border-radius:50%;width:11px;height:11px;line-height:10px;text-align:center;font-size:9px;cursor:pointer}
   .today{position:absolute;z-index:7;width:2px;background:var(--orange)}
   .todaylab{position:absolute;z-index:9;background:var(--orange);color:#fff;font-size:8px;font-weight:800;padding:0 4px;border-radius:2px;top:1px}
@@ -69,7 +69,7 @@
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
 let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null;
-const WD=11, WEEKW=WD*5, LANEH=52, TOPH=34;
+const WD=11, WEEKW=WD*5, LANEH=36, TOPH=30, STGH=18;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 
 boot(()=>{ev=DB.event(id);const C=document.getElementById('content');
@@ -121,18 +121,18 @@ function renderTimeline(){
   if(todayIdx>=0&&todayIdx<NW){const t2=document.createElement('div');t2.className='today';t2.style.cssText='left:'+(todayIdx*WEEKW)+'px;top:'+TOPH+'px;height:'+(bodyH-TOPH)+'px';tl.appendChild(t2);}
 
   const btnLayer=document.createElement('div');btnLayer.style.cssText='position:absolute;inset:0;z-index:9;pointer-events:none';tl.appendChild(btnLayer);
-  function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:16px;pointer-events:auto';b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);if(lane==='project'&&key==='scaling')ev.milestones.launch=o.scaling;DB.save();renderTimeline();};btnLayer.appendChild(b);}
+  function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+STGH+'px;pointer-events:auto';b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);if(lane==='project'&&key==='scaling')ev.milestones.launch=o.scaling;DB.save();renderTimeline();};btnLayer.appendChild(b);}
 
   LANES.forEach((lane,i)=>{
-    const y=TOPH+i*LANEH+4;
+    const y=TOPH+i*LANEH;
     const ll=document.createElement('div');ll.className='ll';ll.style.top=(y+2)+'px';ll.textContent=LANE_LETTER[lane];tl.appendChild(ll);
     layLane(ev,lane,evIdx).forEach(bar=>{
       const x=bar.x*WEEKW, w=Math.max(bar.w*WEEKW,10);
-      const seg=document.createElement('div');seg.className='stg';seg.style.cssText='left:'+x+'px;top:'+y+'px;width:'+w+'px;height:16px;background:'+bar.s.color;seg.title=bar.s.name;tl.appendChild(seg);
-      const sl=document.createElement('div');sl.className='stglab';sl.style.cssText='left:'+(x+5)+'px;top:'+(y+2)+'px;max-width:'+(w-10)+'px;color:'+(bar.s.color==='#111111'?'#fff':'#43414d');sl.textContent=bar.s.name;tl.appendChild(sl);
+      const seg=document.createElement('div');seg.className='stg';seg.style.cssText='left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+STGH+'px;background:'+bar.s.color;seg.title=bar.s.name;tl.appendChild(seg);
+      const sl=document.createElement('div');sl.className='stglab';sl.style.cssText='left:'+(x+5)+'px;top:'+(y+3)+'px;max-width:'+(w-10)+'px;color:'+(bar.s.color==='#111111'?'#fff':'#43414d');sl.textContent=bar.s.name;tl.appendChild(sl);
       addBtn(x,y,lane,bar.s.key,-1,'−'); addBtn(x+w-13,y,lane,bar.s.key,1,'+');
       // add-substage button per stage
-      const add=document.createElement('div');add.className='addsub';add.style.cssText='left:'+x+'px;top:'+(y+21)+'px';add.textContent='+ item';add.title='add a substage / webinar to '+bar.s.name;
+      const add=document.createElement('div');add.className='addsub';add.style.cssText='left:'+x+'px;top:'+(y+STGH)+'px';add.textContent='+ item';add.title='add a substage / webinar to '+bar.s.name;
       const midWeek=Math.round(evIdx-(bar.x+bar.w/2));
       add.onclick=()=>{DB.substages.push({id:DB.data.nextSub++,eventId:ev.id,lane,stage:bar.s.key,name:lane==='marketing'?'Webinar':'New item',order:DB.subsFor(ev.id,lane,bar.s.key).length,week:midWeek});DB.save();renderTimeline();};
       tl.appendChild(add);
@@ -142,7 +142,7 @@ function renderTimeline(){
         const wk=(sub.week!=null)?sub.week:Math.round(evIdx-(bar.x+(si+0.5)*bar.w/Math.max(subs.length,1)));
         const sx=(evIdx-wk)*WEEKW+3;
         const pill=document.createElement('div');pill.className='subpill'+(selSub===sub.id?' sel':'');
-        pill.style.cssText='left:'+sx+'px;top:'+(y+21)+'px;background:'+subColor(sub,bar.s.color)+';z-index:10';
+        pill.style.cssText='left:'+sx+'px;top:'+(y+STGH)+'px;background:'+subColor(sub,bar.s.color)+';z-index:10';
         pill.textContent=sub.name;pill.title=sub.name+' — drag to its week · click to open tasks';
         pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:wk,moved:false};e.preventDefault();});
         tl.appendChild(pill);
@@ -150,7 +150,7 @@ function renderTimeline(){
     });
   });
 
-  const colTop=TOPH+2, colH=LANES.length*LANEH;
+  const colTop=TOPH, colH=LANES.length*LANEH;
   function col(off,label,color,kind,field){
     const x=(evIdx-off)*WEEKW;
     const band=document.createElement('div');band.className='colband';band.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+colTop+'px;height:'+colH+'px;background:'+color;tl.appendChild(band);
