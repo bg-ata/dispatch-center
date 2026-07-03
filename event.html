@@ -71,7 +71,7 @@
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
 let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null;
-const WD=11, WEEKW=WD*5, TOPH=30, STGH=22, SUBH=22, GAP=3, LANEPAD=11;
+const WD=11, WEEKW=WD*5, TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 /* which stage covers a given week (used to colour/assign substages by position) */
 function stageKeyAtWeek(lane,wk){
