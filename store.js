@@ -1,11 +1,14 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 8;
+const STORE_VERSION = 9;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
 const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
-const ROLES=['Lead','PM','Sales','Marketing','Logistics'];
+const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin'];
+/* access tiers (permission level, separate from job role): member = own lane; manager = stage/release; admin = everything */
+const ACCESS=['member','manager','admin'];
+const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
 const STATUS=['To do','In progress','Done'];
 const MKT_TYPES={Content:'#B9D3F0',Product:'#BFE0A0',Sales:'#F3C49B',Webinar:'#C9B3E8'};  // marketing week / webinar types
 const POST_PM=1, POST_SALES=2;
@@ -81,19 +84,37 @@ function bankHols(mon,cc){const out=[],fixed=HOL[cc]||[],mov=MOV[cc]||[],sun=add
 
 /* ---- seed ---- */
 const SEED_EVENTS=[
- {id:1,name:'E053 RENMAD Invest',topic:'Investment',pm:'Belén',lead:'',sales:'Sheetal',city:'Madrid',country:'Spain',date:'2027-01-26',days:2,prov:true},
- {id:2,name:'E056 RENMAD Biomethane',topic:'Biomethane',pm:'Jesús R',lead:'',sales:'Ian',city:'Toledo',country:'Spain',date:'2027-02-11',days:2,prov:true},
- {id:3,name:'E057 RENMAD Storage',topic:'Storage',pm:'Ian',lead:'',sales:'Carlos',city:'Seville',country:'Spain',date:'2027-03-25',days:2,prov:true},
- {id:4,name:'E058 RENMAD Storage Italia',topic:'Storage',pm:'Elena',lead:'',sales:'Cristina',city:'Rome',country:'Italy',date:'2027-04-07',days:2,prov:true},
- {id:5,name:'E052 RENMAD UsefulAI',topic:'Renewables / AI',pm:'Belén',lead:'Cintia',sales:'Diego',city:'Madrid',country:'Spain',date:'2027-06-02',days:2,prov:true},
- {id:6,name:'E055 RENMAD Data Centers',topic:'Data Centers',pm:'Cintia',lead:'',sales:'Andrea',city:'Madrid',country:'Spain',date:'2027-07-08',days:2,prov:true},
+ {id:1,name:'E053 RENMAD Invest',topic:'Investment',pm:'Belén Gallego',lead:'',sales:'Sheetal Shamdasani',city:'Madrid',country:'Spain',date:'2027-01-26',days:2,prov:true},
+ {id:2,name:'E056 RENMAD Biomethane',topic:'Biomethane',pm:'Jesús Rodriguez',lead:'',sales:'Ian Casares',city:'Toledo',country:'Spain',date:'2027-02-11',days:2,prov:true},
+ {id:3,name:'E057 RENMAD Storage',topic:'Storage',pm:'Cristina Galán',lead:'',sales:'Ian Casares',city:'Seville',country:'Spain',date:'2027-03-25',days:2,prov:true},
+ {id:4,name:'E058 RENMAD Storage Italia',topic:'Storage',pm:'Elena Spinelli',lead:'',sales:'Sheetal Shamdasani',city:'Rome',country:'Italy',date:'2027-04-07',days:2,prov:true},
+ {id:5,name:'E052 RENMAD UsefulAI',topic:'Renewables / AI',pm:'Belén Gallego',lead:'Cintia Hernández',sales:'Ian Casares',city:'Madrid',country:'Spain',date:'2027-06-02',days:2,prov:true},
+ {id:6,name:'E055 RENMAD Data Centers',topic:'Data Centers',pm:'Andrea Renieblas',lead:'',sales:'Sheetal Shamdasani',city:'Madrid',country:'Spain',date:'2027-07-08',days:2,prov:true},
 ];
 const SEED_PEOPLE=[
- {id:1,name:'Belén',role:'Lead',email:'belen@ata.email'},{id:2,name:'Jesús R',role:'PM',email:''},{id:3,name:'Cintia',role:'PM',email:''},
- {id:4,name:'Andrea',role:'Marketing',email:''},{id:5,name:'Ewa',role:'PM',email:''},{id:6,name:'Ian',role:'Sales',email:''},
- {id:7,name:'Carlos',role:'Sales',email:''},{id:8,name:'Helena',role:'PM',email:''},{id:9,name:'Elena',role:'PM',email:''},
- {id:10,name:'Cristina',role:'PM',email:''},{id:11,name:'Sheetal',role:'Sales',email:''},{id:12,name:'Daniel',role:'Logistics',email:''},
- {id:13,name:'Valeria',role:'Logistics',email:''},{id:14,name:'Diego',role:'Sales',email:''},
+ /* Management (leads + manager access) */
+ {id:1,name:'Belén Gallego',role:'Lead',access:'admin',email:'belen.gallego@ata.email'},
+ {id:2,name:'Carlos Márquez',role:'Lead',access:'admin',email:''},      // Lead PM side & overall; manages the other managers
+ {id:3,name:'Araceli Giner',role:'Marketing',access:'manager',email:''}, // Lead of marketing side
+ {id:4,name:'Cintia Hernández',role:'Sales',access:'manager',email:''},  // Lead of sales side
+ {id:5,name:'Valeria Vargas',role:'Logistics',access:'manager',email:''},// Lead of logistics side
+ /* Sales */
+ {id:6,name:'Ian Casares',role:'Sales',access:'member',email:''},
+ {id:7,name:'Sheetal Shamdasani',role:'Sales',access:'member',email:''},
+ /* PM */
+ {id:8,name:'Jesús Rodriguez',role:'PM',access:'member',email:''},       // PM & Lead
+ {id:9,name:'Cristina Galán',role:'PM',access:'member',email:''},        // PM & Lead
+ {id:10,name:'Andrea Renieblas',role:'PM',access:'member',email:''},
+ {id:11,name:'Ewa Paryz',role:'PM',access:'member',email:''},
+ {id:12,name:'Elena Spinelli',role:'PM',access:'member',email:''},
+ {id:13,name:'Francesca',role:'PM',access:'member',email:''},            // PM assistant
+ /* Marketing */
+ {id:14,name:'Valeria García',role:'Marketing',access:'member',email:''},// Marketing & media partners & LinkedIn ads
+ {id:15,name:'Maria Mendicute',role:'Marketing',access:'member',email:''},// Marketing, webinars & social media
+ /* Logistics */
+ {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:''},
+ /* Administration */
+ {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:''},     // Accounting
 ];
 function buildSeed(){
   const events=JSON.parse(JSON.stringify(SEED_EVENTS));
@@ -114,13 +135,15 @@ function buildSeed(){
     ev.dur={};LANES.forEach(l=>{ev.dur[l]={};STAGES[l].forEach(s=>ev.dur[l][s.key]=s.d);});
     ev.team=[];const add=(n,r)=>{const id=byName(n);if(id&&!ev.team.find(t=>t.personId===id))ev.team.push({personId:id,role:r});};
     add(ev.pm,'PM');if(ev.lead)add(ev.lead,'Lead');add(ev.sales,'Sales');
+    add(ev.mkt||'Maria Mendicute','Marketing');   // default marketing owner per event (provisional)
+    add(ev.log||'Julian Uribe','Logistics');      // default logistics owner per event (provisional)
     Object.keys(PLAN).forEach(lane=>Object.keys(PLAN[lane]).forEach(stage=>{
       PLAN[lane][stage].forEach((nm,i)=>{const sub={id:sid++,eventId:ev.id,lane,stage,name:nm,order:i};subs.push(sub);
-        const who=lane==='sales'?byName(ev.sales):lane==='logistics'?byName('Daniel'):byName(ev.pm);
+        const who=lane==='sales'?byName(ev.sales):lane==='logistics'?byName(ev.log||'Julian Uribe'):lane==='marketing'?byName(ev.mkt||'Maria Mendicute'):byName(ev.pm);
         tasks.push({id:tid++,eventId:ev.id,lane,stage,substageId:sub.id,title:nm,assignee:who,deadline:'',status:'To do'});});
     }));
   });
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,nextEvent:7,nextPerson:15,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
