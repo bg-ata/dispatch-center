@@ -47,13 +47,15 @@
   .ltag{position:absolute;left:3px;font-size:8px;font-weight:800;color:#b4b1a8;z-index:2}
   .seg{position:absolute;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#43414d;overflow:hidden;white-space:nowrap;font-weight:600;z-index:2}
   .seg .lbl{pointer-events:none;padding:0 13px}
-  .seg .rb{position:absolute;border:none;background:rgba(255,255,255,.55);color:#000;width:12px;height:100%;font-size:11px;line-height:1;padding:0;font-weight:700;cursor:pointer;z-index:3}
-  .seg .rb.mn{left:0;border-radius:3px 0 0 3px}.seg .rb.pl{right:0;border-radius:0 3px 3px 0}
-  .seg .rb:hover{background:#fff}
-  .mblk{position:absolute;z-index:4;display:flex;align-items:flex-start;justify-content:center;color:#fff;font-size:9px;font-weight:800;cursor:grab;user-select:none;border-radius:2px;box-shadow:0 0 0 1px #fff;padding-top:1px}
-  .mblk:active{cursor:grabbing}
-  .mblk .x{position:absolute;top:-1px;right:-1px;font-size:9px;background:rgba(255,255,255,.85);color:var(--red);border-radius:50%;width:11px;height:11px;line-height:10px;text-align:center;cursor:pointer}
-  .addld{position:absolute;z-index:4;border:1px dashed var(--red);color:var(--red);background:#fff;border-radius:3px;font-size:8px;font-weight:700;cursor:pointer;padding:0 3px;height:13px}
+  .rb{position:absolute;border:none;background:rgba(255,255,255,.82);color:#222;font-size:11px;line-height:1;padding:0;font-weight:800;cursor:pointer;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+  .rb:hover{background:#fff}
+  .colband{position:absolute;z-index:4;opacity:.38;cursor:grab;user-select:none}
+  .colband:active,.colchip:active{cursor:grabbing}
+  .colchip{position:absolute;height:13px;z-index:8;color:#fff;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;border-radius:2px;cursor:grab;user-select:none;box-shadow:0 0 0 1px #fff}
+  .colchip .x{margin-left:3px;font-size:9px;background:rgba(255,255,255,.9);color:#333;border-radius:50%;width:11px;height:11px;line-height:10px;text-align:center;cursor:pointer}
+  .addld{position:absolute;z-index:8;border:1px dashed var(--red);color:var(--red);background:#fff;border-radius:3px;font-size:8px;font-weight:700;cursor:pointer;padding:0 3px;height:13px}
+  .today{position:absolute;z-index:7;width:2px;background:var(--orange);top:0}
+  .todaylab{position:absolute;z-index:9;background:var(--orange);color:#fff;font-size:8px;font-weight:800;padding:0 4px;border-radius:2px;top:1px}
   #tip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:3px 7px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
   .card{background:#fff;border-radius:14px;padding:20px 22px;width:500px;max-width:92vw;max-height:90vh;overflow:auto}
@@ -109,24 +111,13 @@
   </div>
 </div></div>
 
-<script src="store.js?v=8"></script>
+<script src="store.js?v=9"></script>
 <script>
 const WEEKW=18, LINEH=15, GAP=2, TOPH=16;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 document.getElementById('nav').innerHTML=navBar('overview');
 let dragMk=null, dragW0=null, editingId=null;
 
-function laneTotalPre(ev,lane){return STAGES[lane].filter(s=>s.phase==='pre').reduce((a,s)=>a+(ev.dur[lane][s.key]||s.d),0);}
-function preExtent(ev){let m=0;LANES.forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
-function layLane(ev,lane,evIdx){
-  const sts=STAGES[lane],dur=ev.dur[lane];const bars=[];
-  const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
-  pre.forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:cur,w:d});cur+=d;});
-  const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:(dur[evs.key]||evs.d)});}
-  let c2=evIdx+(evs?(dur[evs.key]||evs.d):1);
-  sts.filter(s=>s.phase==='post').forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:c2,w:d});c2+=d;});
-  return bars;
-}
 function bounds(){
   let mins=[],maxs=[];
   DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,8*7));});
@@ -137,6 +128,7 @@ function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
 function render(){
   const grid=document.getElementById('grid');const {start,end}=bounds();
   const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
+  const todayIdx=wIdx(new Date(),start);
   const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP)); const bodyH=ys[ys.length-1]+LINEH+6;
   const topH=ys[ys.length-1]+LINEH-ys[0]; // columns span ALL lanes (full week, every line)
   grid.innerHTML='';
@@ -145,6 +137,7 @@ function render(){
   for(let w=0;w<NW;w++){const d=addDays(start,w*7);
     if(d.getDate()<=7){const ml=document.createElement('div');ml.className='mlabel';ml.style.left=(w*WEEKW)+'px';ml.textContent=MON[d.getMonth()]+(d.getMonth()===0?" '"+String(d.getFullYear()).slice(2):'');hb.appendChild(ml);}
     const wt=document.createElement('div');wt.className='wtick';wt.style.cssText='left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';wt.textContent=d.getDate();hb.appendChild(wt);}
+  if(todayIdx>=0&&todayIdx<NW){const tlab=document.createElement('div');tlab.className='todaylab';tlab.style.left=(todayIdx*WEEKW)+'px';tlab.textContent='TODAY';hb.appendChild(tlab);}
   hrow.appendChild(hb);grid.appendChild(hrow);
 
   DB.events.forEach(ev=>{
@@ -160,33 +153,39 @@ function render(){
     const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
     const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
     for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
+    if(todayIdx>=0&&todayIdx<NW){const tln=document.createElement('div');tln.className='today';tln.style.cssText='left:'+(todayIdx*WEEKW)+'px;height:'+bodyH+'px';body.appendChild(tln);}
+
+    // resize-button layer sits ABOVE the columns so no −/+ ever gets hidden
+    const btnLayer=document.createElement('div');btnLayer.style.cssText='position:absolute;inset:0;z-index:9;pointer-events:none';body.appendChild(btnLayer);
+    function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+LINEH+'px;pointer-events:auto';b.title=(delta>0?'add a week to ':'remove a week from ')+stageName(lane,key);b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);DB.save();render();};btnLayer.appendChild(b);}
 
     // 4 lanes of resizable stage bars
     LANES.forEach((lane,i)=>{
       const y=ys[i];
       const lt=document.createElement('div');lt.className='ltag';lt.style.top=(y+3)+'px';lt.textContent=LANE_LETTER[lane];body.appendChild(lt);
       layLane(ev,lane,evIdx).forEach(bar=>{
-        const x=bar.x*WEEKW, w=bar.w*WEEKW;
+        const x=bar.x*WEEKW, w=Math.max(bar.w*WEEKW,6);
         const seg=document.createElement('div');seg.className='seg';
-        seg.style.cssText='left:'+x+'px;width:'+Math.max(w,6)+'px;top:'+y+'px;height:'+LINEH+'px;background:'+bar.s.color+(bar.s.color==='#111111'?';color:#fff':'');
+        seg.style.cssText='left:'+x+'px;width:'+w+'px;top:'+y+'px;height:'+LINEH+'px;background:'+bar.s.color+(bar.s.color==='#111111'?';color:#fff':'');
         seg.title=bar.s.name;
-        const lbl=(w>52)?'<span class="lbl">'+bar.s.name+'</span>':'';
-        seg.innerHTML='<button class="rb mn" data-l="'+lane+'" data-k="'+bar.s.key+'" data-d="-1">−</button>'+lbl+'<button class="rb pl" data-l="'+lane+'" data-k="'+bar.s.key+'" data-d="1">+</button>';
-        seg.querySelectorAll('.rb').forEach(b=>b.onclick=e=>{e.stopPropagation();const o=ev.dur[b.dataset.l];const nv=(o[b.dataset.k]||1)+(+b.dataset.d);o[b.dataset.k]=Math.max(1,nv);DB.save();render();});
+        if(w>52)seg.innerHTML='<span class="lbl">'+bar.s.name+'</span>';
         body.appendChild(seg);
+        addBtn(x,y,lane,bar.s.key,-1,'−');
+        addBtn(x+w-13,y,lane,bar.s.key,1,'+');
       });
     });
 
     // red / black full-week columns over the top 3 lanes (not logistics)
     function column(off,label,color,kind,field){
       const x=(evIdx-off)*WEEKW;
-      const blk=document.createElement('div');blk.className='mblk';blk.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+ys[0]+'px;height:'+topH+'px;background:'+color;
-      blk.innerHTML='<span style="pointer-events:none">'+label+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
-      blk.title=label+' (W-'+off+')'+(kind==='w0'?'':' — drag to move');
-      if(kind==='w0'){blk.addEventListener('mousedown',e=>{dragW0={ev,startX:e.clientX,dx:0,el:blk};e.preventDefault();});}
-      else{blk.addEventListener('mousedown',e=>{if(e.target.classList.contains('x'))return;dragMk={ev,field,kind,startX:e.clientX,dx:0,el:blk};e.preventDefault();});}
-      const xb=blk.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();render();};
-      body.appendChild(blk);
+      const band=document.createElement('div');band.className='colband';band.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+ys[0]+'px;height:'+topH+'px;background:'+color;body.appendChild(band);
+      const chip=document.createElement('div');chip.className='colchip';chip.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:2px;background:'+color;
+      chip.innerHTML='<span style="pointer-events:none">'+label+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
+      chip.title=label+' (W-'+off+')'+(kind==='w0'?' — drag to reschedule':' — drag to move');
+      const start=e=>{if(e.target.classList.contains('x'))return;if(kind==='w0')dragW0={ev,startX:e.clientX,dx:0,band,chip};else dragMk={ev,field,kind,startX:e.clientX,dx:0,band,chip};e.preventDefault();};
+      chip.addEventListener('mousedown',start);band.addEventListener('mousedown',start);
+      const xb=chip.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();render();};
+      body.appendChild(chip);
     }
     column(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
     column(ev.milestones.launch,'L','var(--red)','mile','launch');
@@ -206,11 +205,11 @@ const tip=document.getElementById('tip');
 function showTip(x,y,t){tip.textContent=t;tip.style.display='block';tip.style.left=(x+12)+'px';tip.style.top=(y+14)+'px';}
 function hideTip(){tip.style.display='none';}
 document.addEventListener('mousemove',e=>{
-  if(dragMk){dragMk.dx=e.clientX-dragMk.startX;dragMk.el.style.transform='translateX('+(Math.round(dragMk.dx/WEEKW)*WEEKW)+'px)';hideTip();}
-  else if(dragW0){dragW0.dx=e.clientX-dragW0.startX;dragW0.el.style.transform='translateX('+(Math.round(dragW0.dx/WEEKW)*WEEKW)+'px)';hideTip();}
+  if(dragMk){dragMk.dx=e.clientX-dragMk.startX;const px=Math.round(dragMk.dx/WEEKW)*WEEKW;dragMk.band.style.transform='translateX('+px+'px)';dragMk.chip.style.transform='translateX('+px+'px)';hideTip();}
+  else if(dragW0){dragW0.dx=e.clientX-dragW0.startX;const px=Math.round(dragW0.dx/WEEKW)*WEEKW;dragW0.band.style.transform='translateX('+px+'px)';dragW0.chip.style.transform='translateX('+px+'px)';hideTip();}
 });
 document.addEventListener('mouseup',()=>{
-  if(dragMk){const wks=Math.round((dragMk.dx||0)/WEEKW);if(wks){if(dragMk.kind==='mile')dragMk.ev.milestones[dragMk.field]=Math.max(0,dragMk.ev.milestones[dragMk.field]-wks);else dragMk.ev.alerts[dragMk.field].off=Math.max(0,dragMk.ev.alerts[dragMk.field].off-wks);DB.save();}dragMk=null;render();}
+  if(dragMk){const wks=Math.round((dragMk.dx||0)/WEEKW);if(wks){if(dragMk.kind==='mile'){dragMk.ev.milestones[dragMk.field]=Math.max(0,dragMk.ev.milestones[dragMk.field]-wks);if(dragMk.field==='launch'){const off=dragMk.ev.milestones.launch;dragMk.ev.dur.project.scaling=Math.max(1,off);dragMk.ev.dur.marketing.onmarket=Math.max(1,off);}}else dragMk.ev.alerts[dragMk.field].off=Math.max(0,dragMk.ev.alerts[dragMk.field].off-wks);DB.save();}dragMk=null;render();}
   else if(dragW0){const wks=Math.round((dragW0.dx||0)/WEEKW);if(wks){dragW0.ev.date=toISO(addDays(ymd(dragW0.ev.date),wks*7));dragW0.ev.prov=false;DB.save();}dragW0=null;render();}
 });
 
@@ -228,7 +227,7 @@ document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
   else{const id=DB.data.nextEvent++;const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
-    DB.events.push({id,...d,milestones:{goNoGo:21,launch:16},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
+    DB.events.push({id,...d,milestones:{goNoGo:24,launch:18},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);

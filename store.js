@@ -1,12 +1,13 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 7;
+const STORE_VERSION = 8;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
 const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
 const ROLES=['Lead','PM','Sales','Marketing','Logistics'];
 const STATUS=['To do','In progress','Done'];
+const MKT_TYPES={Content:'#B9D3F0',Product:'#BFE0A0',Sales:'#F3C49B',Webinar:'#C9B3E8'};  // marketing week / webinar types
 const POST_PM=1, POST_SALES=2;
 /* lanes (top→bottom) + stages as week RANGES (s=start, e=end, in weeks before event; W0=0, negative=after).
    Pastel palette so it never clashes with the bright brand orange. */
@@ -17,8 +18,8 @@ const ALERTCOL='#C9B3E8';   // pastel purple — sales alert weeks
 /* each stage has a default duration d (weeks) + phase (pre-event / event-week / post-event).
    Lanes lay out contiguous, ending at W0; durations are editable per event (ev.dur). */
 const STAGES={
- project:[{key:'research',name:'Research',color:'#CFE2F6',d:10,phase:'pre'},{key:'prep',name:'Prep',color:'#A9CBEE',d:20,phase:'pre'}],
- marketing:[{key:'prelaunch',name:'Pre-launch',color:'#FFE3CC',d:6,phase:'pre'},{key:'onmarket',name:'On market',color:'#FFC9A3',d:16,phase:'pre'},{key:'recordings',name:'Recordings',color:'#F7B179',d:3,phase:'post'}],
+ project:[{key:'research',name:'Research',color:'#CFE2F6',d:6,phase:'pre'},{key:'prep',name:'Prep',color:'#A9CBEE',d:6,phase:'pre'},{key:'scaling',name:'Scaling',color:'#7FB0E0',d:18,phase:'pre'}],
+ marketing:[{key:'prelaunch',name:'Pre-launch',color:'#FFE3CC',d:4,phase:'pre'},{key:'onmarket',name:'On market',color:'#FFC9A3',d:18,phase:'pre'},{key:'recordings',name:'Recordings',color:'#F7B179',d:3,phase:'post'}],
  sales:[{key:'prospecting',name:'Prospecting',color:'#DDEFC9',d:12,phase:'pre'},{key:'outreach',name:'Outreach',color:'#BFE0A0',d:10,phase:'pre'},{key:'closing',name:'Closing',color:'#9CCF77',d:8,phase:'pre'}],
  logistics:[
   {key:'sourcing',name:'Venue',color:'#FBF1C4',d:4,phase:'pre'},
@@ -36,6 +37,18 @@ const ALERT_DEFS=[{key:'LD',name:'Launch Discount',off:16,optional:true},{key:'S
 function stageColor(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.color:'#b4b2a9';}
 function stageName(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.name:key;}
 function stageDef(lane,key){return (STAGES[lane]||[]).find(s=>s.key===key);}
+/* shared timeline layout — both overview & event page call this, so they always mirror */
+function laneTotalPre(ev,lane){return STAGES[lane].filter(s=>s.phase==='pre').reduce((a,s)=>a+(ev.dur[lane][s.key]||s.d),0);}
+function preExtent(ev){let m=0;LANES.forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
+function layLane(ev,lane,evIdx){
+  const sts=STAGES[lane],dur=ev.dur[lane];const bars=[];
+  const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
+  pre.forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:cur,w:d});cur+=d;});
+  const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:(dur[evs.key]||evs.d)});}
+  let c2=evIdx+(evs?(dur[evs.key]||evs.d):1);
+  sts.filter(s=>s.phase==='post').forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:c2,w:d});c2+=d;});
+  return bars;
+}
 
 /* ---- date helpers ---- */
 function ymd(s){const p=s.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);}
@@ -88,14 +101,14 @@ function buildSeed(){
   const byName=n=>{const p=people.find(p=>p.name===n);return p?p.id:null;};
   const subs=[],tasks=[];let sid=1,tid=1;
   const PLAN={
-    project:{research:['Speaker research'],prep:['Agenda build']},
+    project:{research:['Speaker research'],prep:['Agenda build'],scaling:['Onsite scale-up','Next-edition prep']},
     marketing:{prelaunch:['Content & assets'],onmarket:['Email campaign','Webinars'],recordings:['Publish recordings','Next-year landing']},
     sales:{prospecting:['Target list'],outreach:['Send proposals'],closing:['Negotiate & close']},
     logistics:{sourcing:['Venue search','Hotel comparison'],contracting:['Negotiate & sign','Payment schedule'],supplier:['Find suppliers','Confirm suppliers'],mktcoord:['Materials kick-off','Produce materials'],travel:['Staff travel & hotel'],venueops:['Ops comms & floorplan','Follow-up meetings'],prep:['Run of show','Logistics checklist'],delivery:['Event execution'],closing:['Invoices & reconciliation']},
   };
   events.forEach(ev=>{
     // editable, free-floating: milestones, sales alert weeks, marketing markers
-    ev.milestones={goNoGo:21, launch:16};
+    ev.milestones={goNoGo:24, launch:18};
     ev.alerts={LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}};
     ev.markers={lhConnect:17, lhBrochure:17, pmMtg1:17, pmMtg2:9};
     ev.dur={};LANES.forEach(l=>{ev.dur[l]={};STAGES[l].forEach(s=>ev.dur[l][s.key]=s.d);});
