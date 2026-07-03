@@ -1,6 +1,6 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 9;
+const STORE_VERSION = 10;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
