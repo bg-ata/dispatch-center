@@ -94,27 +94,27 @@ const SEED_EVENTS=[
 const SEED_PEOPLE=[
  /* Management (leads + manager access) */
  {id:1,name:'Belén Gallego',role:'Lead',access:'admin',email:'belen.gallego@ata.email'},
- {id:2,name:'Carlos Márquez',role:'Lead',access:'admin',email:''},      // Lead PM side & overall; manages the other managers
- {id:3,name:'Araceli Giner',role:'Marketing',access:'manager',email:''}, // Lead of marketing side
- {id:4,name:'Cintia Hernández',role:'Sales',access:'manager',email:''},  // Lead of sales side
- {id:5,name:'Valeria Vargas',role:'Logistics',access:'manager',email:''},// Lead of logistics side
+ {id:2,name:'Carlos Márquez',role:'Lead',access:'admin',email:'carlos.marquez@ata.email'},      // Lead PM side & overall; manages the other managers
+ {id:3,name:'Araceli Giner',role:'Marketing',access:'manager',email:'araceli.giner@ata.email'}, // Lead of marketing side
+ {id:4,name:'Cintia Hernández',role:'Sales',access:'manager',email:'cintia.hernandez@ata.email'},  // Lead of sales side
+ {id:5,name:'Valeria Vargas',role:'Logistics',access:'manager',email:'valeria.vargas@ata.email'},// Lead of logistics side
  /* Sales */
- {id:6,name:'Ian Casares',role:'Sales',access:'member',email:''},
- {id:7,name:'Sheetal Shamdasani',role:'Sales',access:'member',email:''},
+ {id:6,name:'Ian Casares',role:'Sales',access:'member',email:'ian.casares@ata.email'},
+ {id:7,name:'Sheetal Shamdasani',role:'Sales',access:'member',email:'sheetal.shamdasani@ata.email'},
  /* PM */
- {id:8,name:'Jesús Rodriguez',role:'PM',access:'member',email:''},       // PM & Lead
- {id:9,name:'Cristina Galán',role:'PM',access:'member',email:''},        // PM & Lead
- {id:10,name:'Andrea Renieblas',role:'PM',access:'member',email:''},
- {id:11,name:'Ewa Paryz',role:'PM',access:'member',email:''},
- {id:12,name:'Elena Spinelli',role:'PM',access:'member',email:''},
- {id:13,name:'Francesca',role:'PM',access:'member',email:''},            // PM assistant
+ {id:8,name:'Jesús Rodriguez',role:'PM',access:'member',email:'jesus.rgonzalez@ata.email'},       // PM & Lead (email is the exception)
+ {id:9,name:'Cristina Galán',role:'PM',access:'member',email:'cristina.galan@ata.email'},        // PM & Lead
+ {id:10,name:'Andrea Renieblas',role:'PM',access:'member',email:'andrea.renieblas@ata.email'},
+ {id:11,name:'Ewa Paryz',role:'PM',access:'member',email:'ewa.paryz@ata.email'},
+ {id:12,name:'Elena Spinelli',role:'PM',access:'member',email:'elena.spinelli@ata.email'},
+ {id:13,name:'Francesca',role:'PM',access:'member',email:''},            // PM assistant — surname unknown, email pending
  /* Marketing */
- {id:14,name:'Valeria García',role:'Marketing',access:'member',email:''},// Marketing & media partners & LinkedIn ads
- {id:15,name:'Maria Mendicute',role:'Marketing',access:'member',email:''},// Marketing, webinars & social media
+ {id:14,name:'Valeria García',role:'Marketing',access:'member',email:'valeria.garcia@ata.email'},// Marketing & media partners & LinkedIn ads
+ {id:15,name:'Maria Mendicute',role:'Marketing',access:'member',email:'maria.mendicute@ata.email'},// Marketing, webinars & social media
  /* Logistics */
- {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:''},
+ {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:'julian.uribe@ata.email'},
  /* Administration */
- {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:''},     // Accounting
+ {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email'},     // Accounting
 ];
 function buildSeed(){
   const events=JSON.parse(JSON.stringify(SEED_EVENTS));
@@ -180,7 +180,10 @@ const DB={
   tasksForSub(subId){return this.data.tasks.filter(t=>t.substageId==subId);},
   tasksFor(eventId){return this.data.tasks.filter(t=>t.eventId==eventId);},
   tasksOf(personId){return this.data.tasks.filter(t=>t.assignee==personId);},
+  currentUser:null,
+  canEditStatus(){return !!(this.currentUser&&this.currentUser.access==='admin');}, // only admins (Belén & Carlos) tick task status
 };
+function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 
 function injectSB(){return new Promise(res=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;document.head.appendChild(s);});}
 async function boot(renderFn){
@@ -191,8 +194,9 @@ async function boot(renderFn){
     if(!session)await showLogin();
   }
   try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:520px">Could not load data: '+(e.message||e)+'<br><br>If this says the table is missing, run the <b>dispatch_state</b> SQL from SETUP_ONLINE.md in the Supabase SQL editor.</div>';return;}
+  if(USE_SUPABASE&&sb){try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';}catch(e){}}
+  else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   renderFn();
-  if(USE_SUPABASE&&sb){try{const {data}=await sb.auth.getUser();const w=document.getElementById('whoami');if(w&&data&&data.user)w.textContent=data.user.email+' · ';}catch(e){}}
 }
 function showLogin(){return new Promise(resolve=>{
   const ov=document.createElement('div');ov.id='loginov';

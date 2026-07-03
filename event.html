@@ -66,7 +66,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=10"></script>
+<script src="store.js?v=11"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -231,19 +231,20 @@ function renderTasks(){
   const sub=DB.substages.find(s=>s.id===selSub);
   if(!sub){selSub=null;p.innerHTML='';return;}
   const tks=DB.tasksForSub(sub.id);
+  const canS=DB.canEditStatus();
   let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage)+'</b>'+
     '<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" style="width:230px">';
   if(sub.lane==='marketing')h+='<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>';
   h+='<span class="hint">week W-'+(sub.week!=null?sub.week:'?')+((sub.span||1)>1?(' · '+(sub.span||1)+' wks'):'')+'</span>'+
     '<button class="btn sm" id="delsub" style="color:#A32D2D;border-color:#f0c4c4">Delete substage</button>'+
     '<button class="btn sm" id="addtask" style="margin-left:auto">+ Add task</button></div>';
-  h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status</th><th style="width:24px"></th></tr>';
+  h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status'+(canS?'':' <span style="text-transform:none;letter-spacing:0;color:#b4b1a8">· set by management</span>')+'</th><th style="width:24px"></th></tr>';
   if(!tks.length)h+='<tr><td colspan="5" class="empty">No tasks yet — add one.</td></tr>';
   tks.forEach(t=>{h+='<tr>'+
     '<td><input data-tf="title" data-id="'+t.id+'" value="'+(t.title||'').replace(/"/g,'&quot;')+'"></td>'+
     '<td><select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select></td>'+
     '<td><input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'"></td>'+
-    '<td><select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select></td>'+
+    '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>'):('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
     '<td><button class="del" data-deltask="'+t.id+'">×</button></td></tr>';});
   h+='</table>';
   p.innerHTML=h;
