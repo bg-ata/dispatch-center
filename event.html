@@ -42,9 +42,11 @@
   .stglab{position:absolute;font-size:10px;font-weight:700;color:#43414d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:14px;z-index:11}
   .rb{position:absolute;border:none;background:rgba(255,255,255,.85);color:#222;font-size:11px;font-weight:800;padding:0;cursor:pointer;border-radius:0;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
   .rb:hover{background:#fff}
-  .subpill{position:absolute;height:17px;border-radius:0;font-size:10px;color:#2b2b2b;font-weight:600;display:flex;align-items:center;padding:0 7px;white-space:nowrap;cursor:grab;user-select:none;border:1px solid rgba(0,0,0,.2)}
+  .subpill{position:absolute;height:17px;border-radius:0;font-size:10px;color:#2b2b2b;font-weight:600;line-height:17px;padding:0 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;user-select:none;border:1px solid rgba(0,0,0,.2)}
   .subpill:active{cursor:grabbing}
   .subpill.sel{outline:2px solid var(--charcoal);outline-offset:-1px;font-weight:700}
+  .pb{position:absolute;height:17px;width:12px;border:none;background:rgba(255,255,255,.85);color:#222;font-size:11px;font-weight:800;line-height:15px;text-align:center;padding:0;cursor:pointer;z-index:12;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+  .pb:hover{background:#fff}
   .addsub{position:absolute;height:17px;border:1px dashed #c9c6bd;background:#fff;color:#8a887f;font-size:9px;border-radius:0;padding:0 6px;cursor:pointer;z-index:6}
   .addsub:hover{border-color:var(--orange);color:var(--orange)}
   .colband{position:absolute;z-index:4;opacity:.34;cursor:grab}
@@ -71,7 +73,6 @@ const id=+new URLSearchParams(location.search).get('id');
 let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null;
 const WD=11, WEEKW=WD*5, TOPH=30, STGH=18, ADDH=18, PILLROW=20, LPAD=6;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
-function pillW(name){return Math.min(240,Math.max(34,(name||'').length*6.3+18));}
 
 boot(()=>{ev=DB.event(id);const C=document.getElementById('content');
   if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();});
@@ -118,7 +119,7 @@ function renderTimeline(){
       const subs=DB.subsFor(ev.id,lane,bar.s.key);
       subs.forEach((sub,si)=>{
         const wk=(sub.week!=null)?sub.week:Math.round(evIdx-(bar.x+(si+0.5)*bar.w/Math.max(subs.length,1)));
-        items.push({sub,wk,bar,x:(evIdx-wk)*WEEKW+3,w:pillW(sub.name)});
+        items.push({sub,wk,bar,x:(evIdx-wk)*WEEKW+3,w:Math.max(sub.span||1,1)*WEEKW-6});
       });
     });
     // greedy first-fit row packing so pills in a lane never overlap
@@ -156,18 +157,23 @@ function renderTimeline(){
       // add-substage button — on its own always-clear row, never covered by pills
       const add=document.createElement('div');add.className='addsub';add.style.cssText='left:'+x+'px;top:'+(y+STGH)+'px';add.textContent='+ item';add.title='add a substage / webinar to '+bar.s.name;
       const midWeek=Math.round(evIdx-(bar.x+bar.w/2));
-      add.onclick=()=>{const nid=DB.data.nextSub++;DB.substages.push({id:nid,eventId:ev.id,lane,stage:bar.s.key,name:lane==='marketing'?'Webinar':'New item',order:DB.subsFor(ev.id,lane,bar.s.key).length,week:midWeek});selSub=nid;DB.save();renderTimeline();renderTasks();const f=document.getElementById('subname');if(f){f.focus();f.select();}};
+      add.onclick=()=>{const nid=DB.data.nextSub++;DB.substages.push({id:nid,eventId:ev.id,lane,stage:bar.s.key,name:lane==='marketing'?'Webinar':'New item',order:DB.subsFor(ev.id,lane,bar.s.key).length,week:midWeek,span:1});selSub=nid;DB.save();renderTimeline();renderTasks();const f=document.getElementById('subname');if(f){f.focus();f.select();}};
       tl.appendChild(add);
     });
     // packed substage pills (each on its assigned row, so many can coexist)
     const pillTop=y+STGH+ADDH;
     L.items.forEach(it=>{
-      const sub=it.sub;
+      const sub=it.sub, pw=it.w, top=pillTop+it.row*PILLROW;
       const pill=document.createElement('div');pill.className='subpill'+(selSub===sub.id?' sel':'');
-      pill.style.cssText='left:'+it.x+'px;top:'+(pillTop+it.row*PILLROW)+'px;background:'+subColor(sub,it.bar.s.color)+';z-index:10';
-      pill.textContent=sub.name;pill.title=sub.name+' — drag to its week · click to open tasks';
+      pill.style.cssText='left:'+it.x+'px;top:'+top+'px;width:'+pw+'px;background:'+subColor(sub,it.bar.s.color)+';z-index:10';
+      pill.textContent=sub.name;pill.title=sub.name+' — drag to move · +/− to resize · click to open tasks';
       pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:it.wk,moved:false};e.preventDefault();});
       tl.appendChild(pill);
+      // − / + to shorten / lengthen the substage (in weeks)
+      const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+top+'px';b.title=tip+' '+sub.name;
+        b.addEventListener('mousedown',e=>e.stopPropagation());
+        b.onclick=e=>{e.stopPropagation();sub.span=Math.max(1,(sub.span||1)+delta);DB.save();renderTimeline();if(selSub===sub.id)renderTasks();};tl.appendChild(b);};
+      rb(it.x,'−',-1,'shorten'); rb(it.x+pw-12,'+',1,'lengthen');
     });
   });
 
@@ -201,7 +207,7 @@ function renderTasks(){
   let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage)+'</b>'+
     '<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" style="width:230px">';
   if(sub.lane==='marketing')h+='<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>';
-  h+='<span class="hint">week W-'+(sub.week!=null?sub.week:'?')+'</span>'+
+  h+='<span class="hint">week W-'+(sub.week!=null?sub.week:'?')+((sub.span||1)>1?(' · '+(sub.span||1)+' wks'):'')+'</span>'+
     '<button class="btn sm" id="delsub" style="color:#A32D2D;border-color:#f0c4c4">Delete substage</button>'+
     '<button class="btn sm" id="addtask" style="margin-left:auto">+ Add task</button></div>';
   h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status</th><th style="width:24px"></th></tr>';
