@@ -1,6 +1,6 @@
 /* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
    Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 10;
+const STORE_VERSION = 11;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -127,7 +127,7 @@ const SEED_PEOPLE=[
  {id:10,name:'Andrea Renieblas',role:'PM',access:'member',email:'andrea.renieblas@ata.email'},
  {id:11,name:'Ewa Paryz',role:'PM',access:'member',email:'ewa.paryz@ata.email'},
  {id:12,name:'Elena Spinelli',role:'PM',access:'member',email:'elena.spinelli@ata.email'},
- {id:13,name:'Francesca',role:'PM',access:'member',email:''},            // PM assistant — surname unknown, email pending
+ {id:13,name:'Francesca Ravera',role:'PM',access:'member',email:'francesca.ravera@ata.email'},  // PM assistant
  /* Marketing */
  {id:14,name:'Valeria García',role:'Marketing',access:'member',email:'valeria.garcia@ata.email'},// Marketing & media partners & LinkedIn ads
  {id:15,name:'Maria Mendicute',role:'Marketing',access:'member',email:'maria.mendicute@ata.email'},// Marketing, webinars & social media
