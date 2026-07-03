@@ -48,7 +48,7 @@
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
   </div>
   <div class="panel"><table id="tbl"></table></div>
-  <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to see what they're working on. Each person will eventually log in and see only their own events.</p>
+  <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to open their page — their events &amp; tasks on a timeline. Each person will eventually log in and see only their own.</p>
 </div>
 <div id="modal"><div class="card">
   <h3 id="m_title">Edit person</h3>
@@ -84,7 +84,7 @@ function render(){
     }
   });
   tbl.innerHTML=h;
-  tbl.querySelectorAll('[data-who]').forEach(el=>el.onclick=()=>{expanded=expanded==el.dataset.who?null:+el.dataset.who;render();});
+  tbl.querySelectorAll('[data-who]').forEach(el=>el.onclick=()=>location.href='person.html?id='+el.dataset.who);
   tbl.querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>openModal(+el.dataset.edit));
   tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
 }

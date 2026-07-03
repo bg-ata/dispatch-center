@@ -52,6 +52,26 @@ function layLane(ev,lane,evIdx){
   sts.filter(s=>s.phase==='post').forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:c2,w:d});c2+=d;});
   return bars;
 }
+const WEEKW_STD=55; // reference week-width used only to size default substage spans (page-independent)
+function evIndex(ev){const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)*7);return Math.round((+monday(ymd(ev.date))-+start)/(7*86400000));}
+/* ensure every substage has a week + span default (so ALL pages — event, person — can place tasks in time) */
+function ensureSubDefaults(){let dirty=false;
+  DB.events.forEach(ev=>{const evIdx=evIndex(ev);
+    LANES.forEach(lane=>{const bars=layLane(ev,lane,evIdx);const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane);
+      const byStage={};subs.forEach(s=>{(byStage[s.stage]=byStage[s.stage]||[]).push(s);});
+      Object.keys(byStage).forEach(k=>{const bar=bars.find(b=>b.s.key===k);if(!bar)return;const list=byStage[k];
+        list.forEach((s,i)=>{if(s.week==null){const col=Math.round(bar.x+(i+0.5)*bar.w/list.length-0.5);s.week=evIdx-col;dirty=true;}});});
+      const arr=subs.map(s=>({s,c:evIdx-s.week})).sort((a,b)=>a.c-b.c);
+      arr.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr.length)?arr[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW_STD));o.s.span=Math.min(need,gap);dirty=true;}});
+    });
+  });
+  if(dirty)DB.save();
+}
+/* absolute Monday date a task sits on: explicit deadline wins, else its substage's week before the event */
+function taskDate(t){const ev=DB.event(t.eventId);if(!ev)return monday(new Date());
+  if(t.deadline){return monday(ymd(t.deadline));}
+  const sub=DB.substages.find(s=>s.id==t.substageId);const wk=(sub&&sub.week!=null)?sub.week:0;
+  return addDays(monday(ymd(ev.date)),-wk*7);}
 
 /* ---- date helpers ---- */
 function ymd(s){const p=s.split('-').map(Number);return new Date(p[0],p[1]-1,p[2]);}
@@ -194,6 +214,7 @@ async function boot(renderFn){
     if(!session)await showLogin();
   }
   try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:520px">Could not load data: '+(e.message||e)+'<br><br>If this says the table is missing, run the <b>dispatch_state</b> SQL from SETUP_ONLINE.md in the Supabase SQL editor.</div>';return;}
+  ensureSubDefaults();
   if(USE_SUPABASE&&sb){try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';}catch(e){}}
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   renderFn();

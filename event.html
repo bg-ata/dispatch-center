@@ -101,8 +101,12 @@ function renderAddBar(){const bar=document.getElementById('addbar');if(!bar)retu
   LANES.forEach(lane=>{const b=document.createElement('button');b.className='btn sm';b.textContent=LANE_LABEL[lane]||lane;b.onclick=()=>addSubstage(lane);bar.appendChild(b);});
 }
 
+function scrollToToday(){const wrap=document.querySelector('.tlwrap');if(!wrap)return;
+  const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)*7);
+  const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
+  wrap.scrollLeft=Math.max(0,todayIdx*WEEKW-6);}
 boot(()=>{ev=DB.event(id);const C=document.getElementById('content');
-  if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();});
+  if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();scrollToToday();});
 
 function peopleOpts(sel){return '<option value="">— unassigned —</option>'+DB.people.map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+p.name+'</option>').join('');}
 

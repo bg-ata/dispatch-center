@@ -232,7 +232,8 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
 
-boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
+function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const {start}=bounds();const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
+boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();});
 </script>
 </body>
 </html>

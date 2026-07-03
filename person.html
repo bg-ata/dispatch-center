@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>RENMAD Dispatch Center — Person</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;--purple:#8E5BC9;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 90px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:23px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rolepill{font-size:11px;padding:2px 9px;border-radius:20px;background:#eceae3;color:#5f5e5a;font-weight:600}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .btn{padding:6px 12px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);font-size:13px;cursor:pointer}
+  .btn:hover{filter:brightness(.97)}
+  .evchips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 6px}
+  .evchip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;color:var(--charcoal);cursor:pointer;text-decoration:none}
+  .evchip:hover{border-color:var(--orange)} .evchip .chip{width:10px;height:10px;border-radius:3px}
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center;margin:6px 0 8px}
+  .legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}
+  .gwrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;overflow-y:hidden}
+  .grid{position:relative;font-size:12px}
+  .row{display:flex;align-items:stretch;border-bottom:1px solid var(--line)} .row:last-child{border-bottom:none}
+  .corner{flex:0 0 210px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
+  .head{position:sticky;left:0;z-index:5;flex:0 0 210px;background:var(--card);border-right:2px solid var(--line);padding:7px 10px;display:flex;flex-direction:column;gap:2px;justify-content:center}
+  .head .nm{font-weight:700;font-size:13px;line-height:1.15;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--charcoal)}
+  .head .nm:hover .t{text-decoration:underline;color:var(--orange)}
+  .head .chip{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+  .head .ln{font-size:10px;color:var(--muted)}
+  .hbody{position:relative}
+  .mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}
+  .wtick{position:absolute;top:20px;height:14px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #efece5}
+  .body{position:relative;flex:1 1 auto}
+  .gridbg{position:absolute;inset:0;z-index:0}
+  .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.14) 0 5px,rgba(150,147,140,0) 5px 10px)}
+  .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.24) 0 5px,rgba(120,118,112,.04) 5px 10px)}
+  .w0{position:absolute;z-index:3;width:2px;background:#111} .w0lab{position:absolute;z-index:4;background:#111;color:#fff;font-size:8px;font-weight:800;padding:0 3px;border-radius:2px}
+  .task{position:absolute;z-index:5;height:17px;border-radius:3px;font-size:10px;font-weight:600;line-height:17px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border:1px solid rgba(0,0,0,.18)}
+  .task.done{opacity:.55;text-decoration:line-through}
+  .task.prog{box-shadow:inset 3px 0 0 var(--orange)}
+  .today{position:absolute;z-index:7;width:2px;background:var(--orange);top:0}
+  .todaylab{position:absolute;z-index:9;background:var(--orange);color:#fff;font-size:8px;font-weight:800;padding:0 4px;border-radius:2px;top:1px}
+  #tip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:4px 8px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap;max-width:340px;line-height:1.4}
+  .empty{color:var(--muted);font-size:13px;font-style:italic;padding:18px}
+</style>
+</head>
+<body>
+<div class="app"><div id="nav"></div><div id="content"></div></div>
+<div id="tip"></div>
+<script src="store.js?v=11"></script>
+<script>
+const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
+document.getElementById('nav').innerHTML=navBar('people');
+const id=+new URLSearchParams(location.search).get('id');
+let person=null;
+
+boot(()=>{person=DB.person(id);const C=document.getElementById('content');
+  if(!person){C.innerHTML='<p>Person not found. <a href="people.html">← Personnel</a></p>';return;}
+  render();scrollToToday();});
+
+const tip=document.getElementById('tip');
+function showTip(x,y,html){tip.innerHTML=html;tip.style.display='block';tip.style.left=(x+13)+'px';tip.style.top=(y+14)+'px';}
+function hideTip(){tip.style.display='none';}
+
+function render(){
+  const myTasks=DB.tasksOf(person.id);
+  const evIds=new Set(myTasks.map(t=>t.eventId));
+  DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==person.id))evIds.add(ev.id);});
+  if(person.access==='admin')DB.events.forEach(e=>evIds.add(e.id)); // admins oversee every event
+  const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
+  const done=myTasks.filter(t=>t.status==='Done').length, prog=myTasks.filter(t=>t.status==='In progress').length;
+  const acc=person.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
+
+  let head='<h1>'+person.name+' <span class="rolepill">'+person.role+'</span> <span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span></h1>'+
+    '<p class="sub">'+(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' in progress) across '+events.length+' events'+
+    ' &nbsp;·&nbsp; <a href="people.html">← Personnel</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>';
+  head+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="chip" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+e.name+'</a>').join('')+'</div>';
+  head+='<div class="legend"><span><span class="sw" style="background:#A9CBEE"></span>PM</span><span><span class="sw" style="background:#FFC9A3"></span>Marketing</span><span><span class="sw" style="background:#BFE0A0"></span>Sales</span><span><span class="sw" style="background:#ECCA46"></span>Logistics</span><span><span class="sw" style="background:#111"></span>Event week</span><span style="color:#b9b6ad">✓ done · line = today</span></div>';
+  head+='<div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>';
+  document.getElementById('content').innerHTML=head;
+  document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(person.name.replace(/[^\w]+/g,'_')+'_tasks.xlsx',[
+    {name:'Tasks',rows:myTasks.map(t=>{const e=DB.event(t.eventId);const s=DB.substages.find(x=>x.id==t.substageId);return{Event:e?e.name:'',Lane:t.lane,Stage:stageName(t.lane,t.stage),Substage:s?s.name:'',Task:t.title,When:toISO(taskDate(t)),Deadline:t.deadline||'',Status:t.status};})}]);};
+
+  const grid=document.getElementById('grid');
+  if(!events.length){grid.innerHTML='<div class="empty">No events or tasks assigned yet.</div>';return;}
+
+  // axis bounds across all this person's task dates + event dates + today
+  const dts=[]; myTasks.forEach(t=>dts.push(+taskDate(t))); events.forEach(e=>dts.push(+monday(ymd(e.date)))); dts.push(+monday(new Date()));
+  const start=addDays(monday(new Date(Math.min(...dts))),-2*7);
+  const end=addDays(monday(new Date(Math.max(...dts))),3*7);
+  const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
+  const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
+  const wcol=d=>Math.round((+monday(d)-+start)/(7*86400000));
+
+  // header row
+  const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:'+TOPH+'px"></div>';
+  const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+TOPH+'px';
+  for(let w=0;w<NW;w++){const d=addDays(start,w*7);
+    if(d.getDate()<=7){const ml=document.createElement('div');ml.className='mlabel';ml.style.left=(w*WEEKW)+'px';ml.textContent=MON[d.getMonth()]+(d.getMonth()===0?" '"+String(d.getFullYear()).slice(2):'');hb.appendChild(ml);}
+    const wt=document.createElement('div');wt.className='wtick';wt.style.cssText='left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';wt.textContent=d.getDate();hb.appendChild(wt);}
+  if(todayIdx>=0&&todayIdx<NW){const tl=document.createElement('div');tl.className='todaylab';tl.style.left=(todayIdx*WEEKW)+'px';tl.textContent='TODAY';hb.appendChild(tl);}
+  hrow.appendChild(hb);grid.appendChild(hrow);
+
+  events.forEach(ev=>{
+    const evCol=wcol(monday(ymd(ev.date)));
+    const rowTasks=myTasks.filter(t=>t.eventId===ev.id);
+    // pack into non-overlapping rows
+    const items=rowTasks.map(t=>{const c=wcol(taskDate(t));return {t,c,x:c*WEEKW,w:Math.max((t.title||'').length*6+22,44)};}).sort((a,b)=>a.x-b.x);
+    const rowRight=[];items.forEach(it=>{let r=rowRight.findIndex(rr=>rr<=it.x-3);if(r<0){r=rowRight.length;rowRight.push(0);}rowRight[r]=it.x+it.w;it.row=r;});
+    const rows=Math.max(rowRight.length,1), bodyH=ROWPAD+rows*(TASKH+TGAP);
+
+    const row=document.createElement('div');row.className='row';
+    const head=document.createElement('div');head.className='head';
+    head.innerHTML='<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+ev.name+'</span></div>'+
+      '<div class="ln">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' · '+rowTasks.length+' task'+(rowTasks.length===1?'':'s')+'</div>';
+    head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
+
+    const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
+    const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
+    for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
+    // event-week (W0) marker
+    if(evCol>=0&&evCol<NW){const w0=document.createElement('div');w0.className='w0';w0.style.cssText='left:'+(evCol*WEEKW)+'px;height:'+bodyH+'px';body.appendChild(w0);
+      const w0l=document.createElement('div');w0l.className='w0lab';w0l.style.cssText='left:'+(evCol*WEEKW+3)+'px;top:2px';w0l.textContent='EVENT';body.appendChild(w0l);}
+    // today line
+    if(todayIdx>=0&&todayIdx<NW){const tln=document.createElement('div');tln.className='today';tln.style.cssText='left:'+(todayIdx*WEEKW)+'px;height:'+bodyH+'px';body.appendChild(tln);}
+    // task bars
+    items.forEach(it=>{const t=it.t, col=stageColor(t.lane,t.stage);
+      const el=document.createElement('div');el.className='task'+(t.status==='Done'?' done':t.status==='In progress'?' prog':'');
+      el.style.cssText='left:'+(it.x+2)+'px;top:'+(ROWPAD+it.row*(TASKH+TGAP))+'px;width:'+(it.w)+'px;height:'+TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
+      el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
+      const sub=DB.substages.find(s=>s.id==t.substageId);
+      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+t.title+'</b><br>'+ev.name+' · '+stageName(t.lane,t.stage)+(sub?' · '+sub.name:'')+'<br>'+(t.deadline?('due '+t.deadline):('week of '+fmtD(taskDate(t))))+' · '+t.status));
+      el.addEventListener('mouseleave',hideTip);
+      el.onclick=()=>location.href='event.html?id='+ev.id;
+      body.appendChild(el);});
+    row.appendChild(head);row.appendChild(body);grid.appendChild(row);
+  });
+}
+function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const start=null;
+  // recompute today's column using the same bounds as render
+  const myTasks=DB.tasksOf(person.id);const evIds=new Set(myTasks.map(t=>t.eventId));DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==person.id))evIds.add(ev.id);});
+  if(person.access==='admin')DB.events.forEach(e=>evIds.add(e.id));
+  const dts=[];myTasks.forEach(t=>dts.push(+taskDate(t)));DB.events.filter(e=>evIds.has(e.id)).forEach(e=>dts.push(+monday(ymd(e.date))));dts.push(+monday(new Date()));
+  if(!dts.length)return;const s=addDays(monday(new Date(Math.min(...dts))),-2*7);
+  const todayIdx=Math.round((+monday(new Date())-+s)/(7*86400000));wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
+</script>
+</body>
+</html>
