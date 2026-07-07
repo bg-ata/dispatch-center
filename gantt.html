@@ -111,7 +111,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=13"></script>
+<script src="store.js?v=14"></script>
 <script>
 const WEEKW=18, LINEH=15, GAP=2, TOPH=16;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
@@ -226,14 +226,15 @@ modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
-  else{const id=DB.data.nextEvent++;const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
+  else{const id=DB.newId();const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
     DB.events.push({id,...d,milestones:{goNoGo:24,launch:18},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
 
 function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const {start}=bounds();const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
-boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();});
+boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();});
+window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
 </script>
 </body>
 </html>

@@ -66,7 +66,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=13"></script>
+<script src="store.js?v=14"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -92,11 +92,12 @@ function addSubstage(lane){
   const span=1,occ=new Set();subs.forEach(s=>{const c0=evIdx-s.week,sp=Math.max(s.span||1,1);for(let k=0;k<sp;k++)occ.add(c0+k);});
   const startCol=bars[0]?bars[0].x:0;let col=startCol;
   for(let c=startCol;c<=evIdx;c++){let ok=true;for(let k=0;k<span;k++)if(occ.has(c+k)){ok=false;break;}if(ok){col=c;break;}}
-  const wk=evIdx-col, stKey=stageKeyAtWeek(lane,wk)||(bars[0]&&bars[0].s.key), nid=DB.data.nextSub++;
+  const wk=evIdx-col, stKey=stageKeyAtWeek(lane,wk)||(bars[0]&&bars[0].s.key), nid=DB.newId();
   DB.substages.push({id:nid,eventId:ev.id,lane,stage:stKey,name:lane==='marketing'?'Webinar':'New item',order:DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane).length,week:wk,span});
   selSub=nid;DB.save();renderTimeline();renderTasks();const f=document.getElementById('subname');if(f){f.focus();f.select();}
 }
 function renderAddBar(){const bar=document.getElementById('addbar');if(!bar)return;
+  if(!DB.canManage()){bar.style.display='none';return;} // members: timeline is read-only (server enforces it too)
   bar.innerHTML='<span style="font-size:12px;color:var(--muted);font-weight:600">＋ Add substage to:</span>';
   LANES.forEach(lane=>{const b=document.createElement('button');b.className='btn sm';b.textContent=LANE_LABEL[lane]||lane;b.onclick=()=>addSubstage(lane);bar.appendChild(b);});
 }
@@ -107,6 +108,7 @@ function scrollToToday(){const wrap=document.querySelector('.tlwrap');if(!wrap)r
   wrap.scrollLeft=Math.max(0,todayIdx*WEEKW-6);}
 boot(()=>{ev=DB.event(id);const C=document.getElementById('content');
   if(!ev){C.innerHTML='<p>Event not found. <a href="gantt.html">Back to overview</a></p>';return;}render();scrollToToday();});
+window.addEventListener('dc-remote',()=>{if(!DB.event(id)){location.href='gantt.html';return;}ev=DB.event(id);render();});
 
 function peopleOpts(sel){return '<option value="">— unassigned —</option>'+DB.people.map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+p.name+'</option>').join('');}
 
@@ -126,10 +128,13 @@ function render(){
 
 function renderTeam(){
   const t=document.getElementById('team');
+  const mg=DB.canManage(); // members see the team read-only
   t.innerHTML=ev.team.map(m=>{const p=DB.person(m.personId);if(!p)return'';
-    return '<span class="member"><b>'+p.name+'</b><select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>';}).join('')||'<span class="empty">No one attached yet.</span>';
-  const inTeam=ev.team.map(m=>m.personId);
-  document.getElementById('newp').innerHTML=DB.people.filter(p=>!inTeam.includes(p.id)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('')||'<option value="">(all attached)</option>';
+    return mg?('<span class="member"><b>'+p.name+'</b><select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>')
+             :('<span class="member"><b>'+p.name+'</b><span class="hint">'+m.role+'</span></span>');}).join('')||'<span class="empty">No one attached yet.</span>';
+  const am=document.querySelector('.addmem');if(am&&!mg){am.style.display='none';}
+  if(mg){const inTeam=ev.team.map(m=>m.personId);
+    document.getElementById('newp').innerHTML=DB.people.filter(p=>!inTeam.includes(p.id)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('')||'<option value="">(all attached)</option>';}
   t.querySelectorAll('[data-role]').forEach(s=>s.onchange=()=>{ev.team.find(m=>m.personId==s.dataset.role).role=s.value;DB.save();});
   t.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ev.team=ev.team.filter(m=>m.personId!=b.dataset.rm);DB.save();renderTeam();});
 }
@@ -155,7 +160,7 @@ function renderTimeline(){
     // 2) default span for any substage missing one: wide enough to read the name, capped by the gap to the next (so no overlap)
     const arr=subs.map(s=>({s,c:evIdx-s.week})).sort((a,b)=>a.c-b.c);
     arr.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr.length)?arr[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW));o.s.span=Math.min(need,gap);dirty=true;}});
-    if(dirty)DB.save();
+    if(dirty&&(!USE_SUPABASE||DB.canManage()))DB.save(); // members never push layout defaults
     return {lane,bars,subs};
   });
   const LANEH2=STGH+GAP+SUBH+LANEPAD;
@@ -235,27 +240,30 @@ function renderTasks(){
   const sub=DB.substages.find(s=>s.id===selSub);
   if(!sub){selSub=null;p.innerHTML='';return;}
   const tks=DB.tasksForSub(sub.id);
-  const canS=DB.canEditStatus();
+  const mg=DB.canManage(); // managers & admins edit everything; members tick the status of their OWN tasks
   let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage)+'</b>'+
-    '<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" style="width:230px">';
-  if(sub.lane==='marketing')h+='<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>';
-  h+='<span class="hint">week W-'+(sub.week!=null?sub.week:'?')+((sub.span||1)>1?(' · '+(sub.span||1)+' wks'):'')+'</span>'+
-    '<button class="btn sm" id="delsub" style="color:#A32D2D;border-color:#f0c4c4">Delete substage</button>'+
-    '<button class="btn sm" id="addtask" style="margin-left:auto">+ Add task</button></div>';
-  h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status'+(canS?'':' <span style="text-transform:none;letter-spacing:0;color:#b4b1a8">· set by management</span>')+'</th><th style="width:24px"></th></tr>';
-  if(!tks.length)h+='<tr><td colspan="5" class="empty">No tasks yet — add one.</td></tr>';
-  tks.forEach(t=>{h+='<tr>'+
-    '<td><input data-tf="title" data-id="'+t.id+'" value="'+(t.title||'').replace(/"/g,'&quot;')+'"></td>'+
-    '<td><select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select></td>'+
-    '<td><input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'"></td>'+
+    (mg?'<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" style="width:230px">'
+       :'<span style="font-weight:600">'+(sub.name||'')+'</span>');
+  if(sub.lane==='marketing'){h+=mg?('<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>')
+                                 :(sub.type?'<span class="hint">'+sub.type+'</span>':'');}
+  h+='<span class="hint">week W-'+(sub.week!=null?sub.week:'?')+((sub.span||1)>1?(' · '+(sub.span||1)+' wks'):'')+'</span>';
+  if(mg)h+='<button class="btn sm" id="delsub" style="color:#A32D2D;border-color:#f0c4c4">Delete substage</button>'+
+    '<button class="btn sm" id="addtask" style="margin-left:auto">+ Add task</button>';
+  h+='</div>';
+  h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status'+(mg?'':' <span style="text-transform:none;letter-spacing:0;color:#b4b1a8">· you can tick your own</span>')+'</th><th style="width:24px"></th></tr>';
+  if(!tks.length)h+='<tr><td colspan="5" class="empty">No tasks yet'+(mg?' — add one.':'.')+'</td></tr>';
+  tks.forEach(t=>{const canS=DB.canEditStatus(t);h+='<tr>'+
+    '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+(t.title||'').replace(/"/g,'&quot;')+'">':(t.title||''))+'</td>'+
+    '<td>'+(mg?'<select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select>':DB.personName(t.assignee))+'</td>'+
+    '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline||'—'))+'</td>'+
     '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>'):('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
-    '<td><button class="del" data-deltask="'+t.id+'">×</button></td></tr>';});
+    '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';});
   h+='</table>';
   p.innerHTML=h;
-  document.getElementById('subname').onchange=e=>{sub.name=e.target.value;DB.save();renderTimeline();};
+  const sn=document.getElementById('subname');if(sn)sn.onchange=e=>{sub.name=e.target.value;DB.save();renderTimeline();};
   const ts=document.getElementById('subtype');if(ts)ts.onchange=e=>{sub.type=e.target.value.startsWith('—')?'':e.target.value;DB.save();renderTimeline();};
-  document.getElementById('delsub').onclick=()=>{DB.data.substages=DB.substages.filter(s=>s.id!==sub.id);DB.data.tasks=DB.tasks.filter(t=>t.substageId!==sub.id);selSub=null;DB.save();renderTimeline();renderTasks();};
-  document.getElementById('addtask').onclick=()=>{DB.tasks.push({id:DB.data.nextTask++,eventId:ev.id,lane:sub.lane,stage:sub.stage,substageId:sub.id,title:'New task',assignee:null,deadline:'',status:'To do'});DB.save();renderTasks();};
+  const ds=document.getElementById('delsub');if(ds)ds.onclick=()=>{DB.data.substages=DB.substages.filter(s=>s.id!==sub.id);DB.data.tasks=DB.tasks.filter(t=>t.substageId!==sub.id);selSub=null;DB.save();renderTimeline();renderTasks();};
+  const at=document.getElementById('addtask');if(at)at.onclick=()=>{DB.tasks.push({id:DB.newId(),eventId:ev.id,lane:sub.lane,stage:sub.stage,substageId:sub.id,title:'New task',assignee:null,deadline:'',status:'To do'});DB.save();renderTasks();};
   p.querySelectorAll('[data-tf]').forEach(el=>el.onchange=()=>{const t=DB.tasks.find(x=>x.id==el.dataset.id);let v=el.value;if(el.dataset.tf==='assignee')v=v?+v:null;t[el.dataset.tf]=v;DB.save();});
   p.querySelectorAll('[data-deltask]').forEach(b=>b.onclick=()=>{DB.data.tasks=DB.tasks.filter(t=>t.id!=b.dataset.deltask);DB.save();renderTasks();});
 }

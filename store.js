@@ -1,6 +1,8 @@
-/* RENMAD Dispatch Center — shared data store (prototype stand-in for Supabase).
-   Lives in browser localStorage so all pages share it and edits survive reloads. */
-const STORE_VERSION = 11;
+/* RENMAD Dispatch Center — shared data store.
+   Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
+   dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
+   Local mode (no Supabase URL): browser localStorage with seeded demo data. */
+const STORE_VERSION = 12;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -65,7 +67,7 @@ function ensureSubDefaults(){let dirty=false;
       arr.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr.length)?arr[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW_STD));o.s.span=Math.min(need,gap);dirty=true;}});
     });
   });
-  if(dirty)DB.save();
+  if(dirty&&(!USE_SUPABASE||DB.canManage()))DB.save(); // members never push layout defaults (server would refuse)
 }
 /* absolute Monday date a task sits on: explicit deadline wins, else its substage's week before the event */
 function taskDate(t){const ev=DB.event(t.eventId);if(!ev)return monday(new Date());
@@ -170,25 +172,69 @@ function buildSeed(){
 const SUPABASE_URL='https://dxgvbufsifgowwfggvmr.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4Z3ZidWZzaWZnb3d3Zmdndm1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODM1OTUsImV4cCI6MjA5ODA1OTU5NX0.EDMWWjMuDM0jS0d0SwzdhuW_ZnHP0T0kqwL3xc6Cw-w';
 const USE_SUPABASE=!!SUPABASE_URL;
-let sb=null,_saveTimer=null;
+let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,_lastId=0;
+
+/* per-entity tables; column whitelists = exactly what the app owns.
+   Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks'};
+const COLS={
+  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
+  people:['id','name','role','access','email'],
+  substages:['id','eventId','lane','stage','name','order','week','span','type'],
+  tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
+};
+function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
+let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
+function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
 
 const DB={
   data:null,
   async load(){
     if(USE_SUPABASE){
-      const {data,error}=await sb.from('dispatch_state').select('data').eq('id',1).single();
-      if(error)throw error;
-      const d=data&&data.data;
-      if(d&&d.events&&d.events.length&&d.v===STORE_VERSION){this.data=d;}
-      else{this.data=buildSeed();await this.pushNow();}
+      const keys=Object.keys(TABLES);
+      const res=await Promise.all(keys.map(k=>sb.from(TABLES[k]).select('*').eq('deleted',false).order('id')));
+      const bad=res.find(r=>r.error);
+      if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
+      this.data={};keys.forEach((k,i)=>{this.data[k]=res[i].data||[];});
+      if(!this.data.people.length)throw new Error('The dc_* tables are empty — run dispatch_upgrade.sql in the Supabase SQL editor (it migrates the existing data), then reload.');
+      snapshot();
+      subscribeRealtime();
       return this.data;
     }
     try{this.data=JSON.parse(localStorage.getItem('dispatchStore'));}catch(e){this.data=null;}
     if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
     return this.data;
   },
-  save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>this.pushNow(),700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
-  async pushNow(){if(USE_SUPABASE&&sb)await sb.from('dispatch_state').update({data:this.data,updated_at:new Date().toISOString()}).eq('id',1);},
+  save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>this.syncNow(),700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
+  /* diff vs the last-synced picture and write ONLY the touched rows:
+     new rows -> insert, changed rows -> per-row update, vanished rows -> soft delete.
+     Two people editing different rows no longer overwrite each other. */
+  async syncNow(){
+    if(!USE_SUPABASE||!sb)return;
+    if(_syncing){_pendingSync=true;return;}
+    _syncing=true;
+    try{
+      for(const k of Object.keys(TABLES)){
+        const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
+        (this.data[k]||[]).forEach(r=>{
+          const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
+          if(!(r.id in _shadow[k]))inserts.push(p);
+          else if(_shadow[k][r.id]!==s)updates.push(p);
+        });
+        Object.keys(_shadow[k]).forEach(id=>{if(!seen[id])dels.push(id);});
+        if(inserts.length){const {error}=await sb.from(tbl).insert(inserts);if(error)throw error;}
+        for(const p of updates){const {error}=await sb.from(tbl).update(p).eq('id',p.id);if(error)throw error;}
+        if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
+      }
+      snapshot();
+    }catch(e){
+      console.error('sync failed',e);
+      alert('That change could not be saved ('+(e.message||e)+').\nUsually this means your access level does not allow it. The page will reload to stay in sync.');
+      location.reload();return;
+    }finally{_syncing=false;}
+    if(_pendingSync){_pendingSync=false;this.syncNow();}
+  },
+  newId(){let id=Date.now()*10+Math.floor(Math.random()*10);if(id<=_lastId)id=_lastId+1;_lastId=id;return id;},
   async logout(){if(sb)await sb.auth.signOut();location.reload();},
   reset(){if(!USE_SUPABASE)localStorage.removeItem('dispatchStore');},
   get events(){return this.data.events;},get people(){return this.data.people;},
@@ -201,9 +247,45 @@ const DB={
   tasksFor(eventId){return this.data.tasks.filter(t=>t.eventId==eventId);},
   tasksOf(personId){return this.data.tasks.filter(t=>t.assignee==personId);},
   currentUser:null,
-  canEditStatus(){return !!(this.currentUser&&this.currentUser.access==='admin');}, // only admins (Belén & Carlos) tick task status
+  isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
+  canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
+  /* admins & managers set any status; members set the status of their OWN tasks
+     (all of this is also enforced server-side by row-level security) */
+  canEditStatus(t){if(this.canManage())return true;return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
 };
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
+
+/* ---- realtime: colleagues' edits appear without reloading ---- */
+function subscribeRealtime(){
+  try{
+    const ch=sb.channel('dc-sync');
+    Object.keys(TABLES).forEach(k=>{
+      ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
+    });
+    ch.subscribe();
+  }catch(e){console.warn('realtime unavailable',e);}
+}
+function applyRemote(key,row){
+  if(!row||!DB.data||!_shadow)return;
+  const arr=DB.data[key],i=arr.findIndex(r=>r.id==row.id);
+  const p=pickRow(row,key),s=JSON.stringify(p);
+  if(row.deleted){
+    if(i>=0){arr.splice(i,1);delete _shadow[key][row.id];scheduleRemoteRender();}
+    else delete _shadow[key][row.id];
+    return;
+  }
+  if(i>=0){
+    const localS=JSON.stringify(pickRow(arr[i],key));
+    if(localS===s){_shadow[key][row.id]=s;return;}          // echo of our own write
+    if(localS!==_shadow[key][row.id])return;                 // we have unsaved edits on this row — ours wins locally
+    Object.assign(arr[i],p);                                 // in place: pages hold references to these objects
+  }else{
+    arr.push(p);
+  }
+  _shadow[key][row.id]=s;
+  scheduleRemoteRender();
+}
+function scheduleRemoteRender(){clearTimeout(_remoteTimer);_remoteTimer=setTimeout(()=>window.dispatchEvent(new Event('dc-remote')),250);}
 
 function injectSB(){return new Promise(res=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;document.head.appendChild(s);});}
 async function boot(renderFn){
@@ -213,11 +295,22 @@ async function boot(renderFn){
     const {data:{session}}=await sb.auth.getSession();
     if(!session)await showLogin();
   }
-  try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:520px">Could not load data: '+(e.message||e)+'<br><br>If this says the table is missing, run the <b>dispatch_state</b> SQL from SETUP_ONLINE.md in the Supabase SQL editor.</div>';return;}
-  ensureSubDefaults();
-  if(USE_SUPABASE&&sb){try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';}catch(e){}}
+  try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:560px">Could not load data: '+(e.message||e)+'</div>';return;}
+  if(USE_SUPABASE&&sb){
+    try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);
+      const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';
+      if(em&&!DB.currentUser)rosterBanner(em);
+    }catch(e){}
+  }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
+  ensureSubDefaults();
   renderFn();
+}
+function rosterBanner(em){
+  const b=document.createElement('div');
+  b.style.cssText='background:#FFF3E8;border-bottom:1px solid #F3C49B;color:#8a4a12;font:13px Segoe UI,sans-serif;padding:8px 16px';
+  b.textContent='Your login ('+em+') is not in the personnel roster yet, so the board is read-only for you — ask Belén to add you on the Personnel page.';
+  document.body.prepend(b);
 }
 function showLogin(){return new Promise(resolve=>{
   const ov=document.createElement('div');ov.id='loginov';

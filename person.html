@@ -54,7 +54,7 @@
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
 <div id="tip"></div>
-<script src="store.js?v=13"></script>
+<script src="store.js?v=14"></script>
 <script>
 const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
 document.getElementById('nav').innerHTML=navBar('people');
@@ -64,6 +64,7 @@ let person=null;
 boot(()=>{person=DB.person(id);const C=document.getElementById('content');
   if(!person){C.innerHTML='<p>Person not found. <a href="people.html">← Personnel</a></p>';return;}
   render();scrollToToday();});
+window.addEventListener('dc-remote',()=>{if(!DB.person(id)){location.href='people.html';return;}person=DB.person(id);render();});
 
 const tip=document.getElementById('tip');
 function showTip(x,y,html){tip.innerHTML=html;tip.style.display='block';tip.style.left=(x+13)+'px';tip.style.top=(y+14)+'px';}

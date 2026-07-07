@@ -61,12 +61,13 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=13"></script>
+<script src="store.js?v=14"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
 function render(){
   const tbl=document.getElementById('tbl');
+  const adm=DB.isAdmin(); // only admins manage people (also enforced server-side)
   let h='<tr><th>Name</th><th>Role</th><th>Access</th><th>Email</th><th style="width:90px">Tasks</th><th style="width:30px"></th></tr>';
   DB.people.forEach(p=>{
     const ts=DB.tasksOf(p.id);
@@ -76,7 +77,7 @@ function render(){
        '<td><span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span></td>'+
        '<td style="color:var(--muted)">'+(p.email||'—')+'</td>'+
        '<td>'+ts.length+'</td>'+
-       '<td><button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button></td></tr>';
+       '<td>'+(adm?'<button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button>':'')+'</td></tr>';
     if(expanded==p.id){
       if(ts.length) ts.forEach(t=>{const e=DB.event(t.eventId);
         h+='<tr class="assign"><td colspan="6"><span class="ev">'+(e?e.name:'?')+'</span> · '+t.lane+' · '+t.title+(t.deadline?' · due '+t.deadline:'')+' · '+t.status+'</td></tr>';});
@@ -100,12 +101,13 @@ document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_del').onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim()};
-  if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.data.nextPerson++,...d});DB.save();modal.classList.remove('on');render();};
+  if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.newId(),...d});DB.save();modal.classList.remove('on');render();};
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx',[
   {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Access:ACCESS_LABEL[p.access||'member']||p.access,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},
   {name:'Assignments',rows:DB.tasks.filter(t=>t.assignee).map(t=>{const e=DB.event(t.eventId);return{Person:DB.personName(t.assignee),Event:e?e.name:'',Lane:t.lane,Task:t.title,Deadline:t.deadline,Status:t.status};})}
 ]);
-boot(render);
+boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();});
+window.addEventListener('dc-remote',render);
 </script>
 </body>
 </html>
