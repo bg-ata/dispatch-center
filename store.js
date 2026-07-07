@@ -196,7 +196,10 @@ const DB={
       const bad=res.find(r=>r.error);
       if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
       this.data={};keys.forEach((k,i)=>{this.data[k]=res[i].data||[];});
-      if(!this.data.people.length)throw new Error('The dc_* tables are empty — run dispatch_upgrade.sql in the Supabase SQL editor (it migrates the existing data), then reload.');
+      if(!this.data.people.length){
+        let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
+        throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
+      }
       snapshot();
       subscribeRealtime();
       return this.data;
