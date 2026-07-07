@@ -320,7 +320,8 @@ function showLogin(){return new Promise(resolve=>{
   ov.style.cssText='position:fixed;inset:0;background:#f3f2ee;z-index:9999;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,system-ui,sans-serif';
   ov.innerHTML='<div style="background:#fff;border:1px solid #e3e1da;border-radius:14px;padding:26px 28px;width:330px;box-shadow:0 10px 40px rgba(0,0,0,.08)">'
     +'<div style="font-size:20px;font-weight:700;color:#2B2B2B">RENMAD <span style="color:#FF4A00">Dispatch Center</span></div>'
-    +'<div style="font-size:12px;color:#7c7c78;margin:2px 0 18px;font-style:italic">where the magic gets orchestrated</div>'
+    +'<div style="font-size:12px;color:#7c7c78;margin:2px 0 6px;font-style:italic">where the magic gets orchestrated</div>'
+    +'<div style="font-size:11px;color:#a9a79f;margin:0 0 14px">Accounts are created by Bel&eacute;n &mdash; ask her if you need one or forgot your password.</div>'
     +'<input id="lg_e" type="email" placeholder="email" autocomplete="username" style="width:100%;padding:9px 10px;border:1px solid #e3e1da;border-radius:8px;margin-bottom:8px;font:inherit;box-sizing:border-box">'
     +'<input id="lg_p" type="password" placeholder="password" autocomplete="current-password" style="width:100%;padding:9px 10px;border:1px solid #e3e1da;border-radius:8px;margin-bottom:10px;font:inherit;box-sizing:border-box">'
     +'<button id="lg_b" style="width:100%;padding:10px;background:#FF4A00;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font:inherit">Log in</button>'
@@ -336,6 +337,7 @@ function showLogin(){return new Promise(resolve=>{
 function navBar(active){
   return '<div class="nav"><a href="gantt.html" class="'+(active==='overview'?'on':'')+'">Overview</a>'+
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
+         '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }
