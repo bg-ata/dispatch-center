@@ -58,6 +58,9 @@
   .ftbl td input.money{text-align:right;width:92px}
   .mval{cursor:pointer;border-bottom:1px dashed #d8d5cc}.mval:hover{color:var(--orange);border-bottom-color:var(--orange)}
   .keyf{margin:4px 0 2px;padding-left:20px;font-size:13.5px;line-height:1.55}.keyf li{margin-bottom:5px}.keyf b{color:var(--charcoal)}
+  .ana{background:#FBFAF7;border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:10px;padding:10px 16px 12px;margin-bottom:16px;font-size:13px;line-height:1.5}
+  .ana .ana-t{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  .ana ul{margin:0;padding-left:18px}.ana li{margin-bottom:3px}.ana b{color:var(--charcoal)}
   .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}.del:hover{color:var(--red)}
   /* heat strip */
   .heat{overflow-x:auto}
@@ -190,10 +193,12 @@ function esc(s){return (s==null?'':''+s).replace(/"/g,'&quot;');}
 
 /* ---------- tabs ---------- */
 const TABS=[['year','Year status'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events'],['insights','Insights']];
-function activeTab(){const h=location.hash.replace('#','');return TABS.some(t=>t[0]===h)?h:'year';}
+/* the Insights tab (and every analysis strip) carries interpretation, not just figures — managers and up only */
+function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.canManage());}
+function activeTab(){const h=location.hash.replace('#','');return visTabs().some(t=>t[0]===h)?h:'year';}
 function render(){
   const tab=activeTab();
-  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
+  document.getElementById('tabs').innerHTML=visTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
   const warn=document.getElementById('warnbox');warn.innerHTML='';
   if(tab==='year'&&!DB.financeReady()){warn.innerHTML='<div class="warn">The finance module is not active yet — run <b>dispatch_finance.sql</b> in Supabase, then reload.</div>';}
@@ -235,6 +240,7 @@ function renderYear(){
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
     '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded.':'Read-only · figures are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
+    yearAnalysis()+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target yet.</p>'+
     '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>';
   const ys=document.getElementById('yearSel');
@@ -444,6 +450,7 @@ function renderWeek(){
     '<p class="hint">Only what came in THIS week — which events, which services — and where each event stands with the new takings.</p>'+
     '<div class="bigeur">'+eur(total)+'</div><p class="hint">signed across '+rows.length+' event'+(rows.length===1?'':'s')+' this week</p>'+
     '<div class="wstbl"><table id="wstbl"></table></div></div>'+
+    weekAnalysis()+
     (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
   const sel=document.getElementById('wkSel');
   sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+d+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
@@ -473,11 +480,13 @@ function ensureHero(ms){const up=ms.filter(e=>!e.completed);
 function renderDetail(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   ensureHero(ms);
+  const ev=ms.find(e=>e.code===heroCode);
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Week by week — '+heroSelHtml(ms,'heroSel')+'</h3>'+
-    '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>';
+    '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
+    detailAnalysis(ms,ev);
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderDetail();};
-  drawWeekTable(ms.find(e=>e.code===heroCode));
+  drawWeekTable(ev);
 }
 function drawWeekTable(ev){
   const rows=ev.rows.slice().sort((a,b)=>a.week-b.week);
@@ -517,7 +526,8 @@ function renderCompare(){
     '<div class="cmpbar" id="cmpbar"></div>'+
     '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
     '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
-    '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>';
+    '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
+    compareAnalysis(ms,ms.find(e=>e.code===heroCode));
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderCompare();};
   const cs=document.getElementById('cmpSel');
   cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
@@ -584,6 +594,116 @@ function drawComposition(ms){
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
+/* ---------- live analysis strips (managers and up) ----------
+   Every line is COMPUTED from the data at render time — nothing is written by
+   hand, so the reading changes on its own as new weeks are imported. */
+function anaBox(lines){
+  if(!DB.canManage()||!lines||!lines.length)return '';
+  return '<div class="ana"><div class="ana-t">📊 Analysis — computed live from the data · managers only</div><ul>'+
+    lines.map(l=>'<li>'+l+'</li>').join('')+'</ul></div>';
+}
+function yearAnalysis(){
+  if(!DB.canManage())return '';
+  const lines=[];
+  const fs=DB.finance.filter(f=>yearFilter==='all'||f.year==yearFilter);
+  const withInv=fs.filter(f=>f.invoiced!=null&&f.invoiced!=='');
+  const inv=withInv.reduce((a,f)=>a+(+f.invoiced||0),0),tgt=fSum(fs,'target'),str=fSum(fs,'stretch');
+  if(withInv.length&&str&&tgt)
+    lines.push('<b>'+finFmt(inv)+'</b> invoiced so far across '+withInv.length+' of '+fs.length+' events — '+
+      Math.round(100*inv/tgt)+' % of the year’s combined target ('+finFmt(tgt)+') and '+Math.round(100*inv/str)+' % of stretch.');
+  const res={};withInv.forEach(f=>{const r=finResult(f);if(r)res[r.label]=(res[r.label]||0)+1;});
+  if(Object.keys(res).length)
+    lines.push('Results so far: '+['Stretch','On target','Under'].filter(k=>res[k]).map(k=>'<b>'+res[k]+'</b> '+k.toLowerCase()).join(' · ')+
+      (fs.length>withInv.length?' — '+(fs.length-withInv.length)+' still to invoice.':'.'));
+  if(DB.weeklyReady()&&yearFilter!=='all'){
+    const ms=meta(),y=+yearFilter;
+    const tot=yy=>ms.filter(e=>e.year===yy).reduce((a,e)=>a+e.final,0);
+    const cur=tot(y),prev=tot(y-1);
+    if(cur&&prev)lines.push('Recorded sales '+y+' (weekly data, live events included): <b>'+eur(cur)+'</b> = '+
+      Math.round(100*cur/prev)+' % of the whole of '+(y-1)+' ('+eur(prev)+').');
+    const pace=medianPace(ms),today=new Date().toISOString().slice(0,10),cls={g:[],a:[],r:[]};
+    ms.filter(e=>!e.completed&&e.target).forEach(e=>{
+      const cw=e.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+      if(!cw)return;const i=WEEKS.indexOf(cw.week);if(i<0||pace[i]==null||pace[i]<=0)return;
+      const exp=e.target*pace[i];(e.final>=exp?cls.g:e.final>=exp*0.75?cls.a:cls.r).push(e.name);
+    });
+    if(cls.g.length+cls.a.length+cls.r.length)
+      lines.push('Portfolio pace right now: <b>'+cls.g.length+'</b> on pace'+
+        (cls.a.length?' · <b>'+cls.a.length+'</b> close ('+cls.a.join(', ')+')':'')+
+        (cls.r.length?' · <b>'+cls.r.length+'</b> behind ('+cls.r.join(', ')+')':'')+'.');
+  }
+  return anaBox(lines);
+}
+function weekAnalysis(){
+  if(!DB.canManage()||!weekDate)return '';
+  const today=new Date().toISOString().slice(0,10),y=String(weekDate).slice(0,4),lines=[];
+  const totalsBy={};
+  DB.weekly.forEach(r=>{if(r.date&&r.date.slice(0,4)===y&&r.date<=today)totalsBy[r.date]=(totalsBy[r.date]||0)+weekMoney(r);});
+  const tot=totalsBy[weekDate]||0;
+  const moneyWeeks=Object.keys(totalsBy).filter(d=>totalsBy[d]>0).sort((a,b)=>totalsBy[b]-totalsBy[a]);
+  if(moneyWeeks.length>3){
+    const vals=moneyWeeks.map(d=>totalsBy[d]).sort((a,b)=>a-b),med=vals[Math.floor(vals.length/2)];
+    lines.push(tot>0?('This week came in at <b>'+Math.round(100*tot/med)+' %</b> of a typical '+y+' money week (median '+eur(med)+').')
+      :('A quiet week — the typical '+y+' money week brings '+eur(med)+'.'));
+    lines.push('Best week of '+y+' so far: '+moneyWeeks[0]+' with '+eur(totalsBy[moneyWeeks[0]])+
+      (moneyWeeks[0]===weekDate?' — this one.':'.'));
+  }
+  const rows=DB.weekly.filter(r=>r.date===weekDate&&weekMoney(r)>0);
+  if(rows.length&&tot){
+    const svc=SERVICES.map(([k,l])=>[l,rows.reduce((a,r)=>a+(+r[k]||0),0)]).filter(s=>s[1]>0).sort((a,b)=>b[1]-a[1]);
+    if(svc.length)lines.push(svc[0][0]+' drove <b>'+Math.round(100*svc[0][1]/tot)+' %</b> of the week’s money.');
+  }
+  return anaBox(lines);
+}
+function detailAnalysis(ms,ev){
+  if(!DB.canManage()||!ev)return '';
+  const lines=[],done=doneOf(ms).filter(e=>e.code!==ev.code);
+  const pc=pctCurve(done,'soFarEur','final');
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  if(ev.completed){
+    lines.push(ev.name+' finished at <b>'+eur(ev.final)+'</b>'+
+      (ev.target?' = '+Math.round(100*ev.final/ev.target)+' % of its '+eur(ev.target)+' target':'')+'.');
+  }else if(cur){
+    const i=WEEKS.indexOf(cur.week),med=(i>=0&&pc.med[i]!=null)?pc.med[i]/100:null;
+    let s='At W'+cur.week+': <b>'+eur(ev.final)+'</b> so far'+
+      (ev.target?' = '+Math.round(100*ev.final/ev.target)+' % of target':'');
+    if(med!=null)s+=' — past events typically had '+Math.round(med*100)+' % of their final money in by now';
+    lines.push(s+'.');
+    if(med&&med>=0.15&&ev.final>0)
+      lines.push('Following the typical curve, that projects to ~<b>'+eur(Math.round(ev.final/med))+'</b>'+
+        (ev.target?' against the '+eur(ev.target)+' target':'')+'.');
+    else lines.push('Too early for a reliable projection — most money historically arrives after this point.');
+  }
+  const best=ev.rows.slice().sort((a,b)=>(+b.totalEur||0)-(+a.totalEur||0))[0];
+  if(best&&(+best.totalEur||0)>0)lines.push('Best week so far: '+best.date+' (+'+eur(+best.totalEur)+').');
+  return anaBox(lines);
+}
+function compareAnalysis(ms,ev){
+  if(!DB.canManage()||!ev)return '';
+  const lines=[];
+  const others=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2)
+    .concat(cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean));
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  if(!ev.completed&&cur){
+    const i=WEEKS.indexOf(cur.week),v=+cur.soFarEur||0;
+    others.slice(0,3).forEach(o=>{const ov=curve(o)[i];if(ov==null||ov<=0)return;
+      const d=Math.round(100*v/ov)-100;
+      lines.push(ev.name+' is <b>'+Math.abs(d)+' % '+(d>=0?'ahead of':'behind')+'</b> '+o.name+' at the same week ('+eur(v)+' vs '+eur(ov)+' at W'+cur.week+').');});
+    if(ev.target&&v<ev.target){
+      const done=doneOf(ms),pc=pctCurve(done,'soFarEur','final');
+      const rest=(i>=0&&pc.med[i]!=null)?Math.round(100-pc.med[i]):null;
+      lines.push(eur(ev.target-v)+' still needed for target with '+Math.max(0,-cur.week)+' weeks to go'+
+        (rest!=null?' — past events still collected '+rest+' % of their final after this point':'')+'.');
+    }
+  }else if(ev.completed){
+    others.slice(0,3).forEach(o=>{if(!o.final)return;const d=Math.round(100*ev.final/o.final)-100;
+      lines.push(ev.name+' finished <b>'+Math.abs(d)+' % '+(d>=0?'above':'below')+'</b> '+o.name+' ('+eur(ev.final)+' vs '+eur(o.final)+').');});
+  }
+  return anaBox(lines);
+}
+
 /* ================= TAB 5: INSIGHTS ================= */
 const FPAL=['#FF4A00','#185FA5','#3E8C28','#4C3079','#29ACE3','#C77800','#D32230','#9AA0A8'];
 let mixMode='eur',paceMode='total';
@@ -648,6 +768,7 @@ function keyFindings(ms,done){
   return out;
 }
 function renderInsights(){
+  if(!DB.canManage()){location.hash='year';renderYear();return;} // defense in depth — tab is hidden for members anyway
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   const done=doneOf(ms);
   document.getElementById('content').innerHTML=
