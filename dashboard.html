@@ -42,6 +42,10 @@
   #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
   .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
   .legend .cell{vertical-align:-3px;margin:0 3px 0 8px}
+  /* segmented mode control */
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:10px;vertical-align:middle}
+  .seg button{font-size:11px;padding:3px 10px;border:none;background:#fff;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--charcoal);color:#fff}
   /* compare chips */
   .cmpbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
   .chip2{display:inline-flex;align-items:center;gap:5px;background:#f6f5f1;border:1px solid var(--line);border-radius:20px;padding:2px 6px 2px 10px;font-size:12px;font-weight:600}
@@ -68,7 +72,7 @@
   <div id="content"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=19"></script>
+<script src="store.js?v=20"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -134,7 +138,7 @@ function render(){
     '<div class="panel"><h3>Pacing — <select id="heroSel"></select> &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select></h3>'+
     '<div class="cmpbar" id="cmpbar"></div>'+
     '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
-    '<h3 style="margin-top:16px">Money composition</h3><p class="hint">Cumulative sponsorship vs tickets vs everything else, week by week, for the selected event.</p>'+
+    '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
     '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
     '<div class="panel"><h3>Week by week — <span id="wkname"></span></h3><p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target set yet.</p>'+
@@ -160,7 +164,7 @@ function render(){
   bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);render();});
   const hero=ms.find(e=>e.code===heroCode);
   drawHero(ms);
-  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(hero);drawWeekTable(hero);}
+  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(ms);drawWeekTable(hero);}
   drawHeat(ms);
   drawMix(ms);
   drawSign(ms);
@@ -196,17 +200,38 @@ function drawHero(ms){
     scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
 
-/* cumulative composition of the selected event: SPX vs tickets vs the rest */
-function drawComposition(ev){
-  function carry(k){let last=0;return WEEKS.map(w=>{const r=ev.rows.find(x=>x.week===w);
-    if(r&&r[k]!=null)last=+r[k];return last;});}
-  const spx=carry('spxAcc'),tik=carry('ticketsAcc'),sofar=carry('soFarEur');
-  const other=WEEKS.map((w,i)=>Math.max(0,sofar[i]-spx[i]-tik[i]));
-  const mk=(label,data,color)=>({label,data,borderColor:color,backgroundColor:color+'B3',fill:true,pointRadius:0,borderWidth:1,tension:.2});
-  mkChart('comp',{type:'line',data:{labels:WLAB,datasets:[mk('Sponsorship (SPX)',spx,'#FF4A00'),mk('Tickets',tik,'#29ACE3'),mk('Other (telesales, recordings…)',other,'#9AA0A8')]},
-    options:{maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
-      scales:{y:{stacked:true,ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+/* money composition, COMPARABLE: one stacked bar per compared event (same set as the pacing chart) */
+let compMode='now'; // 'now' = total so far · 'week' = at the hero's current week · 'pct' = % mix
+function drawComposition(ms){
+  const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
+  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
+  const list=[ev].concat(sibs,cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean));
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  const wk=cur?cur.week:0;
+  const carryAt=(e,k,W)=>{let last=0;e.rows.forEach(r=>{if(r.week<=W&&r[k]!=null)last=+r[k];});return last;};
+  const W=(compMode==='week')?wk:99;
+  const vals=list.map(e=>{const spx=carryAt(e,'spxAcc',W),tik=carryAt(e,'ticketsAcc',W),sof=carryAt(e,'soFarEur',W);
+    let oth=Math.max(0,sof-spx-tik);
+    if(compMode==='pct'){const t=(spx+tik+oth)||1;return{spx:100*spx/t,tik:100*tik/t,oth:100*oth/t};}
+    return{spx,tik,oth};});
+  /* seg control + hint */
+  const seg=document.getElementById('compSeg');
+  seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)],['pct','% mix']]
+    .map(([m,l])=>'<button class="'+(compMode===m?'on':'')+'" data-cm="'+m+'">'+l+'</button>').join('');
+  seg.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{compMode=b.dataset.cm;drawComposition(ms);});
+  document.getElementById('compHint').textContent=
+    compMode==='pct'?'Share of each revenue source per event — compares the mix regardless of size.'
+    :compMode==='week'?'Everyone measured at the same point: W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now. The fair comparison for live vs finished events.'
+    :'Sponsorship vs tickets vs other, per event — finished events show final money, live ones what they have so far.';
+  const fmtV=v=>compMode==='pct'?(Math.round(v)+' %'):eur(v);
+  const mk=(label,key,color)=>({label,data:vals.map(v=>v[key]),backgroundColor:color});
+  mkChart('comp',{type:'bar',data:{labels:list.map(e=>e.name),
+    datasets:[mk('Sponsorship (SPX)','spx','#FF4A00'),mk('Tickets','tik','#29ACE3'),mk('Other (telesales, recordings…)','oth','#9AA0A8')]},
+    options:{maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y)}}},
+      scales:{x:{stacked:true,ticks:{font:{size:10}}},
+        y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
 
 /* the Excel view: metrics down, weeks across */
