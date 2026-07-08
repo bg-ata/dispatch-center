@@ -58,11 +58,12 @@
     <label>Access<select id="m_access"></select></label>
     <label>Email (login)<input id="m_email" placeholder="name@ata.email"></label>
     <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="m_fin" style="width:auto"> Finance editor — can add € figures (the accountant)</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="m_hr" style="width:auto"> HR — final step of the holiday approval chain</label>
   </div>
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=22"></script>
+<script src="store.js?v=23"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -75,7 +76,7 @@ function render(){
     const acc=p.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
     h+='<tr><td><span class="who" data-who="'+p.id+'">'+p.name+'</span></td>'+
        '<td><span class="rolepill">'+p.role+'</span></td>'+
-       '<td><span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span>'+(p.finance?' <span class="rolepill" style="background:#185FA5;color:#fff">€ finance</span>':'')+'</td>'+
+       '<td><span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span>'+(p.finance?' <span class="rolepill" style="background:#185FA5;color:#fff">€ finance</span>':'')+(p.hr?' <span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</td>'+
        '<td style="color:var(--muted)">'+(p.email||'—')+'</td>'+
        '<td>'+ts.length+'</td>'+
        '<td>'+(adm?'<button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button>':'')+'</td></tr>';
@@ -91,12 +92,13 @@ function render(){
   tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
 }
 const modal=document.getElementById('modal');
-function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',access:'member',email:'',finance:false};
+function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',access:'member',email:'',finance:false,hr:false};
   const fin=document.getElementById('m_fin');fin.checked=!!p.finance;
-  /* the finance permission is Belén-only (also enforced by the database) */
+  const hr=document.getElementById('m_hr');hr.checked=!!p.hr;
+  /* the finance & HR permissions are Belén-only (also enforced by the database) */
   const isBelen=!!(DB.currentUser&&(DB.currentUser.email||'').toLowerCase()==='belen.gallego@ata.email');
-  fin.disabled=!isBelen;fin.parentElement.style.opacity=isBelen?'1':'.45';
-  fin.parentElement.title=isBelen?'':'Only Belén can change the finance permission';
+  [fin,hr].forEach(cb=>{cb.disabled=!isBelen;cb.parentElement.style.opacity=isBelen?'1':'.45';
+    cb.parentElement.title=isBelen?'':'Only Belén can change this permission';});
   document.getElementById('m_title').textContent=idv?'Edit person':'Add person';
   m_name.value=p.name;const rs=document.getElementById('m_role');rs.innerHTML=ROLES.map(r=>'<option '+(r===p.role?'selected':'')+'>'+r+'</option>').join('');
   const as=document.getElementById('m_access');as.innerHTML=ACCESS.map(a=>'<option value="'+a+'" '+(a===(p.access||'member')?'selected':'')+'>'+(ACCESS_LABEL[a]||a)+'</option>').join('');
@@ -106,7 +108,7 @@ document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_del').onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
-document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim(),finance:document.getElementById('m_fin').checked};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim(),finance:document.getElementById('m_fin').checked,hr:document.getElementById('m_hr').checked};
   if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.newId(),...d});DB.save();modal.classList.remove('on');render();};
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx',[
   {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Access:ACCESS_LABEL[p.access||'member']||p.access,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},

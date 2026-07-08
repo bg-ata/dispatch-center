@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Hours</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1240px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+  .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
+  .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
+  select,button,input{font:inherit}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  .alarm{background:#FBEAEA;border:1px solid #E8B4B4;color:#8a1d1d;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  .alarm a{color:#8a1d1d;font-weight:700}
+  .mnav{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .mnav b{font-size:14px;color:var(--charcoal)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+  .chipbox{background:#faf9f6;border:1px solid var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:var(--muted)}
+  .chipbox b{display:block;font-size:16px;color:var(--charcoal);font-variant-numeric:tabular-nums}
+  .chipbox.ok b{color:var(--green)}.chipbox.bad b{color:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #efede8}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td input{width:76px;text-align:right;padding:4px 7px;border:1px solid var(--line);border-radius:6px}
+  tr.auto td{color:var(--muted);background:#faf9f6}
+  tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
+  .code{font-size:11px;color:var(--muted)}
+  .empty{color:var(--muted);font-style:italic;padding:10px 2px}
+  /* matrix */
+  .mx{overflow-x:auto}
+  .mx table{font-size:12px;min-width:640px}
+  .mx td.c{text-align:center}
+  .ok2{color:var(--green);font-weight:700}.no2{color:var(--red);font-weight:700}.na{color:#c9c6bd}
+  .padd{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
+  .padd label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  .padd input{padding:6px 8px;border:1px solid var(--line);border-radius:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>Hours</h1>
+  <p class="sub">Allocate your week to projects — it's how the company knows where the time goes. 37.5 h/week, 35 h in June &amp; July; Madrid bank holidays and approved vacations are filled in for you.</p>
+  <div id="warnbox"></div>
+  <div id="alarms"></div>
+  <div class="panel">
+    <h3>My week</h3>
+    <div class="mnav">
+      <button class="btn" id="w_prev">‹</button>
+      <b id="w_lab"></b>
+      <button class="btn" id="w_next">›</button>
+      <button class="btn" id="w_now" style="font-size:12px">This week</button>
+      <span id="w_msg" style="font-size:12px;color:var(--green)"></span>
+    </div>
+    <div class="chips" id="chips"></div>
+    <table id="ts"></table>
+    <div style="margin-top:12px"><button class="btn primary" id="saveBtn">Save my hours</button></div>
+  </div>
+  <div id="mgr"></div>
+</div>
+<script src="store.js?v=23"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('hours');
+let weekISO=toISO(monday(new Date()));
+const fmtH=v=>(Math.round(v*100)/100).toLocaleString('es-ES');
+function activeProjects(){return DB.projects.filter(p=>p.active!==false&&!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0));}
+function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
+function render(){
+  const warn=document.getElementById('warnbox');
+  if(!DB.hrReady()){warn.innerHTML='<div class="warn">The HR module is not active yet — run <b>dispatch_hr.sql</b> in Supabase, then reload.</div>';return;}
+  warn.innerHTML='';
+  renderAlarms();renderWeek();renderMgr();
+}
+function renderAlarms(){
+  const me=DB.currentUser,box=document.getElementById('alarms');
+  if(!me){box.innerHTML='';return;}
+  const miss=missingWeeks(me.id);
+  box.innerHTML=miss.length
+    ?'<div class="alarm">⏰ <b>'+miss.length+' week'+(miss.length===1?'':'s')+' without your hours:</b> '+
+      miss.map(w=>'<a href="#" data-goto="'+w+'">'+w+'</a>').join(' · ')+' — filling them in is mandatory.</div>'
+    :'';
+  box.querySelectorAll('[data-goto]').forEach(a=>a.onclick=e=>{e.preventDefault();weekISO=a.dataset.goto;renderWeek();});
+}
+function renderWeek(){
+  const me=DB.currentUser;
+  const mon=ymd(weekISO),fri=addDays(mon,4);
+  document.getElementById('w_lab').textContent='Week of '+weekISO+' ('+fmtD(mon)+' – '+fmtD(fri)+')';
+  if(!me){document.getElementById('ts').innerHTML='<tr><td class="empty">Log in to fill your hours.</td></tr>';return;}
+  const w=weekWorkInfo(weekISO,me.id);
+  const t=tsFor(me.id,weekISO);
+  const manual=t?Object.assign({},t.hours):{};
+  const sum=Object.values(manual).reduce((a,v)=>a+(+v||0),0);
+  const remaining=Math.round((w.toAllocate-sum)*100)/100;
+  document.getElementById('chips').innerHTML=
+    '<span class="chipbox">Required<b>'+fmtH(w.required)+' h</b></span>'+
+    (w.fest>0?'<span class="chipbox" title="'+w.festNames.join(', ')+'">00. Festivos (auto)<b>'+fmtH(w.fest)+' h</b></span>':'')+
+    (w.vac>0?'<span class="chipbox">04. Vacaciones (auto)<b>'+fmtH(w.vac)+' h</b></span>':'')+
+    '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
+    '<span class="chipbox '+(Math.abs(remaining)<0.01?'ok':'bad')+'">Remaining<b>'+(Math.abs(remaining)<0.01?'✓ 0':fmtH(remaining))+'</b></span>';
+  let h='<tr><th>Project</th><th class="num" style="width:110px">Hours</th></tr>';
+  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  if(w.fest>0&&fp)h+='<tr class="auto"><td>'+fp.label+' <span class="code">auto · '+w.festNames.join(', ')+'</span></td><td class="num">'+fmtH(w.fest)+'</td></tr>';
+  if(w.vac>0&&vp)h+='<tr class="auto"><td>'+vp.label+' <span class="code">auto · approved holidays</span></td><td class="num">'+fmtH(w.vac)+'</td></tr>';
+  activeProjects().forEach(p=>{
+    h+='<tr><td>'+p.label+(p.code?' <span class="code">('+p.code+')</span>':'')+'</td>'+
+      '<td class="num"><input type="number" min="0" step="0.25" data-pid="'+p.id+'" value="'+(manual[p.id]!=null?manual[p.id]:'')+'" placeholder="0"></td></tr>';
+  });
+  h+='<tr class="total"><td>Total (with auto lines)</td><td class="num" id="tsTotal">'+fmtH(sum+w.fest+w.vac)+' / '+fmtH(w.required)+'</td></tr>';
+  document.getElementById('ts').innerHTML=h;
+  document.querySelectorAll('#ts input').forEach(inp=>inp.oninput=()=>{
+    let s=0;document.querySelectorAll('#ts input').forEach(i=>s+=(+i.value||0));
+    document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required);
+  });
+}
+document.getElementById('saveBtn').onclick=()=>{
+  const me=DB.currentUser;if(!me){alert('Log in first.');return;}
+  const hours={};
+  document.querySelectorAll('#ts input').forEach(i=>{const v=+i.value;if(v>0)hours[i.dataset.pid]=v;});
+  let t=tsFor(me.id,weekISO);
+  if(t)t.hours=hours;else DB.timesheets.push({id:DB.newId(),personId:me.id,week:weekISO,hours});
+  DB.save();
+  const w=weekWorkInfo(weekISO,me.id);
+  const sum=Object.values(hours).reduce((a,v)=>a+(+v||0),0);
+  const m=document.getElementById('w_msg');
+  m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
+  m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
+  setTimeout(()=>m.textContent='',5000);
+  renderAlarms();renderWeek();renderMgr();
+};
+document.getElementById('w_prev').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),-7));renderWeek();};
+document.getElementById('w_next').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),7));renderWeek();};
+document.getElementById('w_now').onclick=()=>{weekISO=toISO(monday(new Date()));renderWeek();};
+/* ---------- manager / HR view ---------- */
+function lastWeeks(n){
+  const out=[],cur=monday(new Date());
+  for(let i=n-1;i>=0;i--){const w=toISO(addDays(cur,-7*i));if(w>=HR_START)out.push(w);}
+  return out;
+}
+function renderMgr(){
+  const box=document.getElementById('mgr');
+  if(!(DB.canManage()||DB.isHR())){box.innerHTML='';return;}
+  const weeks=lastWeeks(8),curW=toISO(monday(new Date()));
+  let h='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Everyone gets a red nav alarm while weeks are missing.</p><div class="mx"><table>'+
+    '<tr><th>Person</th>'+weeks.map(w=>'<th class="num">'+w.slice(5)+'</th>').join('')+'</tr>';
+  DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(p=>{
+    h+='<tr><td>'+p.name+'</td>'+weeks.map(w=>{
+      if(w>=curW)return '<td class="c na">–</td>';
+      return '<td class="c '+(tsComplete(p.id,w)?'ok2">✓':'no2">✗')+'</td>';
+    }).join('')+'</tr>';
+  });
+  h+='</table></div></div>';
+  /* project totals */
+  const totals={};let grand=0;
+  DB.timesheets.forEach(t=>{Object.keys(t.hours||{}).forEach(pid=>{const v=+t.hours[pid]||0;totals[pid]=(totals[pid]||0)+v;grand+=v;});});
+  /* auto lines: festivos + vacaciones computed per person per week since HR_START */
+  let festT=0,vacT=0;
+  const cur=toISO(monday(new Date()));
+  DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){const w=weekWorkInfo(toISO(m),p.id);festT+=w.fest;vacT+=w.vac;}});
+  h+='<div class="panel"><h3>Hours by project (since '+HR_START+')</h3><p class="hint">The allocation engine output — accounting codes included. Festivos &amp; Vacaciones are the automatic lines.</p><table>'+
+    '<tr><th>Project</th><th>Code</th><th class="num">Hours</th><th class="num">Share</th></tr>';
+  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  const allT=grand+festT+vacT;
+  const row=(label,code,v)=>'<tr><td>'+label+'</td><td class="code">'+(code||'')+'</td><td class="num">'+fmtH(v)+'</td><td class="num">'+(allT?Math.round(100*v/allT)+' %':'—')+'</td></tr>';
+  if(fp&&festT>0)h+=row(fp.label+' (auto)','',festT);
+  if(vp&&vacT>0)h+=row(vp.label+' (auto)','',vacT);
+  DB.projects.filter(p=>!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0)).forEach(p=>{
+    if(totals[p.id])h+=row(p.label,p.code,totals[p.id]);
+  });
+  h+='<tr class="total"><td>Total</td><td></td><td class="num">'+fmtH(allT)+'</td><td></td></tr></table>'+
+    '<div style="margin-top:10px"><button class="btn" id="xlsBtn">⬇ Excel (all allocations)</button></div>';
+  /* admin: manage the project list */
+  if(DB.isAdmin()){
+    h+='<h3 style="margin-top:18px">Projects</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays).</p><table>'+
+      '<tr><th>Project</th><th>Code</th><th></th></tr>'+
+      DB.projects.filter(p=>!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(p=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td>'+p.label+'</td><td class="code">'+(p.code||'')+'</td>'+
+        '<td><button class="btn" style="font-size:11px;padding:3px 9px" data-tgl="'+p.id+'">'+(p.active===false?'Reactivate':'Retire')+'</button></td></tr>').join('')+
+      '</table><div class="padd"><label>New project label<input id="np_label" placeholder="02. Hidrógeno 27"></label>'+
+      '<label>Cost code<input id="np_code" placeholder="70324" style="width:100px"></label>'+
+      '<button class="btn primary" id="np_add" style="font-size:12px">+ Add</button></div>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+  const xb=document.getElementById('xlsBtn');
+  if(xb)xb.onclick=exportHours;
+  box.querySelectorAll('[data-tgl]').forEach(b=>b.onclick=()=>{
+    const p=DB.projects.find(x=>x.id==b.dataset.tgl);if(!p)return;
+    p.active=(p.active===false);DB.save();renderMgr();renderWeek();});
+  const ab=document.getElementById('np_add');
+  if(ab)ab.onclick=()=>{
+    const l=document.getElementById('np_label').value.trim();if(!l){alert('Give the project a label.');return;}
+    DB.projects.push({id:DB.newId(),label:l,code:document.getElementById('np_code').value.trim()||null,kind:null,
+      sort:Math.max(0,...DB.projects.map(p=>p.sort||0))+1,active:true});
+    DB.save();renderMgr();renderWeek();};
+}
+function exportHours(){
+  const rows=[];
+  DB.timesheets.forEach(t=>{
+    const who=DB.personName(t.personId);
+    Object.keys(t.hours||{}).forEach(pid=>{const p=DB.projects.find(x=>x.id==pid);
+      rows.push({Person:who,Week:t.week,Project:p?p.label:pid,Code:p&&p.code||'',Hours:+t.hours[pid]||0});});
+  });
+  /* auto lines per person-week */
+  const cur=toISO(monday(new Date()));
+  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){
+    const w=weekWorkInfo(toISO(m),p.id);
+    if(w.fest>0&&fp)rows.push({Person:p.name,Week:toISO(m),Project:fp.label,Code:'',Hours:w.fest});
+    if(w.vac>0&&vp)rows.push({Person:p.name,Week:toISO(m),Project:vp.label,Code:'',Hours:w.vac});
+  }});
+  rows.sort((a,b)=>a.Week===b.Week?a.Person.localeCompare(b.Person):a.Week.localeCompare(b.Week));
+  exportXLSX('RENMAD_hours_'+new Date().toISOString().slice(0,10)+'.xlsx',[{name:'Allocations',rows}]);
+}
+boot(render);
+window.addEventListener('dc-remote',render);
+</script>
+</body>
+</html>

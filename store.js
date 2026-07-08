@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 14;
+const STORE_VERSION = 15;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -112,6 +112,116 @@ function bankHols(mon,cc){const out=[],fixed=HOL[cc]||[],mov=MOV[cc]||[],sun=add
     fixed.forEach(([k,n])=>{const p=k.split('-').map(Number),hd=new Date(y,p[0]-1,p[1]);days.forEach(d=>{if(+d===+hd)out.push([n,d]);});});
     mov.forEach(([off,n])=>{const hd=addDays(es,off);hd.setHours(0,0,0,0);days.forEach(d=>{if(+d===+hd)out.push([n,d]);});});});return out;}
 
+/* ---- HR: Madrid labour calendar + working-hours engine + holiday chain ---- */
+/* "Calendario laboral oficial de Madrid" (capital): 12 national/regional + 2 local.
+   Fixed dates that fall on a SUNDAY are shifted to Monday (the usual decree);
+   verify against the BOCM each year and correct via MAD_OVR if needed. */
+const MAD_FIX=[['01-01','Año Nuevo'],['01-06','Reyes'],['05-01','Fiesta del Trabajo'],['05-02','Comunidad de Madrid'],['05-15','San Isidro'],['08-15','Asunción'],['10-12','Fiesta Nacional'],['11-01','Todos los Santos'],['11-09','La Almudena'],['12-06','Constitución'],['12-08','Inmaculada'],['12-25','Navidad']];
+const MAD_OVR={}; // per-year corrections from the official BOCM calendar, e.g. {2027:{'2027-05-17':'San Isidro (traslado)'}}
+const _madCache={};
+function madridHolidays(y){
+  if(_madCache[y])return _madCache[y];
+  const out={};
+  MAD_FIX.forEach(([md,n])=>{let d=new Date(y,+md.slice(0,2)-1,+md.slice(3));
+    if(d.getDay()===0){d=addDays(d,1);n+=' (traslado)';}
+    out[toISO(d)]=n;});
+  const e=easter(y);
+  out[toISO(addDays(e,-3))]='Jueves Santo';
+  out[toISO(addDays(e,-2))]='Viernes Santo';
+  Object.assign(out,MAD_OVR[y]||{});
+  return _madCache[y]=out;
+}
+function madHol(iso){return madridHolidays(+iso.slice(0,4))[iso]||null;}
+/* 37.5 h/week 10 months; June & July = 35 h/week → 7.5 or 7 h per working day */
+function hoursPerDay(d){const m=d.getMonth();return (m===5||m===6)?7:7.5;}
+function workingDaysBetween(fromISO,toISO_){
+  let n=0;for(let d=ymd(fromISO);toISO(d)<=toISO_;d=addDays(d,1)){
+    if(d.getDay()===0||d.getDay()===6)continue;
+    if(madHol(toISO(d)))continue;n++;}
+  return n;
+}
+function personVacDays(personId,fromISO,toISO_){ // approved vacation working days in a range
+  const out=[];
+  DB.holidays.filter(h=>h.personId==personId&&h.status==='approved').forEach(h=>{
+    for(let d=ymd(h.dateFrom);toISO(d)<=h.dateTo;d=addDays(d,1)){
+      const iso=toISO(d);
+      if(iso<fromISO||iso>toISO_)continue;
+      if(d.getDay()===0||d.getDay()===6||madHol(iso))continue;
+      out.push(iso);}});
+  return out;
+}
+function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vacaciones for one week
+  const mon=ymd(mondayISO);let required=0,fest=0,festNames=[],vac=0;
+  const vacDays=personId!=null?personVacDays(personId,mondayISO,toISO(addDays(mon,4))):[];
+  for(let i=0;i<5;i++){const d=addDays(mon,i),iso=toISO(d),h=hoursPerDay(d);
+    required+=h;
+    const hol=madHol(iso);
+    if(hol){fest+=h;festNames.push(iso.slice(5)+' '+hol);}
+    else if(vacDays.includes(iso))vac+=h;
+  }
+  return {required,fest,festNames,vac,toAllocate:Math.max(0,required-fest-vac)};
+}
+const HR_START='2026-07-06'; // first week the timesheet is mandatory (module go-live)
+function tsFor(personId,weekISO){return DB.timesheets.find(t=>t.personId==personId&&t.week===weekISO);}
+function tsManualSum(t){return t?Object.values(t.hours||{}).reduce((a,v)=>a+(+v||0),0):0;}
+function tsComplete(personId,weekISO){
+  const w=weekWorkInfo(weekISO,personId);
+  if(w.toAllocate<=0)return true; // all-holiday/vacation week: nothing to fill
+  return Math.abs(tsManualSum(tsFor(personId,weekISO))-w.toAllocate)<0.01;
+}
+function missingWeeks(personId){
+  const out=[],cur=toISO(monday(new Date()));
+  for(let m=ymd(HR_START);toISO(m)<cur;m=addDays(m,7)){
+    const iso=toISO(m);
+    if(!tsComplete(personId,iso))out.push(iso);}
+  return out;
+}
+/* holiday approval chain: team manager → Belén → HR */
+function isBelenP(p){return !!p&&(p.email||'').toLowerCase()==='belen.gallego@ata.email';}
+function holManager(p){ // first approver; managers/admins skip straight to Belén
+  if(!p||p.access==='manager'||p.access==='admin')return null;
+  const mgr=DB.people.find(x=>x.access==='manager'&&x.role===p.role&&x.id!=p.id);
+  if(mgr)return mgr;
+  return DB.people.find(x=>x.access==='admin'&&!isBelenP(x)&&x.id!=p.id)||null; // PM/Admin roles → Carlos
+}
+function holChain(p){
+  const c=[],m=holManager(p);
+  if(m&&!isBelenP(m))c.push({key:'manager',who:m});
+  const belen=DB.people.find(isBelenP);
+  if(belen&&belen.id!=p.id)c.push({key:'belen',who:belen});
+  c.push({key:'hr',who:null});
+  return c;
+}
+function holStageLabel(req){
+  const p=DB.person(req.personId);
+  if(req.status==='manager'){const m=holManager(p);return 'waiting for '+(m?m.name:'manager');}
+  if(req.status==='belen')return 'waiting for Belén';
+  if(req.status==='hr')return 'waiting for HR';
+  return req.status;
+}
+function holActsOnMe(req){ // is it MY turn to decide this request?
+  const me=DB.currentUser;if(!me||req.personId==me.id)return false;
+  const p=DB.person(req.personId);if(!p)return false;
+  if(req.status==='manager'){const m=holManager(p);return (m&&m.id==me.id)||me.access==='admin';}
+  if(req.status==='belen')return isBelenP(me);
+  if(req.status==='hr')return !!me.hr||(isBelenP(me)&&!DB.people.some(x=>x.hr&&!x.deleted));
+  return false;
+}
+function holNextStatus(req){
+  const chain=holChain(DB.person(req.personId)).map(s=>s.key);
+  const i=chain.indexOf(req.status);
+  return (i<0||i===chain.length-1)?'approved':chain[i+1];
+}
+function myPendingApprovals(){return DB.hrReady()?DB.holidays.filter(holActsOnMe).length:0;}
+/* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
+function decorateNav(){
+  if(!DB.hrReady()||!DB.currentUser)return;
+  const badge=(id,n,title)=>{const el=document.getElementById(id);
+    if(el&&n>0)el.innerHTML+=' <span title="'+title+'" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';};
+  badge('nav-hol',myPendingApprovals(),'holiday requests waiting for your decision');
+  badge('nav-hrs',missingWeeks(DB.currentUser.id).length,'weeks without your hours filled in');
+}
+
 /* ---- seed ---- */
 const SEED_EVENTS=[
  {id:1,name:'E053 RENMAD Invest',topic:'Investment',pm:'Belén Gallego',lead:'',sales:'Sheetal Shamdasani',city:'Madrid',country:'Spain',date:'2027-01-26',days:2,prov:true},
@@ -187,7 +297,27 @@ function buildSeed(){
    {id:10,eventId:null,name:'DC Italia',edition:2,year:2026,semester:2,city:'Milan','when':'11-12 Nov',pm:'Elena',sales:'Sheetal',target:110000,stretch:130000,invoiced:null,spex:19275,notes:''},
    {id:11,eventId:null,name:'H2',edition:5,year:2026,semester:2,city:'Zaragoza','when':'18-19 Nov',pm:'Andrea',sales:'Sheetal',target:250000,stretch:290000,invoiced:null,spex:33671.5,notes:''},
   ];
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
+  /* HR seed: the 16 hour-allocation projects (mirrors dispatch_hr.sql) */
+  const projects=[
+   {id:1,label:'00. Festivos',code:null,kind:'festivos',sort:0,active:true},
+   {id:2,label:'01. Webinars',code:null,kind:null,sort:1,active:true},
+   {id:3,label:'02. Hidrógeno 26',code:'70315',kind:null,sort:2,active:true},
+   {id:4,label:'02. Chile 26',code:'70316',kind:null,sort:3,active:true},
+   {id:5,label:'02. México 27',code:'70317',kind:null,sort:4,active:true},
+   {id:6,label:'02. UsefulAI 26',code:'70318',kind:null,sort:5,active:true},
+   {id:7,label:'02. Invest Italia 26',code:'70319',kind:null,sort:6,active:true},
+   {id:8,label:'02. Datacenters Italia 26',code:'70320',kind:null,sort:7,active:true},
+   {id:9,label:'02. Biometano 27',code:'70321',kind:null,sort:8,active:true},
+   {id:10,label:'02. Almacenamiento 27',code:'70322',kind:null,sort:9,active:true},
+   {id:11,label:'02. Storage Italia 27',code:'70323',kind:null,sort:10,active:true},
+   {id:12,label:'03. RePower Horizon Europe',code:'70281',kind:null,sort:11,active:true},
+   {id:13,label:'04. Vacaciones',code:null,kind:'vacaciones',sort:12,active:true},
+   {id:14,label:'04. General',code:null,kind:null,sort:13,active:true},
+   {id:15,label:'05. Desarrollo/Comercial',code:null,kind:null,sort:14,active:true},
+   {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
+  ];
+  people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -198,16 +328,19 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
-  people:['id','name','role','access','email','finance'],
+  people:['id','name','role','access','email','finance','hr'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
+  projects:['id','label','code','kind','sort','active'],
+  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log'],
+  timesheets:['id','personId','week','hours'],
 };
-let _finReady=false,_weeklyReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -236,6 +369,17 @@ const DB={
           if(!wr.data||wr.data.length<page)break;from+=page;}
         _weeklyReady=true;
       }catch(e){this.data.weekly=[];console.warn('weekly module not ready:',e.message||e);}
+      /* HR module (projects + holidays + timesheets): tolerant too */
+      this.data.projects=[];this.data.holidays=[];this.data.timesheets=[];_hrReady=false;
+      try{
+        const [pr,ho,ts]=await Promise.all([
+          sb.from('dc_projects').select('*').eq('deleted',false).order('sort'),
+          sb.from('dc_holidays').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_timesheets').select('*').eq('deleted',false).order('id')]);
+        if(pr.error)throw pr.error;if(ho.error)throw ho.error;if(ts.error)throw ts.error;
+        this.data.projects=pr.data||[];this.data.holidays=ho.data||[];this.data.timesheets=ts.data||[];
+        _hrReady=true;
+      }catch(e){console.warn('HR module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -260,6 +404,7 @@ const DB={
       for(const k of Object.keys(TABLES)){
         if(k==='finance'&&!_finReady)continue; // finance table not created yet
         if(k==='weekly'&&!_weeklyReady)continue; // weekly table not created yet
+        if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)continue; // HR tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -300,6 +445,11 @@ const DB={
   financeReady(){return !USE_SUPABASE||_finReady;},
   get weekly(){return this.data.weekly||[];},
   weeklyReady(){return !USE_SUPABASE||_weeklyReady;},
+  get projects(){return this.data.projects||[];},
+  get holidays(){return this.data.holidays||[];},
+  get timesheets(){return this.data.timesheets||[];},
+  hrReady(){return !USE_SUPABASE||_hrReady;},
+  isHR(){return !!(this.currentUser&&this.currentUser.hr);},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
   /* admins & managers set any status; members set the status of their OWN tasks
@@ -315,6 +465,8 @@ function subscribeRealtime(){
     Object.keys(TABLES).forEach(k=>{
       if(k==='finance'&&!_finReady)return;
       if(k==='weekly')return; // bulk table, no realtime — dashboard reloads on demand
+      if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)return;
+      if(k==='timesheets')return; // own-row edits, no realtime needed
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -365,6 +517,7 @@ async function boot(renderFn){
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
   renderFn();
+  try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
 }
 function rosterBanner(em){
   const b=document.createElement('div');
@@ -396,6 +549,8 @@ function navBar(active){
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
          '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">€ Dashboard</a>'+
          '<a href="impact.html" class="'+(active==='impact'?'on':'')+'">Impact</a>'+
+         '<a href="holidays.html" id="nav-hol" class="'+(active==='holidays'?'on':'')+'">Holidays</a>'+
+         '<a href="hours.html" id="nav-hrs" class="'+(active==='hours'?'on':'')+'">Hours</a>'+
          '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
