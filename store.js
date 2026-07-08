@@ -132,17 +132,18 @@ function madridHolidays(y){
   return _madCache[y]=out;
 }
 function madHol(iso){return madridHolidays(+iso.slice(0,4))[iso]||null;}
-/* 37.5 h/week 10 months; June & July = 35 h/week → 7.5 or 7 h per working day */
-function hoursPerDay(d){const m=d.getMonth();return (m===5||m===6)?7:7.5;}
+/* Legal working pattern: Mon–Thu 8 h + Fri 5.5 h (= 37.5); June & July 7 h every day (= 35).
+   Flexible working is allowed — this pattern is what a DAY is worth (holidays, absences). */
+function hoursPerDay(d){const m=d.getMonth();if(m===5||m===6)return 7;return d.getDay()===5?5.5:8;}
 function workingDaysBetween(fromISO,toISO_){
   let n=0;for(let d=ymd(fromISO);toISO(d)<=toISO_;d=addDays(d,1)){
     if(d.getDay()===0||d.getDay()===6)continue;
     if(madHol(toISO(d)))continue;n++;}
   return n;
 }
-function personVacDays(personId,fromISO,toISO_){ // approved vacation working days in a range
+function personVacDays(personId,fromISO,toISO_){ // approved vacation working days in a range (remote ≠ vacation)
   const out=[];
-  DB.holidays.filter(h=>h.personId==personId&&h.status==='approved').forEach(h=>{
+  DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&h.type!=='remote').forEach(h=>{
     for(let d=ymd(h.dateFrom);toISO(d)<=h.dateTo;d=addDays(d,1)){
       const iso=toISO(d);
       if(iso<fromISO||iso>toISO_)continue;
@@ -213,13 +214,25 @@ function holNextStatus(req){
   return (i<0||i===chain.length-1)?'approved':chain[i+1];
 }
 function myPendingApprovals(){return DB.hrReady()?DB.holidays.filter(holActsOnMe).length:0;}
+/* remote working: up to 4 weeks (20 working days) per person per year */
+const REMOTE_MAX_DAYS=20;
+function remoteDaysUsed(personId,year){
+  return DB.holidays.filter(h=>h.personId==personId&&h.type==='remote'&&h.status!=='denied'&&(h.dateFrom||'').slice(0,4)===String(year))
+    .reduce((a,h)=>a+(+h.workDays||0),0);
+}
+/* team visibility: admins & HR see everyone; managers see THEIR team; members see their team */
+function hrVisiblePeople(){
+  const me=DB.currentUser;if(!me)return [];
+  const all=DB.people.slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
+  if(DB.isAdmin()||DB.isHR())return all;
+  return all.filter(p=>p.role===me.role);
+}
 /* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
 function decorateNav(){
   if(!DB.hrReady()||!DB.currentUser)return;
-  const badge=(id,n,title)=>{const el=document.getElementById(id);
-    if(el&&n>0)el.innerHTML+=' <span title="'+title+'" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';};
-  badge('nav-hol',myPendingApprovals(),'holiday requests waiting for your decision');
-  badge('nav-hrs',missingWeeks(DB.currentUser.id).length,'weeks without your hours filled in');
+  const n=myPendingApprovals()+missingWeeks(DB.currentUser.id).length;
+  const el=document.getElementById('nav-hr');
+  if(el&&n>0)el.innerHTML+=' <span title="holiday decisions waiting on you and/or weeks without your hours" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
 }
 
 /* ---- seed ---- */
@@ -331,13 +344,13 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
-  people:['id','name','role','access','email','finance','hr'],
+  people:['id','name','role','access','email','finance','hr','holidayDays'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
   projects:['id','label','code','kind','sort','active'],
-  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log'],
+  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type'],
   timesheets:['id','personId','week','hours'],
 };
 let _finReady=false,_weeklyReady=false,_hrReady=false; // optional tables (tolerant: app works without them)
@@ -549,8 +562,7 @@ function navBar(active){
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
          '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">€ Dashboard</a>'+
          '<a href="impact.html" class="'+(active==='impact'?'on':'')+'">Impact</a>'+
-         '<a href="holidays.html" id="nav-hol" class="'+(active==='holidays'?'on':'')+'">Holidays</a>'+
-         '<a href="hours.html" id="nav-hrs" class="'+(active==='hours'?'on':'')+'">Hours</a>'+
+         '<a href="hr.html" id="nav-hr" class="'+(active==='hr'?'on':'')+'">HR</a>'+
          '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
