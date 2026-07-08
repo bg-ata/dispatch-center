@@ -56,6 +56,8 @@
   .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block}
   .ftbl td input{font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:100%;min-width:56px}
   .ftbl td input.money{text-align:right;width:92px}
+  .mval{cursor:pointer;border-bottom:1px dashed #d8d5cc}.mval:hover{color:var(--orange);border-bottom-color:var(--orange)}
+  .keyf{margin:4px 0 2px;padding-left:20px;font-size:13.5px;line-height:1.55}.keyf li{margin-bottom:5px}.keyf b{color:var(--charcoal)}
   .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}.del:hover{color:var(--red)}
   /* heat strip */
   .heat{overflow-x:auto}
@@ -90,7 +92,7 @@
   #drop.over{border-color:var(--orange);color:var(--orange)}
   #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
   /* add-figures modal */
-  #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
+  #modal,#repmodal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on,#repmodal.on{display:flex}
   .card{background:#fff;border-radius:14px;padding:20px 22px;width:560px;max-width:94vw;max-height:92vh;overflow-y:auto}
   .card h3{margin:0 0 14px;font-size:17px}
   .frm{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
@@ -131,6 +133,15 @@
   <div class="mrow"><button class="btn" id="f_cancel">Cancel</button><button class="btn primary" id="f_save">Save</button></div>
 </div></div>
 
+<div id="repmodal"><div class="card" style="width:780px">
+  <h3>Weekly report for the General Manager</h3>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Week of <select id="rp_week" style="font-size:12px"></select> &nbsp;·&nbsp; “Copy for email” puts the whole block below on the clipboard, ready to paste into Outlook — no attachment needed.</div>
+  <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">Highlights (one per line — edit before copying)</div>
+  <textarea id="rp_hl" style="width:100%;min-height:88px;font:12.5px 'Segoe UI',sans-serif;border:1px solid var(--line);border-radius:7px;padding:8px;box-sizing:border-box;resize:vertical"></textarea>
+  <div id="rp_prev" style="border:1px solid var(--line);border-radius:8px;padding:14px;margin-top:10px;max-height:330px;overflow:auto;background:#fff"></div>
+  <div class="mrow"><span id="rp_msg" style="font-size:12px;color:var(--green);margin-right:auto;align-self:center"></span><button class="btn" id="rp_close">Close</button><button class="btn primary" id="rp_copy">📋 Copy for email</button></div>
+</div></div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="store.js?v=22"></script>
 <script>
@@ -147,11 +158,15 @@ function meta(){
   const m=byEvent(),out=[];const today=new Date().toISOString().slice(0,10);
   Object.keys(m).forEach(code=>{
     const rows=m[code],last=rows[rows.length-1];
-    let target=null,stretch=null,final=0,lastData=null;
+    let target=null,stretch=null,final=0,lastData=null,spx=0,tik=0,topicLeads=0,eventLeads=0,sponsorsN=0;
     rows.forEach(r=>{if(r.target!=null)target=+r.target;if(r.stretch!=null)stretch=+r.stretch;
-      if(r.soFarEur!=null&&+r.soFarEur>0)lastData=r;final=Math.max(final,+r.soFarEur||0);});
+      if(r.soFarEur!=null&&+r.soFarEur>0)lastData=r;final=Math.max(final,+r.soFarEur||0);
+      spx=Math.max(spx,+r.spxAcc||0);tik=Math.max(tik,+r.ticketsAcc||0);
+      topicLeads=Math.max(topicLeads,+r.topicLeads||0);eventLeads=Math.max(eventLeads,+r.eventLeads||0);
+      sponsorsN+=(+r.sponsorsN||0);});
     out.push({code,name:rows[0].name||code,fam:famKey(rows[0].name),year:+rows[0].year||null,
-      rows,target,stretch,final,lastDate:last.date,completed:(last.date||'')<today,lastData});
+      rows,target,stretch,final,spx,tik,topicLeads,eventLeads,sponsorsN,
+      lastDate:last.date,completed:(last.date||'')<today,lastData});
   });
   return out.sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
 }
@@ -174,7 +189,7 @@ function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart
 function esc(s){return (s==null?'':''+s).replace(/"/g,'&quot;');}
 
 /* ---------- tabs ---------- */
-const TABS=[['year','Year status'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events']];
+const TABS=[['year','Year status'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events'],['insights','Insights']];
 function activeTab(){const h=location.hash.replace('#','');return TABS.some(t=>t[0]===h)?h:'year';}
 function render(){
   const tab=activeTab();
@@ -183,7 +198,7 @@ function render(){
   const warn=document.getElementById('warnbox');warn.innerHTML='';
   if(tab==='year'&&!DB.financeReady()){warn.innerHTML='<div class="warn">The finance module is not active yet — run <b>dispatch_finance.sql</b> in Supabase, then reload.</div>';}
   if(tab!=='year'&&!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
-  ({year:renderYear,week:renderWeek,detail:renderDetail,compare:renderCompare})[tab]();
+  ({year:renderYear,week:renderWeek,detail:renderDetail,compare:renderCompare,insights:renderInsights})[tab]();
 }
 
 /* ================= TAB 1: YEAR STATUS ================= */
@@ -200,13 +215,13 @@ function finRowHtml(f,canF){
   if(!canF){
     return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+(f.city||'')+'</td><td>'+(f['when']||'')+'</td><td>'+(f.pm||'')+'</td><td>'+(f.sales||'')+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td><td class="num">'+finFmt(f.invoiced)+'</td>'+
-      '<td>'+chipHtml(finResult(f))+'</td><td class="num">'+finFmt(f.spex)+'</td><td class="num">'+finFmt(finMargin(f))+'</td><td></td></tr>';
+      '<td>'+chipHtml(finResult(f))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
   const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
-  const mny=fld=>'<input class="money" type="number" step="any" data-ff="'+fld+'" data-id="'+f.id+'" value="'+(f[fld]==null?'':f[fld])+'">';
+  const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
   return '<tr><td>'+inp('name')+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
-    '<td class="num">'+mny('target')+'</td><td class="num">'+mny('stretch')+'</td><td class="num">'+mny('invoiced')+'</td>'+
-    '<td>'+chipHtml(finResult(f))+'</td><td class="num">'+mny('spex')+'</td><td class="num">'+finFmt(finMargin(f))+'</td>'+
+    mny('target')+mny('stretch')+mny('invoiced')+
+    '<td>'+chipHtml(finResult(f))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
 }
 function renderYear(){
@@ -214,11 +229,11 @@ function renderYear(){
   const years=[...new Set(DB.finance.map(f=>f.year))].sort();
   if(yearFilter!=='all'&&!years.includes(+yearFilter)&&years.length)yearFilter=String(years[years.length-1]);
   document.getElementById('content').innerHTML=
-    '<div class="panel"><h3>Events of '+(yearFilter==='all'?'all years':yearFilter)+' — targets, invoicing, margin '+
+    '<div class="panel"><h3>Events of '+(yearFilter==='all'?'all years':yearFilter)+' — targets &amp; invoicing '+
     '<select id="yearSel" style="font-size:12px"></select> '+
     (canF?'<button class="btn primary" id="addBtn" style="font-size:12px;padding:4px 10px">+ Add event figures</button> ':'')+
-    '<button class="btn" id="xlsBtn" style="font-size:12px;padding:4px 10px">⬇ Excel</button></h3>'+
-    '<p class="hint">'+(canF?'You can edit figures — every change is recorded.':'Read-only · figures are maintained by the accountant.')+' Result = facturado vs stretch target.</p>'+
+    '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
+    '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded.':'Read-only · figures are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target yet.</p>'+
     '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>';
@@ -227,32 +242,40 @@ function renderYear(){
   ys.onchange=()=>{yearFilter=ys.value;renderYear();};
   const g=finGrouped();
   let h='<tr><th>Event</th><th>Where</th><th>When</th><th>PM</th><th>Sales</th>'+
-    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Facturado</th><th>Result</th><th class="num">SPEX</th><th class="num">Margin</th><th style="width:30px"></th></tr>';
+    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
   const keys=Object.keys(g);
-  if(!keys.length)h+='<tr><td colspan="12" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
+  if(!keys.length)h+='<tr><td colspan="11" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
   keys.forEach(k=>{
     const list=g[k];
-    h+='<tr class="semhead"><td colspan="12">'+k.replace('·',' — ')+'</td></tr>';
+    h+='<tr class="semhead"><td colspan="11">'+k.replace('·',' — ')+'</td></tr>';
     list.forEach(f=>{h+=finRowHtml(f,canF);});
     const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>f.invoiced!=null&&f.invoiced!=='')?fSum(list,'invoiced'):null};
     h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
       '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
-      '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td class="num">'+finFmt(fSum(list,'invoiced')-fSum(list,'spex'))+'</td><td></td></tr>';
+      '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td></td></tr>';
   });
   document.getElementById('ftbl').innerHTML=h;
   if(canF){
     document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
       const f=DB.finance.find(x=>x.id==el.dataset.id);if(!f)return;
-      const fld=el.dataset.ff;let v=el.value;
-      if(['target','stretch','invoiced','spex'].includes(fld))v=(v===''?null:+v);
-      f[fld]=v;DB.save();renderYear();});
+      f[el.dataset.ff]=el.value;DB.save();renderYear();});
+    document.querySelectorAll('.mval').forEach(sp=>sp.onclick=()=>{
+      const f=DB.finance.find(x=>x.id==sp.dataset.id);if(!f)return;
+      const fld=sp.dataset.mf,td=sp.parentElement;
+      td.innerHTML='<input class="money" type="number" step="any" value="'+(f[fld]==null?'':f[fld])+'">';
+      const inp=td.firstChild;inp.focus();inp.select();
+      let doneEdit=false;
+      const commit=()=>{if(doneEdit)return;doneEdit=true;const v=inp.value;f[fld]=(v===''?null:+v);DB.save();renderYear();};
+      inp.onblur=commit;
+      inp.onkeydown=e=>{if(e.key==='Enter')commit();if(e.key==='Escape'){doneEdit=true;renderYear();}};
+    });
     document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{
       const f=DB.finance.find(x=>x.id==b.dataset.fdel);
       if(!confirm('Delete the figures for "'+(f&&f.name)+'"? (recoverable from the audit log)'))return;
       DB.data.finance=DB.finance.filter(x=>x.id!=b.dataset.fdel);DB.save();renderYear();});
     const ab=document.getElementById('addBtn');if(ab)ab.onclick=openFinModal;
   }
-  document.getElementById('xlsBtn').onclick=exportFinance;
+  document.getElementById('repBtn').onclick=openReport;
   drawHeat(meta());
 }
 function openFinModal(){
@@ -269,6 +292,11 @@ function openFinModal(){
 }
 document.getElementById('f_cancel').onclick=()=>document.getElementById('modal').classList.remove('on');
 document.getElementById('modal').onclick=e=>{if(e.target===document.getElementById('modal'))document.getElementById('modal').classList.remove('on');};
+document.getElementById('rp_close').onclick=()=>document.getElementById('repmodal').classList.remove('on');
+document.getElementById('repmodal').onclick=e=>{if(e.target===document.getElementById('repmodal'))document.getElementById('repmodal').classList.remove('on');};
+document.getElementById('rp_copy').onclick=copyReport;
+document.getElementById('rp_hl').oninput=()=>refreshReport();
+document.getElementById('rp_week').onchange=e=>{repDate=e.target.value;document.getElementById('rp_hl').value=autoHighlights(repDate).join('\n');refreshReport();};
 document.getElementById('f_save').onclick=()=>{
   const num=id=>{const v=document.getElementById(id).value;return v===''?null:+v;};
   const linked=document.getElementById('f_link').value;
@@ -280,15 +308,103 @@ document.getElementById('f_save').onclick=()=>{
     notes:f_notes.value.trim()});
   DB.save();document.getElementById('modal').classList.remove('on');renderYear();
 };
-function exportFinance(){
-  const g=finGrouped(),rows=[];let n=1;
-  Object.keys(g).forEach(k=>{
-    g[k].forEach(f=>{const r=finResult(f);
-      rows.push({'#':n++,'Event':f.name,'Ed':f.edition||'','Year':f.year,'S':f.semester,'Where':f.city||'','When':f['when']||'','PM':f.pm||'','Ventas':f.sales||'','Target':f.target,'Stretch':f.stretch,'TOTAL facturado':f.invoiced,'RESULT':r?r.label:'','SPEX':f.spex,'MARGIN':finMargin(f),'Notes':f.notes||''});});
-    const list=g[k],agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:fSum(list,'invoiced')},r=finResult(agg);
-    rows.push({'#':'','Event':k.replace('·',' ')+' TOTAL','Target':fSum(list,'target'),'Stretch':fSum(list,'stretch'),'TOTAL facturado':fSum(list,'invoiced'),'RESULT':r?r.label:'','SPEX':fSum(list,'spex'),'MARGIN':fSum(list,'invoiced')-fSum(list,'spex')});
-  });
-  exportXLSX('RENMAD_finance_'+new Date().toISOString().slice(0,10)+'.xlsx',[{name:'Events',rows}]);
+/* ---------- weekly report for the General Manager (copy-into-email) ---------- */
+let repDate=null;
+function repWeekDates(){const today=new Date().toISOString().slice(0,10);
+  return [...new Set(DB.weekly.filter(r=>r.date&&r.date<=today).map(r=>r.date))].sort().reverse().slice(0,12);}
+function reportData(d){
+  const wk=DB.weekly.filter(r=>r.date===d&&weekMoney(r)>0).sort((a,b)=>weekMoney(b)-weekMoney(a));
+  const total=wk.reduce((a,r)=>a+weekMoney(r),0);
+  const ms=meta();
+  const ongoing=ms.filter(e=>!e.completed&&(e.final>0||e.target)).map(e=>{
+    const wr=e.rows.find(r=>r.date===d),w0=e.rows.find(r=>r.week===0);
+    return{name:e.name,when:w0?w0.date:e.lastDate,week:wr?wr.week:null,
+      wEur:wr?weekMoney(wr):0,soFar:e.final,target:e.target,
+      pct:e.target?Math.round(100*e.final/e.target):null,
+      res:finResult({invoiced:e.final,stretch:e.stretch,year:e.year})};
+  }).sort((a,b)=>(a.when||'').localeCompare(b.when||''));
+  return{wk,total,ongoing,ms};
+}
+function autoHighlights(d){
+  const {wk,total,ongoing,ms}=reportData(d),hl=[];
+  hl.push('Signed this week: '+eur(total)+(wk.length?' across '+wk.length+' event'+(wk.length===1?'':'s')+'.':'.'));
+  if(wk.length){const top=wk[0];
+    const svc=SERVICES.filter(([k])=>+top[k]>0).map(([k,l])=>l.toLowerCase()+' '+eur(+top[k])).join(', ');
+    hl.push(top.name+' leads the week with '+eur(weekMoney(top))+(svc?' ('+svc+').':'.'));}
+  ongoing.forEach(o=>{
+    if(o.target&&o.soFar>=o.target&&(o.soFar-o.wEur)<o.target)hl.push(o.name+' has passed its target this week ('+o.pct+' % of target).');});
+  const pace=medianPace(ms);
+  ongoing.forEach(o=>{
+    if(o.week==null||!o.target)return;const i=WEEKS.indexOf(o.week);
+    const exp=(i>=0&&pace[i]>0.03)?o.target*pace[i]:null;
+    if(exp&&o.soFar<exp*0.75)hl.push(o.name+' is behind the usual pace ('+eur(o.soFar)+' vs ~'+eur(Math.round(exp))+' typical at W'+o.week+').');});
+  wk.filter((r,i)=>{if(i===0)return false; // already covered by the "leads the week" line
+    const e=ms.find(x=>x.code===r.eventCode),w0=e&&e.rows.find(x=>x.week===0);
+    return w0&&w0.date&&w0.date<d;})
+    .forEach(r=>hl.push(r.name+' (already held) still collected '+eur(weekMoney(r))+' this week.'));
+  return hl;
+}
+function reportHtml(d,hlLines){
+  const {wk,total,ongoing}=reportData(d);
+  const num=v=>v==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v)+' €';
+  const th='padding:6px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;text-align:left;background:#2B2B2B;color:#fff';
+  const thn=th+';text-align:right';
+  const td='padding:6px 10px;font-size:13px;border-bottom:1px solid #e8e6df;color:#3a3a3a';
+  const tdn=td+';text-align:right;white-space:nowrap';
+  let h='<div style="font-family:Segoe UI,Arial,sans-serif;max-width:720px">';
+  h+='<div style="font-size:17px;font-weight:700;color:#2B2B2B;border-left:4px solid #FF4A00;padding-left:10px;margin-bottom:2px">RENMAD events — weekly financial summary</div>';
+  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 12px;padding-left:14px">Week of '+d+'</div>';
+  h+='<div style="font-size:24px;font-weight:800;color:#2B2B2B;margin:0 0 2px">'+num(total)+'</div>';
+  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 14px">signed this week across '+wk.length+' event'+(wk.length===1?'':'s')+'</div>';
+  if(hlLines.length){h+='<div style="font-size:13px;font-weight:700;color:#2B2B2B;margin:0 0 6px">Highlights</div><ul style="margin:0 0 16px;padding-left:20px">'
+    +hlLines.map(l=>'<li style="font-size:13px;color:#3a3a3a;margin-bottom:4px">'+l+'</li>').join('')+'</ul>';}
+  h+='<div style="font-size:13px;font-weight:700;color:#2B2B2B;margin:0 0 6px">Ongoing events</div>';
+  h+='<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%">';
+  h+='<tr><th style="'+th+'">Event</th><th style="'+th+'">Event date</th><th style="'+thn+'">This week</th><th style="'+thn+'">Total so far</th><th style="'+thn+'">Target</th><th style="'+thn+'">% of target</th><th style="'+th+'">Status</th></tr>';
+  ongoing.forEach(o=>{
+    const st=o.res?('<span style="color:'+o.res.color+';font-weight:700">'+o.res.label+'</span>'):'<span style="color:#b4b1a8">pending</span>';
+    h+='<tr><td style="'+td+';font-weight:600;color:#2B2B2B">'+o.name+'</td><td style="'+td+'">'+(o.when||'')+'</td>'
+      +'<td style="'+tdn+(o.wEur?';color:#FF4A00;font-weight:700':'')+'">'+(o.wEur?num(o.wEur):'—')+'</td>'
+      +'<td style="'+tdn+'">'+num(o.soFar)+'</td><td style="'+tdn+'">'+num(o.target)+'</td>'
+      +'<td style="'+tdn+'">'+(o.pct!=null?o.pct+' %':'—')+'</td><td style="'+td+'">'+st+'</td></tr>';});
+  if(!ongoing.length)h+='<tr><td colspan="7" style="'+td+';font-style:italic;color:#7c7c78">No ongoing events with figures.</td></tr>';
+  h+='</table>';
+  h+='<div style="font-size:11px;color:#a9a79f;margin-top:12px">Full detail in the <a href="https://bg-ata.github.io/dispatch-center/dashboard.html" style="color:#FF4A00">Dispatch Center € Dashboard</a>.</div></div>';
+  return h;
+}
+function reportPlain(d,hlLines){
+  const {wk,total,ongoing}=reportData(d);
+  let t='RENMAD events — weekly financial summary · week of '+d+'\n\n';
+  t+='Signed this week: '+eur(total)+' ('+wk.length+' events)\n\nHighlights:\n'+hlLines.map(l=>' • '+l).join('\n')+'\n\nOngoing events:\n';
+  ongoing.forEach(o=>{t+=' - '+o.name+' ('+(o.when||'')+'): this week '+(o.wEur?eur(o.wEur):'—')+' · so far '+eur(o.soFar)+' / target '+eur(o.target)+(o.pct!=null?' ('+o.pct+' %)':'')+'\n';});
+  return t;
+}
+function openReport(){
+  if(!DB.weeklyReady()||!repWeekDates().length){alert('The weekly data module has no data yet, so there is nothing to report.');return;}
+  const dates=repWeekDates();
+  if(!repDate||!dates.includes(repDate))repDate=dates[0];
+  document.getElementById('rp_week').innerHTML=dates.map(d=>'<option '+(d===repDate?'selected':'')+'>'+d+'</option>').join('');
+  document.getElementById('rp_hl').value=autoHighlights(repDate).join('\n');
+  refreshReport();
+  document.getElementById('repmodal').classList.add('on');
+}
+function refreshReport(){
+  const hl=document.getElementById('rp_hl').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  document.getElementById('rp_prev').innerHTML=reportHtml(repDate,hl);
+}
+async function copyReport(){
+  const hl=document.getElementById('rp_hl').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const html=reportHtml(repDate,hl),plain=reportPlain(repDate,hl),msg=document.getElementById('rp_msg');
+  try{
+    await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);
+    msg.textContent='Copied — paste it straight into the email. ✓';
+  }catch(e){
+    try{const div=document.getElementById('rp_prev'),rng=document.createRange();rng.selectNodeContents(div);
+      const sel=getSelection();sel.removeAllRanges();sel.addRange(rng);document.execCommand('copy');sel.removeAllRanges();
+      msg.textContent='Copied — paste it straight into the email. ✓';
+    }catch(e2){msg.textContent='Could not copy: '+(e.message||e);}
+  }
+  setTimeout(()=>{msg.textContent='';},4000);
 }
 function drawHeat(ms){
   const el=document.getElementById('heat');if(!el)return;
@@ -401,11 +517,7 @@ function renderCompare(){
     '<div class="cmpbar" id="cmpbar"></div>'+
     '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
     '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
-    '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
-    '<div class="two">'+
-    '<div class="panel"><h3>Where the money comes from</h3><p class="hint">Final revenue per year, by source.</p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
-    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All events since 2021: sponsorship € per week-to-event vs the discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
-    '</div>';
+    '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>';
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderCompare();};
   const cs=document.getElementById('cmpSel');
   cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
@@ -414,7 +526,7 @@ function renderCompare(){
   bar.innerHTML=cmpCodes.map((c,i)=>{const e=ms.find(x=>x.code===c);if(!e)return'';
     return '<span class="chip2"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+e.name+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
   bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);renderCompare();});
-  drawHero(ms);drawComposition(ms);drawMix(ms);drawSign(ms);
+  drawHero(ms);drawComposition(ms);
 }
 function drawHero(ms){
   const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
@@ -472,26 +584,215 @@ function drawComposition(ms){
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
+/* ================= TAB 5: INSIGHTS ================= */
+const FPAL=['#FF4A00','#185FA5','#3E8C28','#4C3079','#29ACE3','#C77800','#D32230','#9AA0A8'];
+let mixMode='eur',paceMode='total';
+const compact=v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v);
+function doneOf(ms){return ms.filter(e=>e.completed&&e.final>5000);}
+function insYears(list){const ys=[...new Set(list.map(e=>e.year).filter(Boolean))].sort();
+  return ys.filter(y=>list.filter(e=>e.year===y).reduce((a,e)=>a+e.final,0)>50000);}
+function pctCurve(list,acc,finKey){
+  const evs=list.filter(e=>(e[finKey]||0)>5000);
+  const med=[],q1=[],q3=[];
+  WEEKS.forEach(W=>{
+    const fr=evs.map(e=>{let v=0;e.rows.forEach(r=>{if(r.week<=W&&r[acc]!=null)v=+r[acc];});return v/e[finKey];})
+      .filter(v=>isFinite(v)).sort((a,b)=>a-b);
+    if(!fr.length){med.push(null);q1.push(null);q3.push(null);return;}
+    med.push(100*fr[Math.floor(fr.length/2)]);q1.push(100*fr[Math.floor(fr.length/4)]);q3.push(100*fr[Math.floor(3*fr.length/4)]);
+  });
+  return {med,q1,q3,n:evs.length};
+}
+function famBench(done,fam){
+  const vs=done.filter(e=>e.fam===fam&&e.eventLeads>50).map(e=>e.final/e.eventLeads).sort((a,b)=>a-b);
+  return vs.length?vs[Math.floor(vs.length/2)]:null;
+}
+function leadsCorr(done){
+  const pts=done.filter(e=>e.eventLeads>100).map(e=>[e.eventLeads,e.final]);
+  if(pts.length<3)return null;
+  const mx=pts.reduce((a,p)=>a+p[0],0)/pts.length,my=pts.reduce((a,p)=>a+p[1],0)/pts.length;
+  const cov=pts.reduce((a,p)=>a+(p[0]-mx)*(p[1]-my),0);
+  const sx=Math.sqrt(pts.reduce((a,p)=>a+(p[0]-mx)**2,0)),sy=Math.sqrt(pts.reduce((a,p)=>a+(p[1]-my)**2,0));
+  return (sx&&sy)?{r:cov/sx/sy,n:pts.length}:null;
+}
+function keyFindings(ms,done){
+  const out=[],years=insYears(done);
+  if(years.length>=2){
+    const sh=y=>{const Es=done.filter(e=>e.year===y),t=Es.reduce((a,e)=>a+e.final,0);return t?Math.round(100*Es.reduce((a,e)=>a+e.spx,0)/t):null;};
+    const y0=years[0],y1=years[years.length-1];
+    out.push('<b>The business has flipped to sponsorship-led.</b> Sponsors were '+sh(y0)+' % of revenue in '+y0+' and are '+sh(y1)+' % in '+y1+' — the share has climbed every year, while € per delegate is drifting down. Growth is a sales-side story.');
+  }
+  const fams={};done.forEach(e=>{(fams[e.fam]=fams[e.fam]||{})[e.year]=(fams[e.fam][e.year]||0)+e.final;});
+  let g=null,d=null;
+  Object.keys(fams).forEach(f=>{const ys=Object.keys(fams[f]).map(Number).sort((a,b)=>a-b);if(ys.length<3)return;
+    const first=fams[f][ys[0]],last=fams[f][ys[ys.length-1]],peak=Math.max.apply(null,ys.map(y=>fams[f][y]));
+    if(last>=peak&&last>first*1.5&&(!g||last>g.last))g={f,first,last,y0:ys[0],y1:ys[ys.length-1]};
+    if(last<peak*0.6){const py=ys.find(y=>fams[f][y]===peak);if(!d||(peak-last)>(d.peak-d.last))d={f,peak,last,py,y1:ys[ys.length-1]};}
+  });
+  if(g)out.push('<b>'+g.f+' is the engine:</b> '+eur(g.first)+' in '+g.y0+' → '+eur(g.last)+' in '+g.y1+', growing every single year.');
+  if(d)out.push('<b>'+d.f+' is fading:</b> from '+eur(d.peak)+' at its '+d.py+' peak to '+eur(d.last)+' in '+d.y1+' — worth a strategic look before setting next-year targets.');
+  const lm=y=>{let t=0,l=0;done.filter(e=>e.year===y).forEach(e=>e.rows.forEach(r=>{const v=+r.sponsorsEur||0;if(v<=0)return;t+=v;if(r.week>=-4&&r.week<=0)l+=v;}));return t>20000?Math.round(100*l/t):null;};
+  const ly=years.filter(y=>lm(y)!=null);
+  if(ly.length>=2){const a=ly[Math.max(0,ly.length-5)],b=ly[ly.length-1];
+    out.push('<b>Sponsors commit earlier every year.</b> The share of sponsorship signed in the final month fell from '+lm(a)+' % in '+a+' to '+lm(b)+' % in '+b+' — the discount ladder (LD→SE→EB→LC) is pulling decisions forward.');}
+  const pc=pctCurve(done,'soFarEur','final');
+  const at=W=>{const v=pc.med[WEEKS.indexOf(W)];return v==null?'—':Math.round(v);};
+  out.push('<b>Don’t judge an event at half-time.</b> The typical campaign has only '+at(-8)+' % of its final money at W-8 and '+at(-4)+' % at W-4 — the last month reliably brings in about a third, and tickets land even later than sponsorship.');
+  const corr=leadsCorr(done);
+  if(corr){
+    const bs=Object.keys(fams).map(f=>({f,v:famBench(done,f),n:done.filter(e=>e.fam===f&&e.eventLeads>50).length}))
+      .filter(x=>x.v!=null&&x.n>=2).sort((a,b)=>b.v-a.v);
+    let s='<b>Lead volume does not predict revenue</b> (r='+corr.r.toFixed(2)+' across '+corr.n+' events) — what a lead is <i>worth</i> per franchise does';
+    if(bs.length>=2)s+=': '+bs[0].f+' turns an engaged lead into ~'+Math.round(bs[0].v)+' €, while '+bs[bs.length-1].f+' never passed ~'+Math.round(bs[bs.length-1].v)+' €. Watch €/lead, not lead counts';
+    out.push(s+'.');
+  }
+  return out;
+}
+function renderInsights(){
+  const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
+  const done=doneOf(ms);
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>What the data says</h3><p class="hint">Computed live from '+done.length+' completed events since 2021 — it updates itself as new weeks are imported.</p><ul class="keyf">'+keyFindings(ms,done).map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
+    '<div class="two">'+
+    '<div class="panel"><h3>Where the money comes from <span class="seg" id="mixSeg"></span></h3><p class="hint" id="mixHint"></p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
+    '<div class="panel"><h3>Franchises — growing or fading</h3><p class="hint">Final revenue of each event family, year over year (top families; current year is still in play).</p><div class="chartbox sm"><canvas id="fam"></canvas></div></div>'+
+    '</div><div class="two">'+
+    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All completed events: sponsorship € per week-to-event vs the discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
+    '<div class="panel"><h3>…and how that is changing</h3><p class="hint">Share of each year’s sponsorship signed early, mid-campaign and in the final four weeks.</p><div class="chartbox sm"><canvas id="signevo"></canvas></div></div>'+
+    '</div>'+
+    '<div class="panel"><h3>The shape of a campaign <span class="seg" id="paceSeg"></span></h3><p class="hint" id="paceHint"></p><div class="chartbox sm"><canvas id="pace"></canvas></div></div>'+
+    '<div class="two">'+
+    '<div class="panel"><h3>Do leads become money?</h3><p class="hint" id="scHint"></p><div class="chartbox sm"><canvas id="scat"></canvas></div></div>'+
+    '<div class="panel"><h3>What a lead is worth — by franchise</h3><p class="hint">Final € per 💰 engaged lead, per family and year. Flat lead counts with a rising line = better commercial conversion, not better marketing reach.</p><div class="chartbox sm"><canvas id="eurlead"></canvas></div></div>'+
+    '</div>'+
+    '<div class="panel"><h3>Funnel check — live events</h3><p class="hint">Two independent projections: <b>pace</b> = money so far ÷ the share past events typically had at this week (only shown from about W-10, earlier it is guesswork) · <b>leads</b> = engaged leads so far × what a lead ends up being worth in this franchise (a floor — leads keep coming until the event).</p><div class="wstbl"><table id="livetbl"></table></div></div>';
+  drawMix(ms);drawFam(done);drawSign(done);drawSignEvo(done);drawPace(done);drawScat(done);drawEurLead(done);liveTable(ms,done);
+}
 function drawMix(ms){
-  const years=[...new Set(ms.map(e=>e.year).filter(Boolean))].sort();
-  function last(e,k){let v=0;e.rows.forEach(r=>{if(r[k]!=null)v=+r[k];});return v;}
+  const years=insYears(ms);
+  function lastAcc(e,k){let v=0;e.rows.forEach(r=>{if(r[k]!=null)v=+r[k];});return v;}
   function sum(e,k){return e.rows.reduce((a,r)=>a+(+r[k]||0),0);}
-  const src={'Sponsors':{f:e=>last(e,'spxAcc'),c:'#FF4A00'},'Tickets':{f:e=>last(e,'ticketsAcc'),c:'#29ACE3'},
+  const src={'Sponsors':{f:e=>lastAcc(e,'spxAcc'),c:'#FF4A00'},'Tickets':{f:e=>lastAcc(e,'ticketsAcc'),c:'#29ACE3'},
     'Telesales':{f:e=>sum(e,'telesalesEur'),c:'#3E8C28'},'Recordings':{f:e=>sum(e,'grabacionesEur'),c:'#4C3079'},
     'Site visits':{f:e=>sum(e,'siteVisitsEur'),c:'#E8A13C'}};
-  const ds=Object.keys(src).map(k=>({label:k,backgroundColor:src[k].c,
+  const raw=Object.keys(src).map(k=>({label:k,backgroundColor:src[k].c,
     data:years.map(y=>ms.filter(e=>e.year===y).reduce((a,e)=>a+src[k].f(e),0))}));
+  const seg=document.getElementById('mixSeg');
+  seg.innerHTML=[['eur','€'],['pct','% share']].map(([m,l])=>'<button class="'+(mixMode===m?'on':'')+'" data-mx="'+m+'">'+l+'</button>').join('');
+  seg.querySelectorAll('[data-mx]').forEach(b=>b.onclick=()=>{mixMode=b.dataset.mx;drawMix(ms);});
+  document.getElementById('mixHint').textContent=mixMode==='pct'
+    ?'Share of the year’s revenue per source — watch sponsorship take over.'
+    :'Final revenue per year, by source. The current year is still accumulating.';
+  let ds=raw;
+  if(mixMode==='pct'){const tot=years.map((y,i)=>raw.reduce((a,s)=>a+s.data[i],0)||1);
+    ds=raw.map(s=>Object.assign({},s,{data:s.data.map((v,i)=>100*v/tot[i])}));}
   mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
-    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
-    scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(mixMode==='pct'?c.parsed.y.toFixed(1)+' %':eur(c.parsed.y))}}},
+    scales:{x:{stacked:true},y:{stacked:true,max:mixMode==='pct'?100:undefined,ticks:{callback:v=>mixMode==='pct'?v+' %':compact(v)}}}}});
 }
-function drawSign(ms){
-  const totals=WEEKS.map((w)=>ms.reduce((a,e)=>{const r=e.rows.find(x=>x.week===w);return a+(r?(+r.sponsorsEur||0):0);},0));
+function drawFam(done){
+  const years=insYears(done);
+  const tot={};done.forEach(e=>{tot[e.fam]=(tot[e.fam]||0)+e.final;});
+  const top=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]).slice(0,6);
+  const ds=top.map((f,i)=>({label:f,borderColor:FPAL[i%FPAL.length],backgroundColor:FPAL[i%FPAL.length],
+    data:years.map(y=>{const v=done.filter(e=>e.fam===f&&e.year===y).reduce((a,e)=>a+e.final,0);return v||null;}),
+    borderWidth:2,pointRadius:3,tension:.2,spanGaps:true}));
+  mkChart('fam',{type:'line',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:compact}}}}});
+}
+function drawSign(list){
+  const totals=WEEKS.map(w=>list.reduce((a,e)=>{const r=e.rows.find(x=>x.week===w);return a+(r?(+r.sponsorsEur||0):0);},0));
   mkChart('sign',{type:'bar',data:{labels:WLAB,datasets:[{label:'Sponsorship € signed',data:totals,backgroundColor:'#FF4A00'}]},
     options:{maintainAspectRatio:false,animation:false,
       plugins:{legend:{display:false},vlines:{lines:[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}]},
         tooltip:{callbacks:{label:c=>eur(c.parsed.y)}}},
-      scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+      scales:{y:{ticks:{callback:compact}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+}
+function drawSignEvo(done){
+  const years=insYears(done);
+  const B=[['Early (≤W-13)',w=>w<=-13,'#3E8C28'],['Mid (W-12…-5)',w=>w>=-12&&w<=-5,'#C77800'],['Final 4 weeks',w=>w>=-4&&w<=0,'#D32230'],['After the event',w=>w>0,'#9AA0A8']];
+  const ds=B.map(([label,fn,c])=>({label,backgroundColor:c,data:[]}));
+  years.forEach(y=>{
+    let t=0;const acc=[0,0,0,0];
+    done.filter(e=>e.year===y).forEach(e=>e.rows.forEach(r=>{const v=+r.sponsorsEur||0;if(v<=0)return;t+=v;
+      B.forEach(([l,fn],i)=>{if(fn(r.week))acc[i]+=v;});}));
+    ds.forEach((s,i)=>s.data.push(t?100*acc[i]/t:null));
+  });
+  mkChart('signevo',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(1)+' %'}}},
+    scales:{x:{stacked:true},y:{stacked:true,max:100,ticks:{callback:v=>v+' %'}}}}});
+}
+function drawPace(done){
+  const cfg={total:['soFarEur','final','All revenue'],spx:['spxAcc','spx','Sponsorship'],tik:['ticketsAcc','tik','Tickets']}[paceMode];
+  const pc=pctCurve(done,cfg[0],cfg[1]);
+  const seg=document.getElementById('paceSeg');
+  seg.innerHTML=[['total','All revenue'],['spx','Sponsorship'],['tik','Tickets']].map(([m,l])=>'<button class="'+(paceMode===m?'on':'')+'" data-pm="'+m+'">'+l+'</button>').join('');
+  seg.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{paceMode=b.dataset.pm;drawPace(done);});
+  const at=W=>{const v=pc.med[WEEKS.indexOf(W)];return v==null?'—':Math.round(v)+' %';};
+  document.getElementById('paceHint').textContent=cfg[2]+' as % of the final total, week by week, across '+pc.n+' completed events — median with the middle-half band. Typically '+at(-8)+' is in at W-8, '+at(-4)+' at W-4. This is the yardstick behind the Portfolio pulse.';
+  mkChart('pace',{type:'line',data:{labels:WLAB,datasets:[
+    {label:'75th percentile',data:pc.q3,borderWidth:0,pointRadius:0,fill:'+1',backgroundColor:'rgba(255,74,0,.12)'},
+    {label:'25th percentile',data:pc.q1,borderWidth:0,pointRadius:0},
+    {label:'Median event',data:pc.med,borderColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25}]},
+    options:{maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11},filter:i=>i.text==='Median event'}},
+        vlines:{lines:[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}]},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(0)+' %'}}},
+      scales:{y:{min:0,max:110,ticks:{callback:v=>v+' %'}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+}
+function drawScat(done){
+  const pts=done.filter(e=>e.eventLeads>100);
+  const corr=leadsCorr(done);
+  document.getElementById('scHint').textContent='Each dot is a completed event: 💰 engaged leads vs final revenue. '+(corr?('Correlation r='+corr.r.toFixed(2)+' — effectively none. More leads ≠ more money; the franchise and the sales follow-up decide.'):'');
+  mkChart('scat',{type:'scatter',data:{datasets:[{label:'Events',data:pts.map(e=>({x:e.eventLeads,y:e.final,name:e.name})),backgroundColor:'#185FA5',pointRadius:4}]},
+    options:{maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw.name+': '+compact(c.raw.x)+' leads → '+eur(c.raw.y)}}},
+      scales:{x:{title:{display:true,text:'engaged leads (💰)',font:{size:10}},ticks:{callback:compact}},
+        y:{title:{display:true,text:'final revenue',font:{size:10}},ticks:{callback:compact}}}}});
+}
+function drawEurLead(done){
+  const years=insYears(done);
+  const withLeads=done.filter(e=>e.eventLeads>50);
+  const tot={};withLeads.forEach(e=>{tot[e.fam]=(tot[e.fam]||0)+e.final;});
+  const top=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]).slice(0,5);
+  const ds=top.map((f,i)=>({label:f,borderColor:FPAL[i%FPAL.length],backgroundColor:FPAL[i%FPAL.length],
+    data:years.map(y=>{const Es=withLeads.filter(e=>e.fam===f&&e.year===y);const L=Es.reduce((a,e)=>a+e.eventLeads,0);
+      return L?Es.reduce((a,e)=>a+e.final,0)/L:null;}),
+    borderWidth:2,pointRadius:3,tension:.2,spanGaps:true}));
+  mkChart('eurlead',{type:'line',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Math.round(c.parsed.y)+' € per lead'}}},
+    scales:{y:{ticks:{callback:v=>v+' €'}}}}});
+}
+function liveTable(ms,done){
+  const today=new Date().toISOString().slice(0,10);
+  const pc=pctCurve(done,'soFarEur','final');
+  const live=ms.filter(e=>!e.completed&&(e.final>0||e.target||e.eventLeads>0)).sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
+  let h='<tr><th>Event</th><th>Week now</th><th class="num">💰 leads</th><th class="num">€ so far</th><th class="num">Pace projection</th><th class="num">Leads projection</th><th class="num">Target</th><th>Verdict</th></tr>';
+  if(!live.length)h+='<tr><td colspan="8" class="wsempty">No live events with data.</td></tr>';
+  live.forEach(e=>{
+    const cur=e.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+    const w=cur?cur.week:null,i=w==null?-1:WEEKS.indexOf(w);
+    const med=(i>=0&&pc.med[i]!=null)?pc.med[i]/100:null;
+    /* below ~15% of typical progress a division blows up any early money — call it too early instead */
+    const paceProj=(med&&med>=0.15&&e.final>0)?e.final/med:null;
+    const bench=famBench(done,e.fam);
+    const leadsProj=(bench&&e.eventLeads>100)?bench*e.eventLeads:null;
+    let verdict='<span style="color:#b4b1a8">—</span>';
+    if(e.target){
+      if(paceProj){const r=paceProj/e.target;
+        verdict=r>=0.95?'<span style="color:#3E8C28;font-weight:700">On track</span>'
+          :r>=0.7?'<span style="color:#C77800;font-weight:700">Close — push</span>'
+          :'<span style="color:#D32230;font-weight:700">At risk</span>';}
+      else verdict='<span style="color:#b4b1a8">Too early to call</span>';
+    }
+    h+='<tr><td class="evname">'+e.name+'</td><td>'+(w==null?'—':'W'+(w<0?w:'+'+w))+'</td>'+
+      '<td class="num">'+(e.eventLeads?new Intl.NumberFormat('es-ES').format(e.eventLeads):'—')+'</td>'+
+      '<td class="num">'+eur(e.final)+'</td>'+
+      '<td class="num">'+(paceProj?'~'+eur(Math.round(paceProj)):'—')+'</td>'+
+      '<td class="num">'+(leadsProj?'≥'+eur(Math.round(leadsProj)):'—')+'</td>'+
+      '<td class="num">'+(e.target?eur(e.target):'—')+'</td><td>'+verdict+'</td></tr>';
+  });
+  document.getElementById('livetbl').innerHTML=h;
 }
 
 /* ---------- Excel import (finance editors only; RLS enforces it too) ---------- */
