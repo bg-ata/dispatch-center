@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Dashboard</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1240px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+  .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
+  .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}}
+  select,button{font:inherit}
+  select{padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer}
+  .btn:hover{filter:brightness(.97)}
+  .chartbox{position:relative;height:340px}
+  .chartbox.sm{height:260px}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  /* heat strip */
+  .heat{overflow-x:auto}
+  .heat table{border-collapse:collapse;font-size:11px;min-width:760px}
+  .heat td,.heat th{padding:2px 3px;text-align:center}
+  .heat th{color:var(--muted);font-weight:600;font-size:9px}
+  .heat td.lab{text-align:left;font-weight:600;color:var(--charcoal);white-space:nowrap;padding-right:8px;font-size:12px}
+  .heat td.lab .m{color:var(--muted);font-weight:400;font-size:10.5px}
+  .cell{width:22px;height:16px;border-radius:3px;background:#efede8;display:inline-block}
+  .cell.g{background:#8CC63F}.cell.a{background:#F0B429}.cell.r{background:#E24B4A}.cell.n{background:#dcd9d2}
+  /* import */
+  #drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer}
+  #drop.over{border-color:var(--orange);color:var(--orange)}
+  #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
+  .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .legend .cell{vertical-align:-3px;margin:0 3px 0 8px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>Dashboard</h1>
+  <p class="sub">Weekly pacing across every event since 2021 — are we ahead of last edition, and is the money arriving when it should?</p>
+  <div id="warnbox"></div>
+  <div id="content"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="store.js?v=18"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('dashboard');
+let charts={};
+
+/* ---------- data helpers ---------- */
+function famKey(name){return (name||'').replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim();}
+function byEvent(){
+  const m={};DB.weekly.forEach(r=>{(m[r.eventCode]=m[r.eventCode]||[]).push(r);});
+  Object.values(m).forEach(a=>a.sort((x,y)=>x.week-y.week));
+  return m;
+}
+function meta(){
+  const m=byEvent(),out=[];const today=new Date().toISOString().slice(0,10);
+  Object.keys(m).forEach(code=>{
+    const rows=m[code],last=rows[rows.length-1];
+    let target=null,stretch=null,final=0,lastData=null;
+    rows.forEach(r=>{if(r.target!=null)target=+r.target;if(r.stretch!=null)stretch=+r.stretch;
+      if(r.soFarEur!=null&&+r.soFarEur>0)lastData=r;final=Math.max(final,+r.soFarEur||0);});
+    out.push({code,name:rows[0].name||code,fam:famKey(rows[0].name),year:+rows[0].year||null,
+      rows,target,stretch,final,lastDate:last.date,completed:(last.date||'')<today,lastData});
+  });
+  return out.sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
+}
+const WEEKS=[];for(let w=-24;w<=1;w++)WEEKS.push(w);
+const WLAB=WEEKS.map(w=>w<0?('W'+w):w===0?'W0':'W+1');
+function curve(ev){ // cumulative soFar aligned to WEEKS (nulls where no row)
+  const a=WEEKS.map(()=>null);
+  ev.rows.forEach(r=>{const i=WEEKS.indexOf(r.week);if(i>=0)a[i]=(r.soFarEur==null?null:+r.soFarEur);});
+  return a;
+}
+function medianPace(ms){ // median fraction of final by week, from completed events with real money
+  const done=ms.filter(e=>e.completed&&e.final>5000);
+  return WEEKS.map((w,i)=>{
+    const fs=done.map(e=>{const v=curve(e)[i];return v==null?null:v/e.final;}).filter(v=>v!=null).sort((a,b)=>a-b);
+    if(!fs.length)return null;return fs[Math.floor(fs.length/2)];
+  });
+}
+function eur(n){return n==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(n)+' €';}
+
+/* vertical marker plugin (discount windows + today) */
+const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if(!o||!o.lines)return;
+  const ctx=c.ctx,xs=c.scales.x;
+  o.lines.forEach(l=>{const i=WEEKS.indexOf(l.at);if(i<0)return;const x=xs.getPixelForValue(i);
+    ctx.save();ctx.strokeStyle=l.color;ctx.lineWidth=l.w||1;ctx.setLineDash(l.dash||[4,3]);
+    ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();
+    ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});
+}};
+Chart.register(vlines);
+function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
+
+/* ---------- page ---------- */
+let heroCode=null;
+function render(){
+  const warn=document.getElementById('warnbox'),C=document.getElementById('content');
+  if(!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in the Supabase SQL editor, then reload.</div>';C.innerHTML='';return;}
+  warn.innerHTML='';
+  const ms=meta();
+  if(!ms.length){C.innerHTML='<div class="panel">No weekly data yet.'+(DB.canFinance()?' Drop the control Excel below to load it.':'')+'</div>'+(DB.canFinance()?'<div class="panel"><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');wireImport();return;}
+  const upcoming=ms.filter(e=>!e.completed);
+  if(!heroCode)heroCode=(upcoming.find(e=>e.final>0)||upcoming[0]||ms[ms.length-1]).code;
+
+  C.innerHTML=
+    '<div class="panel"><h3>Pacing — <select id="heroSel"></select></h3>'+
+    '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div></div>'+
+    '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target set yet.</p>'+
+    '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>'+
+    '<div class="two">'+
+    '<div class="panel"><h3>Where the money comes from</h3><p class="hint">Final revenue per year, by source.</p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
+    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All events since 2021: sponsorship € signed per week-to-event, vs your discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
+    '</div>'+
+    (DB.canFinance()?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written, everything else stays. This page replaces the pivots; keep the Excel habit as long as you like.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
+
+  /* hero */
+  const sel=document.getElementById('heroSel');
+  const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
+  sel.innerHTML=Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('');
+  sel.onchange=()=>{heroCode=sel.value;render();};
+  drawHero(ms);
+  drawHeat(ms);
+  drawMix(ms);
+  drawSign(ms);
+  wireImport();
+}
+
+function drawHero(ms){
+  const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
+  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0).slice(-3);
+  const ds=[{label:ev.name,data:curve(ev),borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25,spanGaps:true}];
+  const greys=['#9AA0A8','#C2C6CC','#6B7178'];
+  sibs.forEach((s,i)=>ds.push({label:s.name,data:curve(s),borderColor:greys[i%3],backgroundColor:greys[i%3],borderWidth:1.6,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,4]}));
+  if(ev.target)ds.push({label:'Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  if(ev.stretch)ds.push({label:'Stretch',data:WEEKS.map(()=>ev.stretch),borderColor:'#3E8C28',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  const lines=[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}];
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  if(cur)lines.push({at:cur.week,label:'today',color:'#FF4A00',dash:[2,2],w:2});
+  const hint=[];
+  if(cur&&ev.rows.length){const now=+cur.soFarEur||0;hint.push('Now: '+eur(now)+' at W'+cur.week);
+    sibs.forEach(s=>{const i=WEEKS.indexOf(cur.week),v=curve(s)[i];if(v!=null)hint.push(s.name+' at the same point: '+eur(v));});}
+  if(ev.target)hint.push('Target '+eur(ev.target)+(ev.stretch?' · Stretch '+eur(ev.stretch):''));
+  document.getElementById('heroHint').textContent=hint.join('  ·  ')||('Final: '+eur(ev.final));
+  mkChart('hero',{type:'line',data:{labels:WLAB,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{boxWidth:14,font:{size:11}}},vlines:{lines:lines},
+      tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
+}
+
+function drawHeat(ms){
+  const pace=medianPace(ms);
+  const up=ms.filter(e=>!e.completed);
+  let h='<table><tr><th></th>'+WEEKS.filter(w=>w<=0).map(w=>'<th>'+(w%4===0?('W'+w):'')+'</th>').join('')+'<th style="text-align:left;padding-left:8px">so far / target</th></tr>';
+  up.forEach(e=>{
+    const c=curve(e);
+    h+='<tr><td class="lab">'+e.name+'</td>';
+    WEEKS.filter(w=>w<=0).forEach((w,i)=>{
+      const v=c[i];let cls='';
+      if(v==null||(+v===0&&(e.lastData==null||e.rows.find(r=>r.week===w&&(r.date||'')>new Date().toISOString().slice(0,10)))))cls='';
+      else if(!e.target||pace[i]==null||pace[i]<=0)cls='n';
+      else{const exp=e.target*pace[i];cls=exp<=0?'n':(v>=exp?'g':v>=exp*0.75?'a':'r');}
+      h+='<td>'+(cls===''?'':'<span class="cell '+cls+'"></span>')+'</td>';
+    });
+    const nowV=e.lastData?+e.lastData.soFarEur:0;
+    h+='<td class="lab"><span class="m">'+eur(nowV)+' / '+(e.target?eur(e.target):'no target')+'</span></td></tr>';
+  });
+  h+='</table>';
+  document.getElementById('heat').innerHTML=h;
+}
+
+function drawMix(ms){
+  const years=[...new Set(ms.map(e=>e.year).filter(Boolean))].sort();
+  const src={ 'Sponsors':{f:e=>last(e,'spxAcc'),c:'#FF4A00'},
+              'Tickets':{f:e=>last(e,'ticketsAcc'),c:'#29ACE3'},
+              'Telesales':{f:e=>sum(e,'telesalesEur'),c:'#3E8C28'},
+              'Recordings':{f:e=>sum(e,'grabacionesEur'),c:'#4C3079'},
+              'Site visits':{f:e=>sum(e,'siteVisitsEur'),c:'#E8A13C'} };
+  function last(e,k){let v=0;e.rows.forEach(r=>{if(r[k]!=null)v=+r[k];});return v;}
+  function sum(e,k){return e.rows.reduce((a,r)=>a+(+r[k]||0),0);}
+  const ds=Object.keys(src).map(k=>({label:k,backgroundColor:src[k].c,
+    data:years.map(y=>ms.filter(e=>e.year===y).reduce((a,e)=>a+src[k].f(e),0))}));
+  mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
+}
+
+function drawSign(ms){
+  const totals=WEEKS.map((w)=>ms.reduce((a,e)=>{const r=e.rows.find(x=>x.week===w);return a+(r?(+r.sponsorsEur||0):0);},0));
+  mkChart('sign',{type:'bar',data:{labels:WLAB,datasets:[{label:'Sponsorship € signed',data:totals,backgroundColor:'#FF4A00'}]},
+    options:{maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},vlines:{lines:[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}]},
+        tooltip:{callbacks:{label:c=>eur(c.parsed.y)}}},
+      scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+}
+
+/* ---------- Excel import (finance editors only; RLS enforces it too) ---------- */
+const HMAP={'MKT':'eventCode','Name':'name','Year':'year','Date':'date','Week':'week','👍':'topicLeads','💰':'eventLeads',
+ 'Sponsors [#]':'sponsorsN','Sponsors [€]':'sponsorsEur','SPX Acc.':'spxAcc','Ticket Delegates [#]':'delegatesN',
+ 'Tickets [€]':'ticketsEur','Tickets Acc.':'ticketsAcc','Telesales [#]':'telesalesN','Telesales [€]':'telesalesEur',
+ 'Grabaciones [€]':'grabacionesEur','Site Visits [€]':'siteVisitsEur','Total [€]':'totalEur','So Far [€]':'soFarEur',
+ 'Target':'target','Stretch':'stretch'};
+function parseWeeklyWorkbook(buf){
+  const wb=XLSX.read(buf,{type:'array',cellDates:true});
+  const ws=wb.Sheets['Database'];
+  if(!ws)throw new Error('No "Database" sheet found — is this the weekly control workbook?');
+  const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
+  const out=[];
+  raw.forEach(r=>{
+    if(!r['MKT']||r['Week']==null)return;
+    const o={};
+    Object.keys(HMAP).forEach(h=>{o[HMAP[h]]=(r[h]===undefined?null:r[h]);});
+    if(o.date instanceof Date)o.date=toISO(o.date);else if(o.date)o.date=(''+o.date).slice(0,10);
+    o.week=+o.week;o.year=o.year==null?null:+o.year;o.eventCode=(''+o.eventCode).trim();
+    COLS.weekly.slice(6).forEach(k=>{if(o[k]!=null&&o[k]!=='')o[k]=+o[k];else o[k]=null;});
+    out.push(o);
+  });
+  return out;
+}
+function applyImport(parsed){
+  const idx={};DB.weekly.forEach(r=>{idx[r.eventCode+'|'+r.week]=r;});
+  let added=0,updated=0,same=0;
+  parsed.forEach(p=>{
+    const ex=idx[p.eventCode+'|'+p.week];
+    if(!ex){DB.weekly.push(Object.assign({id:DB.newId()},p));added++;idx[p.eventCode+'|'+p.week]=p;return;}
+    let dirty=false;
+    Object.keys(p).forEach(k=>{const a=ex[k]==null?null:ex[k],b=p[k]==null?null:p[k];
+      if(''+a!==''+b){ex[k]=p[k];dirty=true;}});
+    dirty?updated++:same++;
+  });
+  if(added||updated)DB.save();
+  return {added:added,updated:updated,unchanged:same};
+}
+window.parseWeeklyWorkbook=parseWeeklyWorkbook;window.applyImport=applyImport;
+function wireImport(){
+  const drop=document.getElementById('drop');if(!drop)return;
+  const file=document.getElementById('file'),msg=document.getElementById('impmsg');
+  const handle=f=>{
+    msg.style.color='#7c7c78';msg.textContent='Reading '+f.name+'…';
+    loadXLSX(()=>{const rd=new FileReader();
+      rd.onload=e=>{try{
+        const stats=applyImport(parseWeeklyWorkbook(new Uint8Array(e.target.result)));
+        msg.style.color='#3E8C28';msg.textContent='Done: '+stats.added+' new weeks, '+stats.updated+' updated, '+stats.unchanged+' unchanged.';
+        render();
+      }catch(err){msg.style.color='#D32230';msg.textContent=(err.message||err);}};
+      rd.readAsArrayBuffer(f);});
+  };
+  drop.onclick=()=>file.click();
+  file.onchange=()=>{if(file.files[0])handle(file.files[0]);};
+  drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};
+  drop.ondragleave=()=>drop.classList.remove('over');
+  drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])handle(e.dataTransfer.files[0]);};
+}
+
+boot(render);
+window.addEventListener('dc-remote',()=>{/* weekly has no realtime; other data changes don't affect this page */});
+</script>
+</body>
+</html>

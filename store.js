@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 13;
+const STORE_VERSION = 14;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -187,7 +187,7 @@ function buildSeed(){
    {id:10,eventId:null,name:'DC Italia',edition:2,year:2026,semester:2,city:'Milan','when':'11-12 Nov',pm:'Elena',sales:'Sheetal',target:110000,stretch:130000,invoiced:null,spex:19275,notes:''},
    {id:11,eventId:null,name:'H2',edition:5,year:2026,semester:2,city:'Zaragoza','when':'18-19 Nov',pm:'Andrea',sales:'Sheetal',target:250000,stretch:290000,invoiced:null,spex:33671.5,notes:''},
   ];
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -198,15 +198,16 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
   people:['id','name','role','access','email','finance'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
+  weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
 };
-let _finReady=false; // finance table present in Supabase (tolerant: app works without it)
+let _finReady=false,_weeklyReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -225,6 +226,16 @@ const DB={
       try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
         if(fr.error)throw fr.error;this.data.finance=fr.data||[];_finReady=true;
       }catch(e){console.warn('finance module not ready:',e.message||e);}
+      /* weekly pacing data (dashboard): tolerant + paged (Supabase caps selects at 1000 rows) */
+      this.data.weekly=[];_weeklyReady=false;
+      try{
+        let from=0,page=1000;
+        for(;;){const wr=await sb.from('dc_weekly').select('*').eq('deleted',false).order('id').range(from,from+page-1);
+          if(wr.error)throw wr.error;
+          this.data.weekly.push.apply(this.data.weekly,wr.data||[]);
+          if(!wr.data||wr.data.length<page)break;from+=page;}
+        _weeklyReady=true;
+      }catch(e){this.data.weekly=[];console.warn('weekly module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -248,6 +259,7 @@ const DB={
     try{
       for(const k of Object.keys(TABLES)){
         if(k==='finance'&&!_finReady)continue; // finance table not created yet
+        if(k==='weekly'&&!_weeklyReady)continue; // weekly table not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -285,6 +297,8 @@ const DB={
   /* finance figures: whole roster reads; only the finance flag (Jesús J) + admins write */
   canFinance(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.finance));},
   financeReady(){return !USE_SUPABASE||_finReady;},
+  get weekly(){return this.data.weekly||[];},
+  weeklyReady(){return !USE_SUPABASE||_weeklyReady;},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
   /* admins & managers set any status; members set the status of their OWN tasks
@@ -299,6 +313,7 @@ function subscribeRealtime(){
     const ch=sb.channel('dc-sync');
     Object.keys(TABLES).forEach(k=>{
       if(k==='finance'&&!_finReady)return;
+      if(k==='weekly')return; // bulk table, no realtime — dashboard reloads on demand
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -374,6 +389,7 @@ function navBar(active){
   return '<div class="nav"><a href="gantt.html" class="'+(active==='overview'?'on':'')+'">Overview</a>'+
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
          '<a href="finance.html" class="'+(active==='finance'?'on':'')+'">Finance</a>'+
+         '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">Dashboard</a>'+
          '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
