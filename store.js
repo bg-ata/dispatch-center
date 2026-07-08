@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 12;
+const STORE_VERSION = 13;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -12,6 +12,14 @@ const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin'];
 const ACCESS=['member','manager','admin'];
 const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
 const STATUS=['To do','In progress','Done'];
+/* finance result bands: invoiced / STRETCH target. <b0 = Under, <b1 = On target, >=b1 = Stretch.
+   Derived from the S1 2026 Calculation sheet (all 2026 rows reproduce). */
+const FIN_BANDS={2025:[0.75,1],default:[0.8,1]};
+function finResult(f){if(f.invoiced==null||f.invoiced===''||!f.stretch)return null;
+  const b=FIN_BANDS[f.year]||FIN_BANDS.default,r=f.invoiced/f.stretch;
+  return r<b[0]?{label:'Under',color:'#D32230'}:r<b[1]?{label:'On target',color:'#3E8C28'}:{label:'Stretch',color:'#FF4A00'};}
+function finMargin(f){return (+f.invoiced||0)-(+f.spex||0);}
+function finFmt(n){if(n==null||n===''||isNaN(+n))return '—';return new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(+n)+' €';}
 const MKT_TYPES={Content:'#B9D3F0',Product:'#BFE0A0',Sales:'#F3C49B',Webinar:'#C9B3E8'};  // marketing week / webinar types
 const POST_PM=1, POST_SALES=2;
 /* lanes (top→bottom) + stages as week RANGES (s=start, e=end, in weeks before event; W0=0, negative=after).
@@ -136,7 +144,7 @@ const SEED_PEOPLE=[
  /* Logistics */
  {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:'julian.uribe@ata.email'},
  /* Administration */
- {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email'},     // Accounting
+ {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email',finance:true}, // Accounting — the finance editor
 ];
 function buildSeed(){
   const events=JSON.parse(JSON.stringify(SEED_EVENTS));
@@ -165,7 +173,21 @@ function buildSeed(){
         tasks.push({id:tid++,eventId:ev.id,lane,stage,substageId:sub.id,title:nm,assignee:who,deadline:'',status:'To do'});});
     }));
   });
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
+  /* finance seed mirrors the real "S1 2026 Calculation" sheet (local/demo mode only) */
+  const finance=[
+   {id:1,eventId:null,name:'Invest',edition:1,year:2026,semester:1,city:'Madrid','when':'27 Jan',pm:'Carlos',sales:'Sheetal',target:60000,stretch:75000,invoiced:79405.71,spex:37000,notes:''},
+   {id:2,eventId:null,name:'Biometano',edition:3,year:2026,semester:1,city:'Toledo','when':'11-12 Feb',pm:'Jesús R',sales:'Iker',target:250000,stretch:280000,invoiced:249285.5,spex:90494,notes:''},
+   {id:3,eventId:null,name:'Data Centres',edition:2,year:2026,semester:1,city:'Zaragoza','when':'18-19 Feb',pm:'Andrea',sales:'Sheetal',target:130000,stretch:150000,invoiced:179077.9,spex:66640,notes:''},
+   {id:4,eventId:null,name:'Storage Polska',edition:2,year:2026,semester:1,city:'Warsaw','when':'25-26 Feb',pm:'Ewa',sales:'Iker',target:85000,stretch:115000,invoiced:58380,spex:29190,notes:''},
+   {id:5,eventId:null,name:'Almacenamiento',edition:7,year:2026,semester:1,city:'Sevilla','when':'17-18 March',pm:'Ian',sales:'Tomás',target:700000,stretch:775000,invoiced:733108.69,spex:458810,notes:''},
+   {id:6,eventId:null,name:'Storage Italia',edition:3,year:2026,semester:2,city:'Bolonia','when':'15-16 April',pm:'Elena',sales:'Tomás',target:440000,stretch:500000,invoiced:385426.24,spex:254875,notes:''},
+   {id:7,eventId:null,name:'IA',edition:1,year:2026,semester:2,city:'Madrid','when':'2-3 June',pm:'Belén',sales:'Ian',target:90000,stretch:120000,invoiced:24036,spex:5000,notes:''},
+   {id:8,eventId:null,name:'Invest Italia',edition:1,year:2026,semester:2,city:'Milan','when':'1 July',pm:'Carlos',sales:'Sheetal',target:60000,stretch:75000,invoiced:null,spex:15500,notes:''},
+   {id:9,eventId:null,name:'Chile',edition:4,year:2026,semester:2,city:'Santiago','when':'29-30 July',pm:'Cristina',sales:'Tomás',target:120000,stretch:150000,invoiced:null,spex:6045,notes:''},
+   {id:10,eventId:null,name:'DC Italia',edition:2,year:2026,semester:2,city:'Milan','when':'11-12 Nov',pm:'Elena',sales:'Sheetal',target:110000,stretch:130000,invoiced:null,spex:19275,notes:''},
+   {id:11,eventId:null,name:'H2',edition:5,year:2026,semester:2,city:'Zaragoza','when':'18-19 Nov',pm:'Andrea',sales:'Sheetal',target:250000,stretch:290000,invoiced:null,spex:33671.5,notes:''},
+  ];
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -176,13 +198,15 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
-  people:['id','name','role','access','email'],
+  people:['id','name','role','access','email','finance'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
+  finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
 };
+let _finReady=false; // finance table present in Supabase (tolerant: app works without it)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -191,11 +215,16 @@ const DB={
   data:null,
   async load(){
     if(USE_SUPABASE){
-      const keys=Object.keys(TABLES);
+      const keys=['events','people','substages','tasks'];
       const res=await Promise.all(keys.map(k=>sb.from(TABLES[k]).select('*').eq('deleted',false).order('id')));
       const bad=res.find(r=>r.error);
       if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
       this.data={};keys.forEach((k,i)=>{this.data[k]=res[i].data||[];});
+      /* finance is tolerant: the app runs fine before dispatch_finance.sql exists */
+      this.data.finance=[];_finReady=false;
+      try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
+        if(fr.error)throw fr.error;this.data.finance=fr.data||[];_finReady=true;
+      }catch(e){console.warn('finance module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -218,6 +247,7 @@ const DB={
     _syncing=true;
     try{
       for(const k of Object.keys(TABLES)){
+        if(k==='finance'&&!_finReady)continue; // finance table not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -250,6 +280,11 @@ const DB={
   tasksFor(eventId){return this.data.tasks.filter(t=>t.eventId==eventId);},
   tasksOf(personId){return this.data.tasks.filter(t=>t.assignee==personId);},
   currentUser:null,
+  get finance(){return this.data.finance||[];},
+  financeFor(eventId){return (this.data.finance||[]).find(f=>f.eventId==eventId);},
+  /* finance figures: whole roster reads; only the finance flag (Jesús J) + admins write */
+  canFinance(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.finance));},
+  financeReady(){return !USE_SUPABASE||_finReady;},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
   /* admins & managers set any status; members set the status of their OWN tasks
@@ -263,6 +298,7 @@ function subscribeRealtime(){
   try{
     const ch=sb.channel('dc-sync');
     Object.keys(TABLES).forEach(k=>{
+      if(k==='finance'&&!_finReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -337,6 +373,7 @@ function showLogin(){return new Promise(resolve=>{
 function navBar(active){
   return '<div class="nav"><a href="gantt.html" class="'+(active==='overview'?'on':'')+'">Overview</a>'+
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
+         '<a href="finance.html" class="'+(active==='finance'?'on':'')+'">Finance</a>'+
          '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
