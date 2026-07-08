@@ -123,7 +123,7 @@ const SEED_EVENTS=[
 ];
 const SEED_PEOPLE=[
  /* Management (leads + manager access) */
- {id:1,name:'Belén Gallego',role:'Lead',access:'admin',email:'belen.gallego@ata.email'},
+ {id:1,name:'Belén Gallego',role:'Lead',access:'admin',email:'belen.gallego@ata.email',finance:true}, // overall admin incl. finance
  {id:2,name:'Carlos Márquez',role:'Lead',access:'admin',email:'carlos.marquez@ata.email'},      // Lead PM side & overall; manages the other managers
  {id:3,name:'Araceli Giner',role:'Marketing',access:'manager',email:'araceli.giner@ata.email'}, // Lead of marketing side
  {id:4,name:'Cintia Hernández',role:'Sales',access:'manager',email:'cintia.hernandez@ata.email'},  // Lead of sales side
@@ -294,8 +294,9 @@ const DB={
   currentUser:null,
   get finance(){return this.data.finance||[];},
   financeFor(eventId){return (this.data.finance||[]).find(f=>f.eventId==eventId);},
-  /* finance figures: whole roster reads; only the finance flag (Jesús J) + admins write */
-  canFinance(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.finance));},
+  /* finance figures: whole roster reads; ONLY people with the finance tick write
+     (Belén + Jesús). Admin tier alone no longer grants it — Carlos = events only. */
+  canFinance(){return !!(this.currentUser&&this.currentUser.finance);},
   financeReady(){return !USE_SUPABASE||_finReady;},
   get weekly(){return this.data.weekly||[];},
   weeklyReady(){return !USE_SUPABASE||_weeklyReady;},

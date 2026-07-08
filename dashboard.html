@@ -52,6 +52,15 @@
   .chip2 .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
   .chip2 .x{cursor:pointer;color:#b4b1a8;font-size:13px;border:none;background:none;padding:0}
   .chip2 .x:hover{color:var(--red)}
+  /* marketing funnel */
+  .funrow{display:flex;gap:18px;flex-wrap:wrap}
+  .funcol{flex:1 1 220px;max-width:340px}
+  .funcol h4{margin:0 0 8px;font-size:13px;color:var(--charcoal)}
+  .fstage{margin-bottom:7px}
+  .fbar{height:26px;border-radius:4px;min-width:2%;display:flex;align-items:center;padding:0 8px;color:#fff;font-size:11px;font-weight:700;white-space:nowrap;overflow:visible}
+  .fmeta{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .fmeta b{color:var(--charcoal)}
+  .fconv{color:var(--orange);font-weight:700}
   /* week-by-week table */
   .wk{overflow-x:auto}
   .wk table{border-collapse:collapse;font-size:11.5px;white-space:nowrap}
@@ -72,7 +81,7 @@
   <div id="content"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=20"></script>
+<script src="store.js?v=21"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -140,6 +149,7 @@ function render(){
     '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
     '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
     '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
+    '<div class="panel"><h3>Marketing funnel <span class="seg" id="funSeg"></span></h3><p class="hint" id="funHint"></p><div class="funrow" id="funnel"></div></div>'+
     '<div class="panel"><h3>Week by week — <span id="wkname"></span></h3><p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target set yet.</p>'+
     '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>'+
@@ -164,7 +174,7 @@ function render(){
   bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);render();});
   const hero=ms.find(e=>e.code===heroCode);
   drawHero(ms);
-  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(ms);drawWeekTable(hero);}
+  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(ms);drawFunnel(ms);drawWeekTable(hero);}
   drawHeat(ms);
   drawMix(ms);
   drawSign(ms);
@@ -232,6 +242,46 @@ function drawComposition(ms){
       plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y)}}},
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
+}
+
+/* marketing funnel, COMPARABLE: one funnel per compared event.
+   👍 topic-warm audience → 💰 engaged with THIS event → delegates → sponsors */
+let funMode='now';
+function drawFunnel(ms){
+  const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
+  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
+  const list=[ev].concat(sibs,cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean)).slice(0,4);
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  const wk=cur?cur.week:0, W=(funMode==='week')?wk:99;
+  const carryAt=(e,k)=>{let last=0;e.rows.forEach(r=>{if(r.week<=W&&r[k]!=null)last=+r[k];});return last;};
+  const sumTo=(e,k)=>e.rows.reduce((a,r)=>a+((r.week<=W&&r[k]!=null)?+r[k]:0),0);
+  const seg=document.getElementById('funSeg');
+  seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)]]
+    .map(([m,l])=>'<button class="'+(funMode===m?'on':'')+'" data-fm="'+m+'">'+l+'</button>').join('');
+  seg.querySelectorAll('[data-fm]').forEach(b=>b.onclick=()=>{funMode=b.dataset.fm;drawFunnel(ms);});
+  document.getElementById('funHint').textContent=(funMode==='week'
+    ?'Everyone measured at W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now. '
+    :'')+'👍 warm on the topic → 💰 engaged with the event → bought a ticket / signed as sponsor. Conversion % against the previous stage.';
+  const nf=v=>new Intl.NumberFormat('es-ES').format(Math.round(v));
+  const pc=(a,b)=>b>0?((100*a/b)<10?(100*a/b).toFixed(1):Math.round(100*a/b))+' %':'—';
+  const cols=list.map(e=>{
+    const t=carryAt(e,'topicLeads'),l=carryAt(e,'eventLeads'),d=sumTo(e,'delegatesN'),s=sumTo(e,'sponsorsN');
+    return {e,stages:[
+      {n:'👍 Topic leads',v:t,conv:null,lab:'',c:'#FFD3BC'},
+      {n:'💰 Event leads',v:l,conv:pc(l,t),lab:'of topic leads',c:'#FFA873'},
+      {n:'Ticket delegates',v:d,conv:pc(d,l),lab:'of event leads',c:'#FF7A3D'},
+      {n:'Sponsors signed',v:s,conv:pc(s,l),lab:'of event leads',c:'#FF4A00'}]};
+  });
+  const maxTop=Math.max.apply(null,cols.map(c=>c.stages[0].v||1));
+  document.getElementById('funnel').innerHTML=cols.map(c=>{
+    return '<div class="funcol"><h4>'+c.e.name+'</h4>'+c.stages.map(s=>{
+      const w=Math.max(1.5,100*(s.v||0)/maxTop); // one scale across ALL funnels — widths directly comparable
+      const dark=(s.v||0)/maxTop>0.04;
+      return '<div class="fstage"><div class="fbar" style="width:'+w.toFixed(1)+'%;background:'+s.c+(dark?'':';color:#8a4a12')+'">'+nf(s.v)+'</div>'+
+        '<div class="fmeta"><b>'+s.n+'</b>'+(s.conv!=null?' · <span class="fconv">'+s.conv+'</span> '+s.lab:'')+'</div></div>';
+    }).join('')+'</div>';
+  }).join('');
 }
 
 /* the Excel view: metrics down, weeks across */
