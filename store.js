@@ -132,9 +132,9 @@ function madridHolidays(y){
   return _madCache[y]=out;
 }
 function madHol(iso){return madridHolidays(+iso.slice(0,4))[iso]||null;}
-/* Legal working pattern: Mon–Thu 8 h + Fri 5.5 h (= 37.5); June & July 7 h every day (= 35).
+/* Legal working pattern: Mon–Thu 8 h + Fri 5.5 h (= 37.5); July & August 7 h every day (= 35).
    Flexible working is allowed — this pattern is what a DAY is worth (holidays, absences). */
-function hoursPerDay(d){const m=d.getMonth();if(m===5||m===6)return 7;return d.getDay()===5?5.5:8;}
+function hoursPerDay(d){const m=d.getMonth();if(m===6||m===7)return 7;return d.getDay()===5?5.5:8;}
 function workingDaysBetween(fromISO,toISO_){
   let n=0;for(let d=ymd(fromISO);toISO(d)<=toISO_;d=addDays(d,1)){
     if(d.getDay()===0||d.getDay()===6)continue;
