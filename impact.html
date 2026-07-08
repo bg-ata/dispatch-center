@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Impact</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1240px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+  .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
+  .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
+  select,button{font:inherit}
+  select{padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:10px;vertical-align:middle}
+  .seg button{font-size:11px;padding:3px 10px;border:none;background:#fff;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--charcoal);color:#fff}
+  .cmpbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+  .chip2{display:inline-flex;align-items:center;gap:5px;background:#f6f5f1;border:1px solid var(--line);border-radius:20px;padding:2px 6px 2px 10px;font-size:12px;font-weight:600}
+  .chip2 .x{cursor:pointer;color:#b4b1a8;font-size:13px;border:none;background:none;padding:0}
+  .chip2 .x:hover{color:var(--red)}
+  .funrow{display:flex;gap:18px;flex-wrap:wrap}
+  .funcol{flex:1 1 220px;max-width:340px}
+  .funcol h4{margin:0 0 8px;font-size:13px;color:var(--charcoal)}
+  .fstage{margin-bottom:7px}
+  .fbar{height:26px;border-radius:4px;min-width:2%;display:flex;align-items:center;padding:0 8px;color:#fff;font-size:11px;font-weight:700;white-space:nowrap;overflow:visible}
+  .fmeta{font-size:10.5px;color:var(--muted);margin-top:1px}
+  .fmeta b{color:var(--charcoal)}
+  .fconv{color:var(--orange);font-weight:700}
+  .wsempty{color:var(--muted);font-style:italic;padding:14px 4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>Impact</h1>
+  <p class="sub">Marketing results per event: 👍 warm on the topic → 💰 engaged with the event → tickets &amp; sponsors. More data sources will feed this area over time.</p>
+  <div id="warnbox"></div>
+  <div id="content"></div>
+</div>
+<script src="store.js?v=22"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('impact');
+let heroCode=null,cmpCodes=[],funMode='now';
+
+function famKey(name){return (name||'').replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim();}
+function meta(){
+  const m={};DB.weekly.forEach(r=>{(m[r.eventCode]=m[r.eventCode]||[]).push(r);});
+  Object.values(m).forEach(a=>a.sort((x,y)=>x.week-y.week));
+  const out=[];const today=new Date().toISOString().slice(0,10);
+  Object.keys(m).forEach(code=>{
+    const rows=m[code],last=rows[rows.length-1];
+    let final=0;rows.forEach(r=>{final=Math.max(final,+r.soFarEur||0);});
+    out.push({code,name:rows[0].name||code,fam:famKey(rows[0].name),year:+rows[0].year||null,
+      rows,final,lastDate:last.date,completed:(last.date||'')<today});
+  });
+  return out.sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
+}
+function render(){
+  const warn=document.getElementById('warnbox'),C=document.getElementById('content');
+  if(!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in Supabase, then reload.</div>';C.innerHTML='';return;}
+  warn.innerHTML='';
+  const ms=meta();
+  if(!ms.length){C.innerHTML='<div class="panel wsempty">No marketing data yet.</div>';return;}
+  if(!heroCode||!ms.some(e=>e.code===heroCode)){const up=ms.filter(e=>!e.completed);heroCode=(up.find(e=>e.final>0)||up[0]||ms[ms.length-1]).code;}
+  const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
+  C.innerHTML='<div class="panel"><h3>Marketing funnel — <select id="heroSel">'+
+    Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('')+
+    '</select> &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select> <span class="seg" id="funSeg"></span></h3>'+
+    '<div class="cmpbar" id="cmpbar"></div><p class="hint" id="funHint"></p><div class="funrow" id="funnel"></div></div>';
+  document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;render();};
+  const cs=document.getElementById('cmpSel');
+  cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
+  cs.onchange=()=>{if(cs.value){cmpCodes.push(cs.value);render();}};
+  const bar=document.getElementById('cmpbar');
+  bar.innerHTML=cmpCodes.map(c=>{const e=ms.find(x=>x.code===c);if(!e)return'';
+    return '<span class="chip2">'+e.name+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
+  bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);render();});
+  drawFunnel(ms);
+}
+function drawFunnel(ms){
+  const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
+  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
+  const list=[ev].concat(sibs,cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean)).slice(0,4);
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  const wk=cur?cur.week:0, W=(funMode==='week')?wk:99;
+  const carryAt=(e,k)=>{let last=0;e.rows.forEach(r=>{if(r.week<=W&&r[k]!=null)last=+r[k];});return last;};
+  const sumTo=(e,k)=>e.rows.reduce((a,r)=>a+((r.week<=W&&r[k]!=null)?+r[k]:0),0);
+  const seg=document.getElementById('funSeg');
+  seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)]]
+    .map(([m,l])=>'<button class="'+(funMode===m?'on':'')+'" data-fm="'+m+'">'+l+'</button>').join('');
+  seg.querySelectorAll('[data-fm]').forEach(b=>b.onclick=()=>{funMode=b.dataset.fm;drawFunnel(ms);});
+  document.getElementById('funHint').textContent=(funMode==='week'
+    ?'Everyone measured at W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now. '
+    :'')+'Conversion % against the previous stage. Bar widths share one scale across all funnels.';
+  const nf=v=>new Intl.NumberFormat('es-ES').format(Math.round(v));
+  const pc=(a,b)=>b>0?((100*a/b)<10?(100*a/b).toFixed(1):Math.round(100*a/b))+' %':'—';
+  const cols=list.map(e=>{
+    const t=carryAt(e,'topicLeads'),l=carryAt(e,'eventLeads'),d=sumTo(e,'delegatesN'),s=sumTo(e,'sponsorsN');
+    return {e,stages:[
+      {n:'👍 Topic leads',v:t,conv:null,lab:'',c:'#FFD3BC'},
+      {n:'💰 Event leads',v:l,conv:pc(l,t),lab:'of topic leads',c:'#FFA873'},
+      {n:'Ticket delegates',v:d,conv:pc(d,l),lab:'of event leads',c:'#FF7A3D'},
+      {n:'Sponsors signed',v:s,conv:pc(s,l),lab:'of event leads',c:'#FF4A00'}]};
+  });
+  const maxTop=Math.max.apply(null,cols.map(c=>c.stages[0].v||1));
+  document.getElementById('funnel').innerHTML=cols.map(c=>{
+    return '<div class="funcol"><h4>'+c.e.name+'</h4>'+c.stages.map(s=>{
+      const w=Math.max(1.5,100*(s.v||0)/maxTop);
+      const dark=(s.v||0)/maxTop>0.04;
+      return '<div class="fstage"><div class="fbar" style="width:'+w.toFixed(1)+'%;background:'+s.c+(dark?'':';color:#8a4a12')+'">'+nf(s.v)+'</div>'+
+        '<div class="fmeta"><b>'+s.n+'</b>'+(s.conv!=null?' · <span class="fconv">'+s.conv+'</span> '+s.lab:'')+'</div></div>';
+    }).join('')+'</div>';
+  }).join('');
+}
+boot(render);
+</script>
+</body>
+</html>

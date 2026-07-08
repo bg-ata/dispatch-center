@@ -394,8 +394,8 @@ function showLogin(){return new Promise(resolve=>{
 function navBar(active){
   return '<div class="nav"><a href="gantt.html" class="'+(active==='overview'?'on':'')+'">Overview</a>'+
          '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
-         '<a href="finance.html" class="'+(active==='finance'?'on':'')+'">Finance</a>'+
-         '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">Dashboard</a>'+
+         '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">€ Dashboard</a>'+
+         '<a href="impact.html" class="'+(active==='impact'?'on':'')+'">Impact</a>'+
          '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';

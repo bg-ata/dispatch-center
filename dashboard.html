@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RENMAD Dispatch Center — Dashboard</title>
+<title>RENMAD Dispatch Center — € Dashboard</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;}
   *{box-sizing:border-box}
@@ -14,35 +14,25 @@
   .nav a.on{background:var(--orange);color:#fff}
   .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
-  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 10px}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
   .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
   .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
   .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:900px){.two{grid-template-columns:1fr}}
-  select,button{font:inherit}
+  select,button,input{font:inherit}
   select{padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:#fff}
   .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
   .btn:hover{filter:brightness(.97)}
   .chartbox{position:relative;height:340px}
   .chartbox.sm{height:260px}
   .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
-  /* heat strip */
-  .heat{overflow-x:auto}
-  .heat table{border-collapse:collapse;font-size:11px;min-width:760px}
-  .heat td,.heat th{padding:2px 3px;text-align:center}
-  .heat th{color:var(--muted);font-weight:600;font-size:9px}
-  .heat td.lab{text-align:left;font-weight:600;color:var(--charcoal);white-space:nowrap;padding-right:8px;font-size:12px}
-  .heat td.lab .m{color:var(--muted);font-weight:400;font-size:10.5px}
-  .cell{width:22px;height:16px;border-radius:3px;background:#efede8;display:inline-block}
-  .cell.g{background:#8CC63F}.cell.a{background:#F0B429}.cell.r{background:#E24B4A}.cell.n{background:#dcd9d2}
-  /* import */
-  #drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer}
-  #drop.over{border-color:var(--orange);color:var(--orange)}
-  #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
-  .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
-  .legend .cell{vertical-align:-3px;margin:0 3px 0 8px}
-  /* segmented mode control */
+  /* tabs */
+  .tabs{display:flex;gap:4px;margin:10px 0 16px;border-bottom:2px solid var(--line);flex-wrap:wrap}
+  .tabs button{border:none;background:none;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
+  .tabs button.on{color:var(--charcoal);border-bottom-color:var(--orange)}
+  /* seg control */
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-left:10px;vertical-align:middle}
   .seg button{font-size:11px;padding:3px 10px;border:none;background:#fff;color:var(--muted);cursor:pointer}
   .seg button.on{background:var(--charcoal);color:#fff}
@@ -52,15 +42,40 @@
   .chip2 .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
   .chip2 .x{cursor:pointer;color:#b4b1a8;font-size:13px;border:none;background:none;padding:0}
   .chip2 .x:hover{color:var(--red)}
-  /* marketing funnel */
-  .funrow{display:flex;gap:18px;flex-wrap:wrap}
-  .funcol{flex:1 1 220px;max-width:340px}
-  .funcol h4{margin:0 0 8px;font-size:13px;color:var(--charcoal)}
-  .fstage{margin-bottom:7px}
-  .fbar{height:26px;border-radius:4px;min-width:2%;display:flex;align-items:center;padding:0 8px;color:#fff;font-size:11px;font-weight:700;white-space:nowrap;overflow:visible}
-  .fmeta{font-size:10.5px;color:var(--muted);margin-top:1px}
-  .fmeta b{color:var(--charcoal)}
-  .fconv{color:var(--orange);font-weight:700}
+  /* finance table (year tab) */
+  .ftbl{overflow-x:auto}
+  .ftbl table{width:100%;border-collapse:collapse;font-size:13px;min-width:1040px}
+  .ftbl th,.ftbl td{text-align:left;padding:7px 9px;border-bottom:1px solid #efede8;white-space:nowrap}
+  .ftbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .ftbl td.num,.ftbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .ftbl tr.semhead td{background:#faf9f6;font-weight:700;color:var(--charcoal);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  .ftbl tr.subtotal td{background:#f6f5f1;font-weight:700;border-top:2px solid var(--line)}
+  .evname{font-weight:600;color:var(--charcoal)}
+  a.evlink{color:var(--charcoal);text-decoration:none} a.evlink:hover{color:var(--orange)}
+  .ed{font-size:10px;color:var(--muted);background:#eceae3;border-radius:10px;padding:1px 7px;margin-left:5px}
+  .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block}
+  .ftbl td input{font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:100%;min-width:56px}
+  .ftbl td input.money{text-align:right;width:92px}
+  .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}.del:hover{color:var(--red)}
+  /* heat strip */
+  .heat{overflow-x:auto}
+  .heat table{border-collapse:collapse;font-size:11px;min-width:760px}
+  .heat td,.heat th{padding:2px 3px;text-align:center}
+  .heat th{color:var(--muted);font-weight:600;font-size:9px}
+  .heat td.lab{text-align:left;font-weight:600;color:var(--charcoal);white-space:nowrap;padding-right:8px;font-size:12px}
+  .heat td.lab .m{color:var(--muted);font-weight:400;font-size:10.5px}
+  .cell{width:22px;height:16px;border-radius:3px;background:#efede8;display:inline-block}
+  .cell.g{background:#8CC63F}.cell.a{background:#F0B429}.cell.r{background:#E24B4A}.cell.n{background:#dcd9d2}
+  .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .legend .cell{vertical-align:-3px;margin:0 3px 0 8px}
+  /* weekly sales tab */
+  .wstbl table{width:100%;border-collapse:collapse;font-size:13px}
+  .wstbl th,.wstbl td{text-align:left;padding:7px 9px;border-bottom:1px solid #efede8}
+  .wstbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .wstbl td.num,.wstbl th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .wstbl tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
+  .bigeur{font-size:26px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums}
+  .wsempty{color:var(--muted);font-style:italic;padding:14px 4px}
   /* week-by-week table */
   .wk{overflow-x:auto}
   .wk table{border-collapse:collapse;font-size:11.5px;white-space:nowrap}
@@ -70,29 +85,64 @@
   .wk .td-today{background:#FFF3E8}
   .wk tr.big td{font-weight:700;border-top:2px solid var(--line)}
   .wk td.neg{color:var(--red)} .wk td.pos{color:var(--green)}
+  /* import */
+  #drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer}
+  #drop.over{border-color:var(--orange);color:var(--orange)}
+  #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
+  /* add-figures modal */
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
+  .card{background:#fff;border-radius:14px;padding:20px 22px;width:560px;max-width:94vw;max-height:92vh;overflow-y:auto}
+  .card h3{margin:0 0 14px;font-size:17px}
+  .frm{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+  .frm label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  .frm label.wide{grid-column:1/-1}
+  .frm input,.frm select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .mrow{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 </style>
 </head>
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>Dashboard</h1>
-  <p class="sub">Weekly pacing across every event since 2021 — are we ahead of last edition, and is the money arriving when it should?</p>
+  <h1>€ Dashboard</h1>
+  <p class="sub">Everything money, in one place. Figures are maintained by the accountant; every change is recorded.</p>
+  <div class="tabs" id="tabs"></div>
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
+
+<div id="modal"><div class="card">
+  <h3>Add event figures</h3>
+  <div class="frm">
+    <label class="wide">Link to a board event (optional)<select id="f_link"></select></label>
+    <label>Event name<input id="f_name" placeholder="e.g. Almacenamiento"></label>
+    <label>Edition nº<input id="f_edition" type="number" min="1" placeholder="7"></label>
+    <label>Year<input id="f_year" type="number" placeholder="2026"></label>
+    <label>Semester<select id="f_sem"><option value="1">S1</option><option value="2">S2</option></select></label>
+    <label>Where<input id="f_city"></label>
+    <label>When<input id="f_when" placeholder="17-18 March"></label>
+    <label>PM<input id="f_pm"></label>
+    <label>Sales<input id="f_sales"></label>
+    <label>Target €<input id="f_target" type="number" step="any"></label>
+    <label>Stretch €<input id="f_stretch" type="number" step="any"></label>
+    <label>Facturado €<input id="f_invoiced" type="number" step="any"></label>
+    <label>SPEX €<input id="f_spex" type="number" step="any"></label>
+    <label class="wide">Notes<input id="f_notes"></label>
+  </div>
+  <div class="mrow"><button class="btn" id="f_cancel">Cancel</button><button class="btn primary" id="f_save">Save</button></div>
+</div></div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=21"></script>
+<script src="store.js?v=22"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
+const PAL=['#185FA5','#3E8C28','#4C3079','#C77800','#29ACE3','#D32230'];
+let heroCode=null,cmpCodes=[],yearFilter=String(new Date().getFullYear()),weekDate=null;
 
-/* ---------- data helpers ---------- */
+/* ---------- shared data helpers ---------- */
 function famKey(name){return (name||'').replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim();}
-function byEvent(){
-  const m={};DB.weekly.forEach(r=>{(m[r.eventCode]=m[r.eventCode]||[]).push(r);});
-  Object.values(m).forEach(a=>a.sort((x,y)=>x.week-y.week));
-  return m;
-}
+function byEvent(){const m={};DB.weekly.forEach(r=>{(m[r.eventCode]=m[r.eventCode]||[]).push(r);});
+  Object.values(m).forEach(a=>a.sort((x,y)=>x.week-y.week));return m;}
 function meta(){
   const m=byEvent(),out=[];const today=new Date().toISOString().slice(0,10);
   Object.keys(m).forEach(code=>{
@@ -107,82 +157,265 @@ function meta(){
 }
 const WEEKS=[];for(let w=-24;w<=1;w++)WEEKS.push(w);
 const WLAB=WEEKS.map(w=>w<0?('W'+w):w===0?'W0':'W+1');
-function curve(ev){ // cumulative soFar aligned to WEEKS (nulls where no row)
-  const a=WEEKS.map(()=>null);
-  ev.rows.forEach(r=>{const i=WEEKS.indexOf(r.week);if(i>=0)a[i]=(r.soFarEur==null?null:+r.soFarEur);});
-  return a;
-}
-function medianPace(ms){ // median fraction of final by week, from completed events with real money
-  const done=ms.filter(e=>e.completed&&e.final>5000);
-  return WEEKS.map((w,i)=>{
-    const fs=done.map(e=>{const v=curve(e)[i];return v==null?null:v/e.final;}).filter(v=>v!=null).sort((a,b)=>a-b);
-    if(!fs.length)return null;return fs[Math.floor(fs.length/2)];
-  });
-}
+function curve(ev){const a=WEEKS.map(()=>null);
+  ev.rows.forEach(r=>{const i=WEEKS.indexOf(r.week);if(i>=0)a[i]=(r.soFarEur==null?null:+r.soFarEur);});return a;}
+function medianPace(ms){const done=ms.filter(e=>e.completed&&e.final>5000);
+  return WEEKS.map((w,i)=>{const fs=done.map(e=>{const v=curve(e)[i];return v==null?null:v/e.final;}).filter(v=>v!=null).sort((a,b)=>a-b);
+    if(!fs.length)return null;return fs[Math.floor(fs.length/2)];});}
 function eur(n){return n==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(n)+' €';}
-
-/* vertical marker plugin (discount windows + today) */
 const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if(!o||!o.lines)return;
   const ctx=c.ctx,xs=c.scales.x;
   o.lines.forEach(l=>{const i=WEEKS.indexOf(l.at);if(i<0)return;const x=xs.getPixelForValue(i);
     ctx.save();ctx.strokeStyle=l.color;ctx.lineWidth=l.w||1;ctx.setLineDash(l.dash||[4,3]);
     ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();
-    ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});
-}};
+    ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});}};
 Chart.register(vlines);
 function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
+function esc(s){return (s==null?'':''+s).replace(/"/g,'&quot;');}
 
-/* ---------- page ---------- */
-let heroCode=null;
+/* ---------- tabs ---------- */
+const TABS=[['year','Year status'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events']];
+function activeTab(){const h=location.hash.replace('#','');return TABS.some(t=>t[0]===h)?h:'year';}
 function render(){
-  const warn=document.getElementById('warnbox'),C=document.getElementById('content');
-  if(!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in the Supabase SQL editor, then reload.</div>';C.innerHTML='';return;}
-  warn.innerHTML='';
-  const ms=meta();
-  if(!ms.length){C.innerHTML='<div class="panel">No weekly data yet.'+(DB.canFinance()?' Drop the control Excel below to load it.':'')+'</div>'+(DB.canFinance()?'<div class="panel"><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');wireImport();return;}
-  const upcoming=ms.filter(e=>!e.completed);
-  if(!heroCode)heroCode=(upcoming.find(e=>e.final>0)||upcoming[0]||ms[ms.length-1]).code;
+  const tab=activeTab();
+  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
+  const warn=document.getElementById('warnbox');warn.innerHTML='';
+  if(tab==='year'&&!DB.financeReady()){warn.innerHTML='<div class="warn">The finance module is not active yet — run <b>dispatch_finance.sql</b> in Supabase, then reload.</div>';}
+  if(tab!=='year'&&!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
+  ({year:renderYear,week:renderWeek,detail:renderDetail,compare:renderCompare})[tab]();
+}
 
-  C.innerHTML=
-    '<div class="panel"><h3>Pacing — <select id="heroSel"></select> &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select></h3>'+
+/* ================= TAB 1: YEAR STATUS ================= */
+function finGrouped(){
+  const fs=DB.finance.slice().filter(f=>yearFilter==='all'||f.year==yearFilter)
+    .sort((a,b)=>(a.year-b.year)||(a.semester-b.semester)||((a.edition||0)-(b.edition||0))||(a.id-b.id));
+  const g={};fs.forEach(f=>{const k=f.year+'·S'+f.semester;(g[k]=g[k]||[]).push(f);});return g;
+}
+function fSum(list,fld){return list.reduce((a,f)=>a+(+f[fld]||0),0);}
+function chipHtml(r){return r?'<span class="chip" style="background:'+r.color+'">'+r.label+'</span>':'<span style="color:#b4b1a8;font-size:11px">pending</span>';}
+function finRowHtml(f,canF){
+  const nameCell=(f.eventId&&DB.event(f.eventId))?('<a class="evlink" href="event.html?id='+f.eventId+'">'+f.name+'</a>'):f.name;
+  const ed=f.edition?('<span class="ed">'+f.edition+'ª</span>'):'';
+  if(!canF){
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+(f.city||'')+'</td><td>'+(f['when']||'')+'</td><td>'+(f.pm||'')+'</td><td>'+(f.sales||'')+'</td>'+
+      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td><td class="num">'+finFmt(f.invoiced)+'</td>'+
+      '<td>'+chipHtml(finResult(f))+'</td><td class="num">'+finFmt(f.spex)+'</td><td class="num">'+finFmt(finMargin(f))+'</td><td></td></tr>';
+  }
+  const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
+  const mny=fld=>'<input class="money" type="number" step="any" data-ff="'+fld+'" data-id="'+f.id+'" value="'+(f[fld]==null?'':f[fld])+'">';
+  return '<tr><td>'+inp('name')+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
+    '<td class="num">'+mny('target')+'</td><td class="num">'+mny('stretch')+'</td><td class="num">'+mny('invoiced')+'</td>'+
+    '<td>'+chipHtml(finResult(f))+'</td><td class="num">'+mny('spex')+'</td><td class="num">'+finFmt(finMargin(f))+'</td>'+
+    '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
+}
+function renderYear(){
+  const canF=DB.canFinance();
+  const years=[...new Set(DB.finance.map(f=>f.year))].sort();
+  if(yearFilter!=='all'&&!years.includes(+yearFilter)&&years.length)yearFilter=String(years[years.length-1]);
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>Events of '+(yearFilter==='all'?'all years':yearFilter)+' — targets, invoicing, margin '+
+    '<select id="yearSel" style="font-size:12px"></select> '+
+    (canF?'<button class="btn primary" id="addBtn" style="font-size:12px;padding:4px 10px">+ Add event figures</button> ':'')+
+    '<button class="btn" id="xlsBtn" style="font-size:12px;padding:4px 10px">⬇ Excel</button></h3>'+
+    '<p class="hint">'+(canF?'You can edit figures — every change is recorded.':'Read-only · figures are maintained by the accountant.')+' Result = facturado vs stretch target.</p>'+
+    '<div class="ftbl"><table id="ftbl"></table></div></div>'+
+    '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target yet.</p>'+
+    '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>';
+  const ys=document.getElementById('yearSel');
+  ys.innerHTML='<option value="all">All years</option>'+years.map(y=>'<option '+(yearFilter==y?'selected':'')+'>'+y+'</option>').join('');
+  ys.onchange=()=>{yearFilter=ys.value;renderYear();};
+  const g=finGrouped();
+  let h='<tr><th>Event</th><th>Where</th><th>When</th><th>PM</th><th>Sales</th>'+
+    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Facturado</th><th>Result</th><th class="num">SPEX</th><th class="num">Margin</th><th style="width:30px"></th></tr>';
+  const keys=Object.keys(g);
+  if(!keys.length)h+='<tr><td colspan="12" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
+  keys.forEach(k=>{
+    const list=g[k];
+    h+='<tr class="semhead"><td colspan="12">'+k.replace('·',' — ')+'</td></tr>';
+    list.forEach(f=>{h+=finRowHtml(f,canF);});
+    const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>f.invoiced!=null&&f.invoiced!=='')?fSum(list,'invoiced'):null};
+    h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
+      '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
+      '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td class="num">'+finFmt(fSum(list,'invoiced')-fSum(list,'spex'))+'</td><td></td></tr>';
+  });
+  document.getElementById('ftbl').innerHTML=h;
+  if(canF){
+    document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
+      const f=DB.finance.find(x=>x.id==el.dataset.id);if(!f)return;
+      const fld=el.dataset.ff;let v=el.value;
+      if(['target','stretch','invoiced','spex'].includes(fld))v=(v===''?null:+v);
+      f[fld]=v;DB.save();renderYear();});
+    document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{
+      const f=DB.finance.find(x=>x.id==b.dataset.fdel);
+      if(!confirm('Delete the figures for "'+(f&&f.name)+'"? (recoverable from the audit log)'))return;
+      DB.data.finance=DB.finance.filter(x=>x.id!=b.dataset.fdel);DB.save();renderYear();});
+    const ab=document.getElementById('addBtn');if(ab)ab.onclick=openFinModal;
+  }
+  document.getElementById('xlsBtn').onclick=exportFinance;
+  drawHeat(meta());
+}
+function openFinModal(){
+  const sel=document.getElementById('f_link');
+  sel.innerHTML='<option value="">— past event (not on the board) —</option>'+
+    DB.events.map(e=>'<option value="'+e.id+'">'+e.name+' · '+dateRange(e)+'</option>').join('');
+  sel.onchange=()=>{const ev=DB.event(+sel.value);if(!ev)return;
+    f_name.value=ev.name.replace(/^E\d+\s*RENMAD\s*/i,'');f_city.value=ev.city||'';f_when.value=dateRange(ev);
+    f_pm.value=ev.pm||'';f_sales.value=ev.sales||'';
+    const d=ymd(ev.date);f_year.value=d.getFullYear();document.getElementById('f_sem').value=(d.getMonth()<6?'1':'2');};
+  ['f_name','f_edition','f_city','f_when','f_pm','f_sales','f_target','f_stretch','f_invoiced','f_spex','f_notes'].forEach(id=>document.getElementById(id).value='');
+  f_year.value=new Date().getFullYear();
+  document.getElementById('modal').classList.add('on');f_name.focus();
+}
+document.getElementById('f_cancel').onclick=()=>document.getElementById('modal').classList.remove('on');
+document.getElementById('modal').onclick=e=>{if(e.target===document.getElementById('modal'))document.getElementById('modal').classList.remove('on');};
+document.getElementById('f_save').onclick=()=>{
+  const num=id=>{const v=document.getElementById(id).value;return v===''?null:+v;};
+  const linked=document.getElementById('f_link').value;
+  DB.finance.push({id:DB.newId(),eventId:linked?+linked:null,
+    name:f_name.value.trim()||'New event',edition:num('f_edition'),
+    year:+f_year.value||new Date().getFullYear(),semester:+document.getElementById('f_sem').value,
+    city:f_city.value.trim(),'when':f_when.value.trim(),pm:f_pm.value.trim(),sales:f_sales.value.trim(),
+    target:num('f_target'),stretch:num('f_stretch'),invoiced:num('f_invoiced'),spex:num('f_spex'),
+    notes:f_notes.value.trim()});
+  DB.save();document.getElementById('modal').classList.remove('on');renderYear();
+};
+function exportFinance(){
+  const g=finGrouped(),rows=[];let n=1;
+  Object.keys(g).forEach(k=>{
+    g[k].forEach(f=>{const r=finResult(f);
+      rows.push({'#':n++,'Event':f.name,'Ed':f.edition||'','Year':f.year,'S':f.semester,'Where':f.city||'','When':f['when']||'','PM':f.pm||'','Ventas':f.sales||'','Target':f.target,'Stretch':f.stretch,'TOTAL facturado':f.invoiced,'RESULT':r?r.label:'','SPEX':f.spex,'MARGIN':finMargin(f),'Notes':f.notes||''});});
+    const list=g[k],agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:fSum(list,'invoiced')},r=finResult(agg);
+    rows.push({'#':'','Event':k.replace('·',' ')+' TOTAL','Target':fSum(list,'target'),'Stretch':fSum(list,'stretch'),'TOTAL facturado':fSum(list,'invoiced'),'RESULT':r?r.label:'','SPEX':fSum(list,'spex'),'MARGIN':fSum(list,'invoiced')-fSum(list,'spex')});
+  });
+  exportXLSX('RENMAD_finance_'+new Date().toISOString().slice(0,10)+'.xlsx',[{name:'Events',rows}]);
+}
+function drawHeat(ms){
+  const el=document.getElementById('heat');if(!el)return;
+  if(!DB.weeklyReady()||!ms.length){el.innerHTML='<div class="wsempty">Weekly data not loaded yet.</div>';return;}
+  const pace=medianPace(ms);
+  const up=ms.filter(e=>!e.completed);
+  let h='<table><tr><th></th>'+WEEKS.filter(w=>w<=0).map(w=>'<th>'+(w%4===0?('W'+w):'')+'</th>').join('')+'<th style="text-align:left;padding-left:8px">so far / target</th></tr>';
+  up.forEach(e=>{
+    const c=curve(e);
+    h+='<tr><td class="lab">'+e.name+'</td>';
+    WEEKS.filter(w=>w<=0).forEach((w,i)=>{
+      const v=c[i];let cls='';
+      if(v==null||(+v===0&&(e.lastData==null||e.rows.find(r=>r.week===w&&(r.date||'')>new Date().toISOString().slice(0,10)))))cls='';
+      else if(!e.target||pace[i]==null||pace[i]<=0)cls='n';
+      else{const exp=e.target*pace[i];cls=exp<=0?'n':(v>=exp?'g':v>=exp*0.75?'a':'r');}
+      h+='<td>'+(cls===''?'':'<span class="cell '+cls+'"></span>')+'</td>';
+    });
+    const nowV=e.lastData?+e.lastData.soFarEur:0;
+    h+='<td class="lab"><span class="m">'+eur(nowV)+' / '+(e.target?eur(e.target):'no target')+'</span></td></tr>';
+  });
+  el.innerHTML=h+'</table>';
+}
+
+/* ================= TAB 2: WEEKLY SALES ================= */
+const SERVICES=[['sponsorsEur','Sponsors','sponsorsN'],['ticketsEur','Tickets','delegatesN'],['telesalesEur','Telesales','telesalesN'],['grabacionesEur','Recordings',null],['siteVisitsEur','Site visits',null]];
+function weekMoney(r){return SERVICES.reduce((a,[k])=>a+(+r[k]||0),0);}
+function renderWeek(){
+  const today=new Date().toISOString().slice(0,10);
+  const dates=[...new Set(DB.weekly.filter(r=>r.date&&r.date<=today).map(r=>r.date))].sort().reverse();
+  const withMoney=dates.filter(d=>DB.weekly.some(r=>r.date===d&&weekMoney(r)>0));
+  if(!weekDate)weekDate=withMoney[0]||dates[0];
+  const canF=DB.canFinance();
+  const rows=DB.weekly.filter(r=>r.date===weekDate&&weekMoney(r)>0);
+  const total=rows.reduce((a,r)=>a+weekMoney(r),0);
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>Week of <select id="wkSel" style="font-size:13px"></select></h3>'+
+    '<p class="hint">Only what came in THIS week — which events, which services — and where each event stands with the new takings.</p>'+
+    '<div class="bigeur">'+eur(total)+'</div><p class="hint">signed across '+rows.length+' event'+(rows.length===1?'':'s')+' this week</p>'+
+    '<div class="wstbl"><table id="wstbl"></table></div></div>'+
+    (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
+  const sel=document.getElementById('wkSel');
+  sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+d+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
+  sel.onchange=()=>{weekDate=sel.value;renderWeek();};
+  let h='<tr><th>Event</th><th>Week</th>'+SERVICES.map(s=>'<th class="num">'+s[1]+'</th>').join('')+'<th class="num">Week total</th><th>Status with new takings</th></tr>';
+  if(!rows.length)h+='<tr><td colspan="9" class="wsempty">A quiet week — no money recorded.</td></tr>';
+  rows.sort((a,b)=>weekMoney(b)-weekMoney(a)).forEach(r=>{
+    const st=finResult({invoiced:r.soFarEur,stretch:r.stretch,year:r.year});
+    const pct=(r.target&&r.soFarEur!=null)?Math.round(100*r.soFarEur/r.target)+' % of target':'no target';
+    h+='<tr><td class="evname">'+(r.name||r.eventCode)+'</td><td>W'+(r.week<0?r.week:'+'+r.week)+'</td>'+
+      SERVICES.map(([k,l,cnt])=>'<td class="num">'+(+r[k]?(eur(+r[k])+(cnt&&r[cnt]?' <span style="color:#b4b1a8;font-size:11px">('+r[cnt]+')</span>':'')):'')+'</td>').join('')+
+      '<td class="num"><b>'+eur(weekMoney(r))+'</b></td>'+
+      '<td>'+eur(r.soFarEur)+' so far · '+pct+' '+chipHtml(st)+'</td></tr>';
+  });
+  h+='<tr class="total"><td>TOTAL</td><td></td>'+SERVICES.map(([k])=>'<td class="num">'+(rows.reduce((a,r)=>a+(+r[k]||0),0)?eur(rows.reduce((a,r)=>a+(+r[k]||0),0)):'')+'</td>').join('')+'<td class="num">'+eur(total)+'</td><td></td></tr>';
+  document.getElementById('wstbl').innerHTML=h;
+  wireImport();
+}
+
+/* ================= TAB 3: WEEK BY WEEK DETAIL ================= */
+function heroSelHtml(ms,id){
+  const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
+  return '<select id="'+id+'">'+Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('')+'</select>';
+}
+function ensureHero(ms){const up=ms.filter(e=>!e.completed);
+  if(!heroCode||!ms.some(e=>e.code===heroCode))heroCode=(up.find(e=>e.final>0)||up[0]||ms[ms.length-1]).code;}
+function renderDetail(){
+  const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
+  ensureHero(ms);
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>Week by week — '+heroSelHtml(ms,'heroSel')+'</h3>'+
+    '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>';
+  document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderDetail();};
+  drawWeekTable(ms.find(e=>e.code===heroCode));
+}
+function drawWeekTable(ev){
+  const rows=ev.rows.slice().sort((a,b)=>a.week-b.week);
+  const today=new Date().toISOString().slice(0,10);
+  const isNow=r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today;
+  const METRICS=[
+    ['topicLeads','👍 Topic leads',0],['eventLeads','💰 Event leads',0],
+    ['sponsorsN','Sponsors # (week)',0],['sponsorsEur','Sponsors € (week)',1],['spxAcc','SPX accumulated',1],
+    ['delegatesN','Delegates #',0],['ticketsEur','Tickets € (week)',1],['ticketsAcc','Tickets accumulated',1],
+    ['telesalesEur','Telesales €',1],['grabacionesEur','Recordings €',1],['siteVisitsEur','Site visits €',1],
+    ['totalEur','Total week €',1],['soFarEur','SO FAR €',1]];
+  const fmt=(v,money)=>v==null?'':(money?new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v):new Intl.NumberFormat('es-ES').format(v));
+  let h='<table><tr><th class="m"></th>'+rows.map(r=>'<th class="'+(isNow(r)?'td-today':'')+'">W'+(r.week<0?r.week:'+'+r.week)+'<br><span style="font-weight:400">'+(r.date?r.date.slice(5):'')+'</span></th>').join('')+'</tr>';
+  METRICS.forEach(([k,label,money])=>{
+    if(!rows.some(r=>r[k]!=null&&+r[k]!==0))return;
+    const big=k==='soFarEur';
+    h+='<tr'+(big?' class="big"':'')+'><td class="m">'+label+'</td>'+rows.map(r=>'<td class="'+(isNow(r)?'td-today':'')+'">'+fmt(r[k]==null?null:+r[k],money)+'</td>').join('')+'</tr>';
+  });
+  if(ev.target){
+    h+='<tr><td class="m">vs Target ('+eur(ev.target)+')</td>'+rows.map(r=>{
+      if(r.soFarEur==null)return '<td class="'+(isNow(r)?'td-today':'')+'"></td>';
+      const d=+r.soFarEur-ev.target;
+      return '<td class="'+(isNow(r)?'td-today ':'')+(d<0?'neg':'pos')+'">'+(d>0?'+':'')+new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(d)+'</td>';}).join('')+'</tr>';
+  }
+  document.getElementById('wktbl').innerHTML=h+'</table>';
+  const box=document.querySelector('.wk'),cell=box&&box.querySelector('.td-today');
+  if(box&&cell)box.scrollLeft=Math.max(0,cell.offsetLeft-box.clientWidth*0.6);
+}
+
+/* ================= TAB 4: COMPARE ================= */
+let compMode='now';
+function renderCompare(){
+  const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
+  ensureHero(ms);
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>Pacing — '+heroSelHtml(ms,'heroSel')+' &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select></h3>'+
     '<div class="cmpbar" id="cmpbar"></div>'+
     '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
     '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
     '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
-    '<div class="panel"><h3>Marketing funnel <span class="seg" id="funSeg"></span></h3><p class="hint" id="funHint"></p><div class="funrow" id="funnel"></div></div>'+
-    '<div class="panel"><h3>Week by week — <span id="wkname"></span></h3><p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
-    '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target set yet.</p>'+
-    '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>'+
     '<div class="two">'+
     '<div class="panel"><h3>Where the money comes from</h3><p class="hint">Final revenue per year, by source.</p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
-    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All events since 2021: sponsorship € signed per week-to-event, vs your discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
-    '</div>'+
-    (DB.canFinance()?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written, everything else stays. This page replaces the pivots; keep the Excel habit as long as you like.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
-
-  /* hero */
-  const sel=document.getElementById('heroSel');
-  const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
-  sel.innerHTML=Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('');
-  sel.onchange=()=>{heroCode=sel.value;render();};
-  /* compare-any-events picker */
+    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All events since 2021: sponsorship € per week-to-event vs the discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
+    '</div>';
+  document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderCompare();};
   const cs=document.getElementById('cmpSel');
   cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
-  cs.onchange=()=>{if(cs.value){cmpCodes.push(cs.value);render();}};
+  cs.onchange=()=>{if(cs.value){cmpCodes.push(cs.value);renderCompare();}};
   const bar=document.getElementById('cmpbar');
   bar.innerHTML=cmpCodes.map((c,i)=>{const e=ms.find(x=>x.code===c);if(!e)return'';
     return '<span class="chip2"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+e.name+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
-  bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);render();});
-  const hero=ms.find(e=>e.code===heroCode);
-  drawHero(ms);
-  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(ms);drawFunnel(ms);drawWeekTable(hero);}
-  drawHeat(ms);
-  drawMix(ms);
-  drawSign(ms);
-  wireImport();
+  bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);renderCompare();});
+  drawHero(ms);drawComposition(ms);drawMix(ms);drawSign(ms);
 }
-const PAL=['#185FA5','#3E8C28','#4C3079','#C77800','#29ACE3','#D32230'];
-let cmpCodes=[];
-
 function drawHero(ms){
   const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
   const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
@@ -209,9 +442,6 @@ function drawHero(ms){
       tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
     scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
-
-/* money composition, COMPARABLE: one stacked bar per compared event (same set as the pacing chart) */
-let compMode='now'; // 'now' = total so far · 'week' = at the hero's current week · 'pct' = % mix
 function drawComposition(ms){
   const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
   const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
@@ -225,14 +455,13 @@ function drawComposition(ms){
     let oth=Math.max(0,sof-spx-tik);
     if(compMode==='pct'){const t=(spx+tik+oth)||1;return{spx:100*spx/t,tik:100*tik/t,oth:100*oth/t};}
     return{spx,tik,oth};});
-  /* seg control + hint */
   const seg=document.getElementById('compSeg');
   seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)],['pct','% mix']]
     .map(([m,l])=>'<button class="'+(compMode===m?'on':'')+'" data-cm="'+m+'">'+l+'</button>').join('');
   seg.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{compMode=b.dataset.cm;drawComposition(ms);});
   document.getElementById('compHint').textContent=
     compMode==='pct'?'Share of each revenue source per event — compares the mix regardless of size.'
-    :compMode==='week'?'Everyone measured at the same point: W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now. The fair comparison for live vs finished events.'
+    :compMode==='week'?'Everyone measured at the same point: W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now.'
     :'Sponsorship vs tickets vs other, per event — finished events show final money, live ones what they have so far.';
   const fmtV=v=>compMode==='pct'?(Math.round(v)+' %'):eur(v);
   const mk=(label,key,color)=>({label,data:vals.map(v=>v[key]),backgroundColor:color});
@@ -243,115 +472,19 @@ function drawComposition(ms){
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
-
-/* marketing funnel, COMPARABLE: one funnel per compared event.
-   👍 topic-warm audience → 💰 engaged with THIS event → delegates → sponsors */
-let funMode='now';
-function drawFunnel(ms){
-  const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
-  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
-  const list=[ev].concat(sibs,cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean)).slice(0,4);
-  const today=new Date().toISOString().slice(0,10);
-  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
-  const wk=cur?cur.week:0, W=(funMode==='week')?wk:99;
-  const carryAt=(e,k)=>{let last=0;e.rows.forEach(r=>{if(r.week<=W&&r[k]!=null)last=+r[k];});return last;};
-  const sumTo=(e,k)=>e.rows.reduce((a,r)=>a+((r.week<=W&&r[k]!=null)?+r[k]:0),0);
-  const seg=document.getElementById('funSeg');
-  seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)]]
-    .map(([m,l])=>'<button class="'+(funMode===m?'on':'')+'" data-fm="'+m+'">'+l+'</button>').join('');
-  seg.querySelectorAll('[data-fm]').forEach(b=>b.onclick=()=>{funMode=b.dataset.fm;drawFunnel(ms);});
-  document.getElementById('funHint').textContent=(funMode==='week'
-    ?'Everyone measured at W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now. '
-    :'')+'👍 warm on the topic → 💰 engaged with the event → bought a ticket / signed as sponsor. Conversion % against the previous stage.';
-  const nf=v=>new Intl.NumberFormat('es-ES').format(Math.round(v));
-  const pc=(a,b)=>b>0?((100*a/b)<10?(100*a/b).toFixed(1):Math.round(100*a/b))+' %':'—';
-  const cols=list.map(e=>{
-    const t=carryAt(e,'topicLeads'),l=carryAt(e,'eventLeads'),d=sumTo(e,'delegatesN'),s=sumTo(e,'sponsorsN');
-    return {e,stages:[
-      {n:'👍 Topic leads',v:t,conv:null,lab:'',c:'#FFD3BC'},
-      {n:'💰 Event leads',v:l,conv:pc(l,t),lab:'of topic leads',c:'#FFA873'},
-      {n:'Ticket delegates',v:d,conv:pc(d,l),lab:'of event leads',c:'#FF7A3D'},
-      {n:'Sponsors signed',v:s,conv:pc(s,l),lab:'of event leads',c:'#FF4A00'}]};
-  });
-  const maxTop=Math.max.apply(null,cols.map(c=>c.stages[0].v||1));
-  document.getElementById('funnel').innerHTML=cols.map(c=>{
-    return '<div class="funcol"><h4>'+c.e.name+'</h4>'+c.stages.map(s=>{
-      const w=Math.max(1.5,100*(s.v||0)/maxTop); // one scale across ALL funnels — widths directly comparable
-      const dark=(s.v||0)/maxTop>0.04;
-      return '<div class="fstage"><div class="fbar" style="width:'+w.toFixed(1)+'%;background:'+s.c+(dark?'':';color:#8a4a12')+'">'+nf(s.v)+'</div>'+
-        '<div class="fmeta"><b>'+s.n+'</b>'+(s.conv!=null?' · <span class="fconv">'+s.conv+'</span> '+s.lab:'')+'</div></div>';
-    }).join('')+'</div>';
-  }).join('');
-}
-
-/* the Excel view: metrics down, weeks across */
-function drawWeekTable(ev){
-  const rows=ev.rows.slice().sort((a,b)=>a.week-b.week);
-  const today=new Date().toISOString().slice(0,10);
-  const isNow=r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today;
-  const METRICS=[
-    ['topicLeads','👍 Topic leads',0],['eventLeads','💰 Event leads',0],
-    ['sponsorsN','Sponsors # (week)',0],['sponsorsEur','Sponsors € (week)',1],['spxAcc','SPX accumulated',1],
-    ['delegatesN','Delegates #',0],['ticketsEur','Tickets € (week)',1],['ticketsAcc','Tickets accumulated',1],
-    ['telesalesEur','Telesales €',1],['grabacionesEur','Recordings €',1],['siteVisitsEur','Site visits €',1],
-    ['totalEur','Total week €',1],['soFarEur','SO FAR €',1]];
-  const fmt=(v,money)=>v==null?'':(money?new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v):new Intl.NumberFormat('es-ES').format(v));
-  let h='<table><tr><th class="m"></th>'+rows.map(r=>'<th class="'+(isNow(r)?'td-today':'')+'">W'+(r.week<0?r.week:'+'+r.week)+'<br><span style="font-weight:400">'+(r.date?r.date.slice(5):'')+'</span></th>').join('')+'</tr>';
-  METRICS.forEach(([k,label,money])=>{
-    if(!rows.some(r=>r[k]!=null&&+r[k]!==0))return; // hide empty metrics
-    const big=k==='soFarEur';
-    h+='<tr'+(big?' class="big"':'')+'><td class="m">'+label+'</td>'+rows.map(r=>'<td class="'+(isNow(r)?'td-today':'')+'">'+fmt(r[k]==null?null:+r[k],money)+'</td>').join('')+'</tr>';
-  });
-  if(ev.target){
-    h+='<tr><td class="m">vs Target ('+eur(ev.target)+')</td>'+rows.map(r=>{
-      if(r.soFarEur==null)return '<td class="'+(isNow(r)?'td-today':'')+'"></td>';
-      const d=+r.soFarEur-ev.target;
-      return '<td class="'+(isNow(r)?'td-today ':'')+(d<0?'neg':'pos')+'">'+(d>0?'+':'')+new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(d)+'</td>';}).join('')+'</tr>';
-  }
-  h+='</table>';
-  document.getElementById('wktbl').innerHTML=h;
-  /* auto-scroll to the current week */
-  const box=document.querySelector('.wk'),cell=box&&box.querySelector('.td-today');
-  if(box&&cell)box.scrollLeft=Math.max(0,cell.offsetLeft-box.clientWidth*0.6);
-}
-
-function drawHeat(ms){
-  const pace=medianPace(ms);
-  const up=ms.filter(e=>!e.completed);
-  let h='<table><tr><th></th>'+WEEKS.filter(w=>w<=0).map(w=>'<th>'+(w%4===0?('W'+w):'')+'</th>').join('')+'<th style="text-align:left;padding-left:8px">so far / target</th></tr>';
-  up.forEach(e=>{
-    const c=curve(e);
-    h+='<tr><td class="lab">'+e.name+'</td>';
-    WEEKS.filter(w=>w<=0).forEach((w,i)=>{
-      const v=c[i];let cls='';
-      if(v==null||(+v===0&&(e.lastData==null||e.rows.find(r=>r.week===w&&(r.date||'')>new Date().toISOString().slice(0,10)))))cls='';
-      else if(!e.target||pace[i]==null||pace[i]<=0)cls='n';
-      else{const exp=e.target*pace[i];cls=exp<=0?'n':(v>=exp?'g':v>=exp*0.75?'a':'r');}
-      h+='<td>'+(cls===''?'':'<span class="cell '+cls+'"></span>')+'</td>';
-    });
-    const nowV=e.lastData?+e.lastData.soFarEur:0;
-    h+='<td class="lab"><span class="m">'+eur(nowV)+' / '+(e.target?eur(e.target):'no target')+'</span></td></tr>';
-  });
-  h+='</table>';
-  document.getElementById('heat').innerHTML=h;
-}
-
 function drawMix(ms){
   const years=[...new Set(ms.map(e=>e.year).filter(Boolean))].sort();
-  const src={ 'Sponsors':{f:e=>last(e,'spxAcc'),c:'#FF4A00'},
-              'Tickets':{f:e=>last(e,'ticketsAcc'),c:'#29ACE3'},
-              'Telesales':{f:e=>sum(e,'telesalesEur'),c:'#3E8C28'},
-              'Recordings':{f:e=>sum(e,'grabacionesEur'),c:'#4C3079'},
-              'Site visits':{f:e=>sum(e,'siteVisitsEur'),c:'#E8A13C'} };
   function last(e,k){let v=0;e.rows.forEach(r=>{if(r[k]!=null)v=+r[k];});return v;}
   function sum(e,k){return e.rows.reduce((a,r)=>a+(+r[k]||0),0);}
+  const src={'Sponsors':{f:e=>last(e,'spxAcc'),c:'#FF4A00'},'Tickets':{f:e=>last(e,'ticketsAcc'),c:'#29ACE3'},
+    'Telesales':{f:e=>sum(e,'telesalesEur'),c:'#3E8C28'},'Recordings':{f:e=>sum(e,'grabacionesEur'),c:'#4C3079'},
+    'Site visits':{f:e=>sum(e,'siteVisitsEur'),c:'#E8A13C'}};
   const ds=Object.keys(src).map(k=>({label:k,backgroundColor:src[k].c,
     data:years.map(y=>ms.filter(e=>e.year===y).reduce((a,e)=>a+src[k].f(e),0))}));
   mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
     plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
     scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
-
 function drawSign(ms){
   const totals=WEEKS.map((w)=>ms.reduce((a,e)=>{const r=e.rows.find(x=>x.week===w);return a+(r?(+r.sponsorsEur||0):0);},0));
   mkChart('sign',{type:'bar',data:{labels:WLAB,datasets:[{label:'Sponsorship € signed',data:totals,backgroundColor:'#FF4A00'}]},
@@ -408,7 +541,7 @@ function wireImport(){
       rd.onload=e=>{try{
         const stats=applyImport(parseWeeklyWorkbook(new Uint8Array(e.target.result)));
         msg.style.color='#3E8C28';msg.textContent='Done: '+stats.added+' new weeks, '+stats.updated+' updated, '+stats.unchanged+' unchanged.';
-        render();
+        weekDate=null;render();
       }catch(err){msg.style.color='#D32230';msg.textContent=(err.message||err);}};
       rd.readAsArrayBuffer(f);});
   };
@@ -420,7 +553,8 @@ function wireImport(){
 }
 
 boot(render);
-window.addEventListener('dc-remote',()=>{/* weekly has no realtime; other data changes don't affect this page */});
+window.addEventListener('hashchange',render);
+window.addEventListener('dc-remote',()=>{if(activeTab()==='year')renderYear();});
 </script>
 </body>
 </html>
