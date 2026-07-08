@@ -92,7 +92,11 @@ function render(){
 }
 const modal=document.getElementById('modal');
 function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',access:'member',email:'',finance:false};
-  document.getElementById('m_fin').checked=!!p.finance;
+  const fin=document.getElementById('m_fin');fin.checked=!!p.finance;
+  /* the finance permission is Belén-only (also enforced by the database) */
+  const isBelen=!!(DB.currentUser&&(DB.currentUser.email||'').toLowerCase()==='belen.gallego@ata.email');
+  fin.disabled=!isBelen;fin.parentElement.style.opacity=isBelen?'1':'.45';
+  fin.parentElement.title=isBelen?'':'Only Belén can change the finance permission';
   document.getElementById('m_title').textContent=idv?'Edit person':'Add person';
   m_name.value=p.name;const rs=document.getElementById('m_role');rs.innerHTML=ROLES.map(r=>'<option '+(r===p.role?'selected':'')+'>'+r+'</option>').join('');
   const as=document.getElementById('m_access');as.innerHTML=ACCESS.map(a=>'<option value="'+a+'" '+(a===(p.access||'member')?'selected':'')+'>'+(ACCESS_LABEL[a]||a)+'</option>').join('');
