@@ -342,14 +342,19 @@ function applyRemote(key,row){
 function scheduleRemoteRender(){clearTimeout(_remoteTimer);_remoteTimer=setTimeout(()=>window.dispatchEvent(new Event('dc-remote')),250);}
 
 function injectSB(){return new Promise(res=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;document.head.appendChild(s);});}
+/* resilience: pages restored from the back/forward cache re-initialise cleanly */
+window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
 async function boot(renderFn){
   if(USE_SUPABASE){
     await injectSB();
     sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+    /* resilience: if the session dies (token expiry, sign-out in another tab), re-init to the login instead of a broken page */
+    sb.auth.onAuthStateChange(ev=>{if(ev==='SIGNED_OUT')location.reload();});
     const {data:{session}}=await sb.auth.getSession();
     if(!session)await showLogin();
   }
-  try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:560px">Could not load data: '+(e.message||e)+'</div>';return;}
+  try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:560px">Could not load data: '+(e.message||e)
+    +'<br><br><button onclick="location.reload()" style="font:inherit;padding:8px 16px;background:#FF4A00;color:#fff;border:none;border-radius:8px;cursor:pointer">Try again</button></div>';return;}
   if(USE_SUPABASE&&sb){
     try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);
       const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';

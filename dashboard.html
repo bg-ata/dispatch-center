@@ -42,6 +42,21 @@
   #impmsg{font-size:12.5px;margin-top:8px;min-height:16px}
   .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
   .legend .cell{vertical-align:-3px;margin:0 3px 0 8px}
+  /* compare chips */
+  .cmpbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+  .chip2{display:inline-flex;align-items:center;gap:5px;background:#f6f5f1;border:1px solid var(--line);border-radius:20px;padding:2px 6px 2px 10px;font-size:12px;font-weight:600}
+  .chip2 .sw{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .chip2 .x{cursor:pointer;color:#b4b1a8;font-size:13px;border:none;background:none;padding:0}
+  .chip2 .x:hover{color:var(--red)}
+  /* week-by-week table */
+  .wk{overflow-x:auto}
+  .wk table{border-collapse:collapse;font-size:11.5px;white-space:nowrap}
+  .wk th,.wk td{padding:3px 9px;border-bottom:1px solid #f0eee9;text-align:right;font-variant-numeric:tabular-nums}
+  .wk th{color:var(--muted);font-size:10px;font-weight:600}
+  .wk td.m,.wk th.m{text-align:left;position:sticky;left:0;background:var(--card);font-weight:600;color:var(--charcoal);padding-right:14px;z-index:2}
+  .wk .td-today{background:#FFF3E8}
+  .wk tr.big td{font-weight:700;border-top:2px solid var(--line)}
+  .wk td.neg{color:var(--red)} .wk td.pos{color:var(--green)}
 </style>
 </head>
 <body>
@@ -53,7 +68,7 @@
   <div id="content"></div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=18"></script>
+<script src="store.js?v=19"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -116,8 +131,12 @@ function render(){
   if(!heroCode)heroCode=(upcoming.find(e=>e.final>0)||upcoming[0]||ms[ms.length-1]).code;
 
   C.innerHTML=
-    '<div class="panel"><h3>Pacing — <select id="heroSel"></select></h3>'+
-    '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div></div>'+
+    '<div class="panel"><h3>Pacing — <select id="heroSel"></select> &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select></h3>'+
+    '<div class="cmpbar" id="cmpbar"></div>'+
+    '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
+    '<h3 style="margin-top:16px">Money composition</h3><p class="hint">Cumulative sponsorship vs tickets vs everything else, week by week, for the selected event.</p>'+
+    '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
+    '<div class="panel"><h3>Week by week — <span id="wkname"></span></h3><p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target set yet.</p>'+
     '<div class="heat" id="heat"></div><div class="legend">pace vs target:<span class="cell g"></span>on it<span class="cell a"></span>close<span class="cell r"></span>behind<span class="cell n"></span>no target/no data</div></div>'+
     '<div class="two">'+
@@ -131,19 +150,33 @@ function render(){
   const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
   sel.innerHTML=Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('');
   sel.onchange=()=>{heroCode=sel.value;render();};
+  /* compare-any-events picker */
+  const cs=document.getElementById('cmpSel');
+  cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
+  cs.onchange=()=>{if(cs.value){cmpCodes.push(cs.value);render();}};
+  const bar=document.getElementById('cmpbar');
+  bar.innerHTML=cmpCodes.map((c,i)=>{const e=ms.find(x=>x.code===c);if(!e)return'';
+    return '<span class="chip2"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+e.name+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
+  bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);render();});
+  const hero=ms.find(e=>e.code===heroCode);
   drawHero(ms);
+  if(hero){document.getElementById('wkname').textContent=hero.name;drawComposition(hero);drawWeekTable(hero);}
   drawHeat(ms);
   drawMix(ms);
   drawSign(ms);
   wireImport();
 }
+const PAL=['#185FA5','#3E8C28','#4C3079','#C77800','#29ACE3','#D32230'];
+let cmpCodes=[];
 
 function drawHero(ms){
   const ev=ms.find(e=>e.code===heroCode);if(!ev)return;
-  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0).slice(-3);
+  const sibs=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2);
   const ds=[{label:ev.name,data:curve(ev),borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25,spanGaps:true}];
-  const greys=['#9AA0A8','#C2C6CC','#6B7178'];
-  sibs.forEach((s,i)=>ds.push({label:s.name,data:curve(s),borderColor:greys[i%3],backgroundColor:greys[i%3],borderWidth:1.6,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,4]}));
+  const greys=['#9AA0A8','#C2C6CC'];
+  sibs.forEach((s,i)=>ds.push({label:s.name,data:curve(s),borderColor:greys[i%2],backgroundColor:greys[i%2],borderWidth:1.6,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,4]}));
+  cmpCodes.forEach((c,i)=>{const s=ms.find(e=>e.code===c);if(!s)return;
+    ds.push({label:s.name,data:curve(s),borderColor:PAL[i%PAL.length],backgroundColor:PAL[i%PAL.length],borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});});
   if(ev.target)ds.push({label:'Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
   if(ev.stretch)ds.push({label:'Stretch',data:WEEKS.map(()=>ev.stretch),borderColor:'#3E8C28',borderWidth:1,pointRadius:0,borderDash:[2,3]});
   const lines=[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}];
@@ -152,7 +185,8 @@ function drawHero(ms){
   if(cur)lines.push({at:cur.week,label:'today',color:'#FF4A00',dash:[2,2],w:2});
   const hint=[];
   if(cur&&ev.rows.length){const now=+cur.soFarEur||0;hint.push('Now: '+eur(now)+' at W'+cur.week);
-    sibs.forEach(s=>{const i=WEEKS.indexOf(cur.week),v=curve(s)[i];if(v!=null)hint.push(s.name+' at the same point: '+eur(v));});}
+    sibs.concat(cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean))
+      .forEach(s=>{const i=WEEKS.indexOf(cur.week),v=curve(s)[i];if(v!=null)hint.push(s.name+' at the same point: '+eur(v));});}
   if(ev.target)hint.push('Target '+eur(ev.target)+(ev.stretch?' · Stretch '+eur(ev.stretch):''));
   document.getElementById('heroHint').textContent=hint.join('  ·  ')||('Final: '+eur(ev.final));
   mkChart('hero',{type:'line',data:{labels:WLAB,datasets:ds},options:{maintainAspectRatio:false,animation:false,
@@ -160,6 +194,50 @@ function drawHero(ms){
     plugins:{legend:{labels:{boxWidth:14,font:{size:11}}},vlines:{lines:lines},
       tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
     scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
+}
+
+/* cumulative composition of the selected event: SPX vs tickets vs the rest */
+function drawComposition(ev){
+  function carry(k){let last=0;return WEEKS.map(w=>{const r=ev.rows.find(x=>x.week===w);
+    if(r&&r[k]!=null)last=+r[k];return last;});}
+  const spx=carry('spxAcc'),tik=carry('ticketsAcc'),sofar=carry('soFarEur');
+  const other=WEEKS.map((w,i)=>Math.max(0,sofar[i]-spx[i]-tik[i]));
+  const mk=(label,data,color)=>({label,data,borderColor:color,backgroundColor:color+'B3',fill:true,pointRadius:0,borderWidth:1,tension:.2});
+  mkChart('comp',{type:'line',data:{labels:WLAB,datasets:[mk('Sponsorship (SPX)',spx,'#FF4A00'),mk('Tickets',tik,'#29ACE3'),mk('Other (telesales, recordings…)',other,'#9AA0A8')]},
+    options:{maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+      scales:{y:{stacked:true,ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+}
+
+/* the Excel view: metrics down, weeks across */
+function drawWeekTable(ev){
+  const rows=ev.rows.slice().sort((a,b)=>a.week-b.week);
+  const today=new Date().toISOString().slice(0,10);
+  const isNow=r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today;
+  const METRICS=[
+    ['topicLeads','👍 Topic leads',0],['eventLeads','💰 Event leads',0],
+    ['sponsorsN','Sponsors # (week)',0],['sponsorsEur','Sponsors € (week)',1],['spxAcc','SPX accumulated',1],
+    ['delegatesN','Delegates #',0],['ticketsEur','Tickets € (week)',1],['ticketsAcc','Tickets accumulated',1],
+    ['telesalesEur','Telesales €',1],['grabacionesEur','Recordings €',1],['siteVisitsEur','Site visits €',1],
+    ['totalEur','Total week €',1],['soFarEur','SO FAR €',1]];
+  const fmt=(v,money)=>v==null?'':(money?new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v):new Intl.NumberFormat('es-ES').format(v));
+  let h='<table><tr><th class="m"></th>'+rows.map(r=>'<th class="'+(isNow(r)?'td-today':'')+'">W'+(r.week<0?r.week:'+'+r.week)+'<br><span style="font-weight:400">'+(r.date?r.date.slice(5):'')+'</span></th>').join('')+'</tr>';
+  METRICS.forEach(([k,label,money])=>{
+    if(!rows.some(r=>r[k]!=null&&+r[k]!==0))return; // hide empty metrics
+    const big=k==='soFarEur';
+    h+='<tr'+(big?' class="big"':'')+'><td class="m">'+label+'</td>'+rows.map(r=>'<td class="'+(isNow(r)?'td-today':'')+'">'+fmt(r[k]==null?null:+r[k],money)+'</td>').join('')+'</tr>';
+  });
+  if(ev.target){
+    h+='<tr><td class="m">vs Target ('+eur(ev.target)+')</td>'+rows.map(r=>{
+      if(r.soFarEur==null)return '<td class="'+(isNow(r)?'td-today':'')+'"></td>';
+      const d=+r.soFarEur-ev.target;
+      return '<td class="'+(isNow(r)?'td-today ':'')+(d<0?'neg':'pos')+'">'+(d>0?'+':'')+new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(d)+'</td>';}).join('')+'</tr>';
+  }
+  h+='</table>';
+  document.getElementById('wktbl').innerHTML=h;
+  /* auto-scroll to the current week */
+  const box=document.querySelector('.wk'),cell=box&&box.querySelector('.td-today');
+  if(box&&cell)box.scrollLeft=Math.max(0,cell.offsetLeft-box.clientWidth*0.6);
 }
 
 function drawHeat(ms){
