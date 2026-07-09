@@ -90,7 +90,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=26"></script>
+<script src="store.js?v=27"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -98,6 +98,7 @@ let weekISO=toISO(monday(new Date()));
 const HRTABS=[['holidays','Holidays'],['allocation','Allocation'],['timeclock','Time clock']];
 function activeTab(){const h=location.hash.replace('#','');return HRTABS.some(t=>t[0]===h)?h:'holidays';}
 function render(){
+  if(_tcTick){clearInterval(_tcTick);_tcTick=null;} // stop the live clock when leaving the time-clock tab
   const tab=activeTab();
   document.getElementById('tabs').innerHTML=HRTABS.map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
@@ -176,8 +177,8 @@ function renderHolidays(){
     '<span id="r_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span></div>'+
     '<div class="panel"><h3>My requests</h3><p class="hint" id="myBal"></p><table id="mine"></table></div>'+
     '</div>'+
-    ((DB.isAdmin()||DB.isHR())?
-      '<div class="panel"><h3>Load past holidays (admin / HR)</h3><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
+    (DB.isHRAdmin()?
+      '<div class="panel"><h3>Load past holidays (HR)</h3><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
       '<div class="padd"><label>Person<select id="b_who"></select></label>'+
       '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Remote</option></select></label>'+
       '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
@@ -243,8 +244,7 @@ function renderMine(){
   const yr=String(new Date().getFullYear());
   const mine=DB.holidays.filter(h=>h.personId==me.id).sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
   const used=mine.filter(h=>h.status==='approved'&&(h.type||'vacation')!=='remote'&&h.dateFrom.slice(0,4)===yr).reduce((a,h)=>a+(+h.workDays||0),0);
-  const rem=remoteDaysUsed(me.id,yr);
-  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' / '+(+me.holidayDays||22)+'</b> working days · Remote: <b>'+rem+' / '+REMOTE_MAX_DAYS+'</b>.';
+  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' / '+(+me.holidayDays||22)+'</b> working days.';
   let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
   if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
   mine.forEach(r=>{
@@ -359,7 +359,6 @@ function renderCal(){
   const yr=String(y);
   people.forEach(p=>{
     const used=DB.holidays.filter(x=>x.personId==p.id&&x.status==='approved'&&(x.type||'vacation')!=='remote'&&x.dateFrom.slice(0,4)===yr).reduce((a,x)=>a+(+x.workDays||0),0);
-    const rem=remoteDaysUsed(p.id,yr);
     h+='<tr><td class="lab">'+p.name+' <span class="m">'+p.role+'</span></td>';
     for(let d=1;d<=nDays;d++){
       const dt=new Date(y,m,d),iso=toISO(dt);
@@ -373,7 +372,7 @@ function renderCal(){
       }
       h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
     }
-    h+='<td class="lab"><span class="m">V '+used+'/'+(+p.holidayDays||22)+(rem?' · R '+rem+'/'+REMOTE_MAX_DAYS:'')+'</span></td></tr>';
+    h+='<td class="lab"><span class="m">'+used+'/'+(+p.holidayDays||22)+' days</span></td></tr>';
   });
   document.getElementById('cal').innerHTML=h+'</table>';
   const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
@@ -544,10 +543,11 @@ function exportHours(){
 }
 /* ================= TAB 3: TIME CLOCK (registro horario) ================= */
 let tcM=new Date();tcM.setDate(1);
+let _tcTick=null;
 let tcWho=null;
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
 const nowHM=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
-function entryLabel(e){return e.kind.toUpperCase()+' '+e.time+(e.manual?' *':'');}
+function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');} // display HH:MM, full HH:MM:SS kept in the record
 function renderTimeclock(){
   const me=DB.currentUser;
   if(!DB.tcReady()){document.getElementById('content').innerHTML='<div class="warn">The time clock is not active yet — run <b>dispatch_hr3.sql</b> in Supabase, then reload.</div>';return;}
@@ -589,16 +589,20 @@ function renderTimeclock(){
 }
 function renderTcState(){
   const me=DB.currentUser,box=document.getElementById('tcState');
+  if(_tcTick){clearInterval(_tcTick);_tcTick=null;}
   if(!me){box.innerHTML='<div class="empty">Log in to clock in.</div>';return;}
-  const today=toISO(new Date()),info=tcDayInfo(me.id,today);
+  const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
   box.innerHTML=
-    '<div style="font-size:16px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+';margin-bottom:2px">'+
+    '<div style="font-size:16px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+';margin-bottom:2px" id="tcStateLbl">'+
     (info.open?'🟢 Clocked IN':'⚪ Clocked out')+'</div>'+
-    '<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Worked today: <b style="color:var(--charcoal)">'+fmtMin(info.total)+'</b>'+(tcExpectedDay(me.id,today)?' of '+tcExpectedDay(me.id,today)+' h expected':' — no work expected today')+'</div>'+
+    '<div style="font-size:34px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums;line-height:1.05" id="tcLive">0:00:00</div>'+
+    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">worked today'+(exp?' · '+exp+' h expected':' · no work expected today')+'</div>'+
     '<button class="btn primary" id="punchBtn" style="font-size:15px;padding:10px 22px">'+(info.open?'Clock OUT':'Clock IN')+'</button>'+
     '<div style="margin-top:12px;font-size:12.5px">'+(info.entries.length?('Today: '+info.entries.map(entryLabel).join(' · ')):'No punches yet today.')+'</div>';
+  const tick=()=>{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('tcLive');if(el)el.textContent=fmtHMS(li.seconds);};
+  tick();if(info.open)_tcTick=setInterval(tick,1000);
   document.getElementById('punchBtn').onclick=()=>{
-    DB.timeclock.push({id:DB.newId(),personId:me.id,day:today,time:nowHM(),kind:info.open?'out':'in',manual:false,amends:null,reason:null,note:null,reportId:null});
+    DB.timeclock.push({id:DB.newId(),personId:me.id,day:today,time:nowHMS(),kind:info.open?'out':'in',manual:false,amends:null,reason:null,note:null,reportId:null});
     DB.save();renderTcState();renderMyMonth();
   };
 }

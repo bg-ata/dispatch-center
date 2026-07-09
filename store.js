@@ -203,7 +203,7 @@ function holStageLabel(req){
 function holActsOnMe(req){ // is it MY turn to decide this request?
   const me=DB.currentUser;if(!me||req.personId==me.id)return false;
   const p=DB.person(req.personId);if(!p)return false;
-  if(req.status==='manager'){const m=holManager(p);return (m&&m.id==me.id)||me.access==='admin';}
+  if(req.status==='manager'){const m=holManager(p);return !!(m&&m.id==me.id)||isBelenP(me);}
   if(req.status==='belen')return isBelenP(me);
   if(req.status==='hr')return !!me.hr||isBelenP(me); // HR (rrhh + Jesús) are the approvers; Belén can always act too
   return false;
@@ -235,7 +235,10 @@ function tcEffective(personId,day){ // amended entries stop counting; 'void' ame
   const amended={};rows.forEach(r=>{if(r.amends!=null)amended[r.amends]=true;});
   return rows.filter(r=>!amended[r.id]&&r.kind!=='void').sort((a,b)=>(a.time||'').localeCompare(b.time||''));
 }
-function tcMinutes(t){const p=(t||'0:0').split(':');return (+p[0])*60+(+p[1]);}
+function tcMinutes(t){const p=(t||'0:0').split(':');return (+p[0])*60+(+p[1])+(p[2]?(+p[2])/60:0);} // tolerates HH:MM or HH:MM:SS
+function tcSecondsOf(t){const p=(t||'0:0:0').split(':');return (+p[0])*3600+(+p[1])*60+(+(p[2]||0));}
+function nowHMS(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');}
+function fmtHMS(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;return h+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');}
 function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if today
   const es=tcEffective(personId,day);
   let total=0,openSince=null;
@@ -246,6 +249,17 @@ function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if
   const today=toISO(new Date());
   if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*60+now.getMinutes()-openSince);}
   return {entries:es,total,open:openSince!=null};
+}
+/* live worked seconds (for the constantly-counting clock) — open session ticks to real now */
+function tcLiveSeconds(personId,day){
+  const es=tcEffective(personId,day);let total=0,openSince=null;
+  es.forEach(e=>{
+    if(e.kind==='in'){if(openSince==null)openSince=tcSecondsOf(e.time);}
+    else if(e.kind==='out'&&openSince!=null){total+=Math.max(0,tcSecondsOf(e.time)-openSince);openSince=null;}
+  });
+  const today=toISO(new Date());
+  if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*3600+now.getMinutes()*60+now.getSeconds()-openSince);}
+  return {seconds:total,open:openSince!=null};
 }
 function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and approved vacation days
   const d=ymd(iso);
@@ -630,8 +644,8 @@ function navBar(active){
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+
-         '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
-         (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
+         '<span class="brandlet">RENMAD <b>Dispatch Center</b>'+
+         (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }
 function changePasswordUI(){
   if(!sb){alert('Login required.');return;}
