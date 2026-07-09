@@ -33,6 +33,16 @@
   select,input{font:inherit}
   .hint{font-size:12px;color:var(--muted);font-weight:400}
   .tlwrap{overflow-x:auto;border:1px solid var(--line);border-radius:0;background:#fff}
+  .tlflex{display:flex;align-items:stretch;border:1px solid var(--line);background:#fff;overflow:hidden}
+  .tlflex .tlwrap{border:0;border-left:1px solid var(--line);flex:1 1 auto;min-width:0}
+  .lanerail{position:relative;flex:0 0 142px;background:#faf9f6}
+  .lanetog{position:absolute;left:0;width:142px;box-sizing:border-box;padding:3px 10px;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;justify-content:center;border-bottom:1px solid #eee}
+  .lanetog:hover{background:#f2f0ea}
+  .lanetog.exp{background:#fff;box-shadow:inset 3px 0 0 var(--orange)}
+  .lanetog .nm{font-size:12.5px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lanetog .nm .cv{color:var(--muted);font-size:10px;flex:0 0 auto;transition:transform .12s}
+  .lanetog .sw{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+  .lanetog .ct{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap}
   .tl{position:relative}
   .thd{border-bottom:1px solid var(--line);background:#faf9f6}
   .mo{position:absolute;top:2px;font-size:11px;font-weight:600;color:var(--charcoal);border-left:1px solid var(--line);padding-left:4px;height:15px}
@@ -91,7 +101,7 @@
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
-let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null;
+let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null, expandedLane=null;
 const WD=11, WEEKW=WD*5, TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 /* which stage covers a given week (used to colour/assign substages by position) */
@@ -106,6 +116,7 @@ function stageKeyAtWeek(lane,wk){
 function darken(hex,f){if(typeof hex!=='string'||hex[0]!=='#'||hex.length<7)return hex;const c=i=>Math.round(parseInt(hex.slice(i,i+2),16)*f),h=v=>Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0');return '#'+h(c(1))+h(c(3))+h(c(5));}
 function lum(hex){if(typeof hex!=='string'||hex[0]!=='#'||hex.length<7)return 1;return (0.299*parseInt(hex.slice(1,3),16)+0.587*parseInt(hex.slice(3,5),16)+0.114*parseInt(hex.slice(5,7),16))/255;}
 function addSubstage(lane){
+  expandedLane=lane; // opening the lane so the new item is visible
   const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)*7);
   const evIdx=Math.round((+monday(ymd(ev.date))-+start)/(7*86400000));
   const bars=layLane(ev,lane,evIdx);
@@ -145,9 +156,9 @@ function render(){
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
-    '<div class="panel"><h3>Detailed timeline <span class="hint">— stage line + substage line per lane · drag a substage to move · +/− to resize · click it to open tasks</span></h3>'+
+    '<div class="panel"><h3>Timeline <span class="hint">— same lanes as the overview · <b>click a lane</b> to open its substages in full · drag a substage to move · +/− to resize · click it to edit tasks</span></h3>'+
       '<div id="addbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 10px"></div>'+
-      '<div class="tlwrap"><div class="tl" id="tl"></div></div></div>'+
+      '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
     '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div>';
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
@@ -246,29 +257,43 @@ function renderTeam(){
 function subColor(sub,stageColor){return (sub.type&&MKT_TYPES[sub.type])?MKT_TYPES[sub.type]:stageColor;}
 
 function renderTimeline(){
-  const tl=document.getElementById('tl');
+  const tl=document.getElementById('tl'), rail=document.getElementById('lanerail');
   const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)*7);
   const evIdx=Math.round((+monday(ymd(ev.date))-+start)/(7*86400000));
   const NW=preExtent(ev)+2+6, BW=NW*WEEKW;
   const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
+  const mg=DB.canManage();
+  const SUBROW=SUBH+4, COLLH=STGH+8;
+  // a selected substage keeps its lane open
+  if(selSub){const ss=DB.substages.find(s=>s.id===selSub);if(ss)expandedLane=ss.lane;}
 
-  // ---- per-lane layout: exactly TWO rows each — a stage line + one substage line (8 lines total) ----
+  // ---- per-lane layout: stages always; the OPEN lane also unfolds its substages into
+  //      as many rows as needed (accordion) so one topic gets the full space ----
   const laneLay=LANES.map(lane=>{
     const bars=layLane(ev,lane,evIdx);
     const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane);
     let dirty=false;
-    // 1) default week (spread across its stage) for any substage missing one
+    // default week (spread across its stage) for any substage missing one
     const byStage={};subs.forEach(s=>{(byStage[s.stage]=byStage[s.stage]||[]).push(s);});
     Object.keys(byStage).forEach(k=>{const bar=bars.find(b=>b.s.key===k);if(!bar)return;const list=byStage[k];
       list.forEach((s,i)=>{if(s.week==null){const col=Math.round(bar.x+(i+0.5)*bar.w/list.length-0.5);s.week=evIdx-col;dirty=true;}});});
-    // 2) default span for any substage missing one: wide enough to read the name, capped by the gap to the next (so no overlap)
-    const arr=subs.map(s=>({s,c:evIdx-s.week})).sort((a,b)=>a.c-b.c);
-    arr.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr.length)?arr[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW));o.s.span=Math.min(need,gap);dirty=true;}});
-    if(dirty&&(!USE_SUPABASE||DB.canManage()))DB.save(); // members never push layout defaults
-    return {lane,bars,subs};
+    // default span for any substage missing one: wide enough to read the name
+    const arr0=subs.map(s=>({s,c:evIdx-s.week})).sort((a,b)=>a.c-b.c);
+    arr0.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr0.length)?arr0[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW));o.s.span=Math.min(need,gap);dirty=true;}});
+    if(dirty&&(!USE_SUPABASE||mg))DB.save(); // members never push layout defaults
+    const expanded=(expandedLane===lane);
+    // greedy pack substages into non-overlapping rows (only needed when open)
+    let rows=[];
+    if(expanded){
+      const arr=subs.map(s=>({s,c:evIdx-s.week,span:Math.max(s.span||1,1)})).sort((a,b)=>a.c-b.c);
+      arr.forEach(o=>{let placed=false;
+        for(const row of rows){if(row.every(x=> o.c>=x.c+x.span || o.c+o.span<=x.c )){row.push(o);placed=true;break;}}
+        if(!placed)rows.push([o]);});
+    }
+    const laneH=expanded?(STGH+GAP+Math.max(1,rows.length)*SUBROW+(mg?24:6)+2):COLLH;
+    return {lane,bars,subs,expanded,rows,h:laneH};
   });
-  const LANEH2=STGH+GAP+SUBH+LANEPAD;
-  let acc=TOPH;laneLay.forEach(L=>{L.y=acc;acc+=LANEH2;});
+  let acc=TOPH;laneLay.forEach(L=>{L.y=acc;acc+=L.h+GAP;});
   const bodyH=acc+4;
 
   tl.style.cssText='width:'+BW+'px;height:'+bodyH+'px';
@@ -288,33 +313,41 @@ function renderTimeline(){
   function stageAtCol(bars,c){for(const b of bars){if(c>=b.x&&c<b.x+b.w)return b.s;}return bars[bars.length-1].s;}
 
   laneLay.forEach(L=>{
-    const lane=L.lane, y=L.y, sy=y+STGH+GAP;
+    const lane=L.lane, y=L.y;
     const ll=document.createElement('div');ll.className='ll';ll.style.top=(y+2)+'px';ll.textContent=LANE_LETTER[lane];tl.appendChild(ll);
-    // ---- row 1: stage bars ----
+    // ---- stage bars (always shown — the overview look) ----
     L.bars.forEach(bar=>{
       const x=bar.x*WEEKW, w=Math.max(bar.w*WEEKW,10);
       const seg=document.createElement('div');seg.className='stg';seg.style.cssText='left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+STGH+'px;background:'+bar.s.color;seg.title=bar.s.name;tl.appendChild(seg);
       const sl=document.createElement('div');sl.className='stglab';sl.style.cssText='left:'+(x+15)+'px;top:'+(y+4)+'px;max-width:'+(w-30)+'px;color:'+(bar.s.color==='#111111'?'#fff':'#3a3844');sl.textContent=bar.s.name;tl.appendChild(sl);
-      addBtn(x,y,lane,bar.s.key,-1,'−'); addBtn(x+w-13,y,lane,bar.s.key,1,'+');
+      if(mg){addBtn(x,y,lane,bar.s.key,-1,'−'); addBtn(x+w-13,y,lane,bar.s.key,1,'+');}
     });
-    // ---- row 2: substages — ALL on one line; positioned by week, sized by span, colour follows the stage beneath ----
-    L.subs.forEach(sub=>{
-      const span=Math.max(sub.span||1,1), wk=sub.week, c=evIdx-wk, st=stageAtCol(L.bars,c);
-      const x=c*WEEKW+2, pw=span*WEEKW-4;
-      const fill=darken(subColor(sub,st.color),0.78);
-      const pill=document.createElement('div');pill.className='subpill'+(selSub===sub.id?' sel':'');
-      pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+SUBH+'px;line-height:'+SUBH+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
-      pill.textContent=sub.name;pill.title=sub.name+' — drag to move · +/− to resize · click to open tasks';
-      pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:wk,moved:false};e.preventDefault();});
-      tl.appendChild(pill);
-      // − / + to shorten / lengthen the substage (in weeks), staying on the same line
-      const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+SUBH+'px;line-height:'+(SUBH-3)+'px';b.title=tip+' '+sub.name;
-        b.addEventListener('mousedown',e=>e.stopPropagation());
-        b.onclick=e=>{e.stopPropagation();let ns=Math.max(1,(sub.span||1)+delta);
-          if(delta>0){let nextC=Infinity;L.subs.forEach(o=>{if(o.id===sub.id)return;const oc=evIdx-o.week;if(oc>c&&oc<nextC)nextC=oc;});const cap=(nextC===Infinity)?(evIdx-c+1):(nextC-c);ns=Math.min(ns,Math.max(1,cap));}
-          sub.span=ns;DB.save();renderTimeline();if(selSub===sub.id)renderTasks();};tl.appendChild(b);};
-      rb(x,'−',-1,'shorten'); rb(x+pw-12,'+',1,'lengthen');
-    });
+    // ---- substages: only the OPEN lane unfolds them, packed into rows for room ----
+    if(L.expanded){
+      const sy0=y+STGH+GAP;
+      L.rows.forEach((row,ri)=>{const sy=sy0+ri*SUBROW;
+        row.forEach(o=>{
+          const sub=o.s, span=o.span, c=o.c, st=stageAtCol(L.bars,c);
+          const x=c*WEEKW+2, pw=span*WEEKW-4;
+          const fill=darken(subColor(sub,st.color),0.78);
+          const pill=document.createElement('div');pill.className='subpill'+(selSub===sub.id?' sel':'');
+          pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+SUBH+'px;line-height:'+SUBH+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
+          pill.textContent=sub.name;pill.title=sub.name+' — drag to move · +/− to resize · click to edit tasks';
+          pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:sub.week,moved:false};e.preventDefault();});
+          tl.appendChild(pill);
+          if(mg){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+SUBH+'px;line-height:'+(SUBH-3)+'px';b.title=tip+' '+sub.name;
+            b.addEventListener('mousedown',e=>e.stopPropagation());
+            b.onclick=e=>{e.stopPropagation();let ns=Math.max(1,(sub.span||1)+delta);
+              if(delta>0)ns=Math.min(ns,Math.max(1,evIdx-c+1)); // rows resolve overlaps, so grow up to the event edge
+              sub.span=ns;DB.save();renderTimeline();if(selSub===sub.id)renderTasks();};tl.appendChild(b);};
+            rb(x,'−',-1,'shorten'); rb(x+pw-12,'+',1,'lengthen');}
+        });
+      });
+      if(mg){const ax=((L.bars[0]?L.bars[0].x:0)*WEEKW)+2, ay=sy0+Math.max(1,L.rows.length)*SUBROW;
+        const ab=document.createElement('button');ab.className='addsub';ab.textContent='+ add item';
+        ab.style.cssText='left:'+ax+'px;top:'+ay+'px;height:17px;z-index:8';
+        ab.onclick=e=>{e.stopPropagation();addSubstage(lane);};tl.appendChild(ab);}
+    }
   });
 
   const colTop=TOPH, colH=bodyH-TOPH;
@@ -336,6 +369,22 @@ function renderTimeline(){
   col(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
   col(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
   col(0,'W0','#111','w0','');
+
+  // ---- left rail: clickable lane toggles (accordion) ----
+  rail.style.height=bodyH+'px';
+  rail.innerHTML='<div style="position:absolute;left:0;top:0;width:100%;height:'+TOPH+'px;font-size:9px;color:#b4b1a8;padding:2px 10px;font-weight:700">TIMELINES</div>';
+  laneLay.forEach(L=>{
+    const t=document.createElement('div');t.className='lanetog'+(L.expanded?' exp':'');
+    t.style.cssText='top:'+L.y+'px;height:'+L.h+'px';
+    const col0=(L.bars[0]&&L.bars[0].s.color)||'#ccc', n=L.subs.length;
+    t.innerHTML='<div class="nm"><span class="cv">'+(L.expanded?'▾':'▸')+'</span><span class="sw" style="background:'+col0+'"></span>'+(LANE_LABEL[L.lane]||L.lane)+'</div>'+
+      '<div class="ct">'+(L.expanded?(n+' item'+(n===1?'':'s')+' · open'):(n?(n+' item'+(n===1?'':'s')+' — open'):'no items — '+(mg?'click to add':'empty')))+'</div>';
+    t.onclick=()=>{const nl=(expandedLane===L.lane?null:L.lane);
+      const ss=selSub&&DB.substages.find(s=>s.id===selSub);
+      if(!ss||ss.lane!==nl){selSub=null;renderTasks();} // switching/closing a lane deselects a substage not in it
+      expandedLane=nl;renderTimeline();};
+    rail.appendChild(t);
+  });
 }
 
 function renderTasks(){

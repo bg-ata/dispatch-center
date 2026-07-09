@@ -404,10 +404,14 @@ function renderBackfill(){
 }
 function renderCal(){
   const me=DB.currentUser;
-  const people=hrVisiblePeople();
-  document.getElementById('calHint').textContent=(DB.isAdmin()||DB.isHR())
-    ?'You see everyone. Green = approved holidays, striped = pending, blue = remote working.'
-    :(DB.canManage()?'You see your team ('+me.role+').':'You see your team ('+(me?me.role:'')+') — agree your dates with them before requesting.');
+  // The holiday calendar is visible to EVERYONE — the whole company, so anyone can
+  // see who's away before planning. Sick / parental leave stays private (managers,
+  // HR and the person only); everyone else just sees holidays and remote working.
+  const people=DB.people.slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
+  const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
+  document.getElementById('calHint').textContent=
+    'Everyone can see who’s on holiday or working remotely. Green = approved holidays, striped = pending, blue = remote working.'+
+    ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'');
   const y=calM.getFullYear(),m=calM.getMonth();
   document.getElementById('c_lab').textContent=['January','February','March','April','May','June','July','August','September','October','November','December'][m]+' '+y;
   const yh=document.getElementById('yhY');if(yh)yh.textContent=y;
@@ -431,8 +435,9 @@ function renderCal(){
       if(!we&&!hol){
         const req=DB.holidays.find(x=>x.personId==p.id&&x.status!=='denied'&&x.status!=='cancelled'&&(x.type||'vacation')!=='adjust'&&x.dateFrom<=iso&&x.dateTo>=iso);
         if(req){const ty=req.type||'vacation',remB=ty==='remote',lv=LEAVE_TYPES.includes(ty);
+          if(!(lv&&!canSeeLeaveOf(p))){ // sick/parental leave hidden from people outside the team/HR
           const c=req.status!=='approved'?(remB?'rmtp':'pend'):remB?'rmt':lv?'lv':'ok';
-          inner='<span class="blk '+c+'" title="'+(TYPE_LABEL[ty]||'')+' · '+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}
+          inner='<span class="blk '+c+'" title="'+(TYPE_LABEL[ty]||'')+' · '+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}}
       }
       h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
     }
