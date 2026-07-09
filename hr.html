@@ -190,6 +190,8 @@ function renderHolidays(){
     '<div class="panel"><h3>My requests</h3><p class="hint" id="myBal"></p><table id="mine"></table></div>'+
     '</div>'+
     (DB.isHRAdmin()?
+      '<div class="panel"><h3>Holiday balances — who to chase</h3><p class="hint">Everyone\'s holiday days this year: how many they\'ve requested and how many are still to book. '+
+      '<b style="color:#D32230">Red</b> = lots left (nudge them to take/plan it before 28 Feb) · <b style="color:#C77800">Amber</b> = keep an eye · <b style="color:#3E8C28">Green</b> = on track. Sorted by most-left first.</p><div id="balBox"></div></div>'+
       '<div class="panel"><h3>Load past holidays (HR)</h3><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
       '<div class="padd"><label>Person<select id="b_who"></select></label>'+
       '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Remote</option></select></label>'+
@@ -223,7 +225,7 @@ function renderHolidays(){
     '<span class="sw" style="background:#f2f0ea"></span>weekend</div>'+
     '<p class="hint" id="holList" style="margin-top:8px"></p></div>'+
     '<div class="panel"><h3>Madrid bank holidays <span id="yhY"></span></h3><p class="hint">The official “calendario laboral” this app deducts automatically — review against the BOCM each January and tell Claude if any date moved.</p><div id="yearHols"></div></div>';
-  renderDecide();renderMine();renderBackfill();renderCal();wireForm();
+  renderDecide();renderMine();renderBalances();renderBackfill();renderCal();wireForm();
   document.getElementById('c_prev').onclick=()=>{calM.setMonth(calM.getMonth()-1);renderCal();};
   document.getElementById('c_next').onclick=()=>{calM.setMonth(calM.getMonth()+1);renderCal();};
 }
@@ -401,6 +403,28 @@ function renderBackfill(){
       render();
     };
   }
+}
+/* HR + Belén: everyone's holiday balance at a glance, colour-coded so it's obvious who to chase */
+function renderBalances(){
+  const box=document.getElementById('balBox');if(!box)return;
+  const y=new Date().getFullYear();
+  const rows=DB.people.map(p=>{
+    const allow=holAllowance(p),used=holUsed(p.id,y),adj=holAdjust(p.id,y),rem=holRemaining(p.id,y);
+    const pending=DB.holidays.filter(h=>h.personId==p.id&&(h.type||'vacation')==='vacation'&&!['approved','denied','cancelled'].includes(h.status)&&(h.dateFrom||'').slice(0,4)===String(y)).reduce((a,h)=>a+(+h.workDays||0),0);
+    return {p,allow,adj,used,rem,pending};
+  }).sort((a,b)=>b.rem-a.rem||a.p.name.localeCompare(b.p.name));
+  const band=r=>r>=15?{c:'#D32230',bg:'#FBEAEA',lab:'chase'}:r>=8?{c:'#C77800',bg:'#FFF3E8',lab:'watch'}:{c:'#3E8C28',bg:'#EAF5E4',lab:'on track'};
+  let h='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Requested</th><th class="num">Pending</th><th class="num">Remaining</th><th style="width:210px">Booked so far</th></tr>';
+  rows.forEach(r=>{const b=band(r.rem),base=r.allow+r.adj||1,pct=Math.max(0,Math.min(100,100*r.used/base));
+    h+='<tr><td>'+r.p.name+' <span class="m">'+r.p.role+'</span></td>'+
+      '<td class="num">'+r.allow+(r.adj?' <span style="color:#29ACE3">('+(r.adj>0?'+':'')+r.adj+')</span>':'')+'</td>'+
+      '<td class="num">'+r.used+'</td>'+
+      '<td class="num">'+(r.pending?'<span style="color:#C77800">+'+r.pending+'</span>':'—')+'</td>'+
+      '<td class="num"><b style="color:'+b.c+';font-size:15px">'+r.rem+'</b></td>'+
+      '<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:70px;height:9px;border-radius:5px;background:#ece9e2;overflow:hidden"><div style="height:100%;width:'+pct.toFixed(0)+'%;background:'+b.c+'"></div></div>'+
+        '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+b.c+';background:'+b.bg+';border-radius:10px;padding:1px 8px;white-space:nowrap">'+b.lab+'</span></div></td></tr>';
+  });
+  box.innerHTML=h+'</table>';
 }
 function renderCal(){
   const me=DB.currentUser;
