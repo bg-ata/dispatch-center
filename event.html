@@ -55,6 +55,7 @@
   .subpill{position:absolute;border-radius:0;font-size:11px;color:#2b2b2b;font-weight:600;padding:0 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:grab;user-select:none;border:1px solid rgba(0,0,0,.25)}
   .subpill:active{cursor:grabbing}
   .subpill.sel{outline:2px solid var(--charcoal);outline-offset:-1px;font-weight:700}
+  .subpill.open{white-space:normal;line-height:1.16;display:flex;align-items:center;padding:3px 22px 3px 10px;overflow:hidden;border-radius:5px;font-size:11.5px}
   .pb{position:absolute;height:17px;width:12px;border:none;background:rgba(255,255,255,.85);color:#222;font-size:11px;font-weight:800;line-height:15px;text-align:center;padding:0;cursor:pointer;z-index:12;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
   .pb:hover{background:#fff}
   .addsub{position:absolute;height:17px;border:1px dashed #c9c6bd;background:#fff;color:#8a887f;font-size:9px;border-radius:0;padding:0 6px;cursor:pointer;z-index:6}
@@ -102,7 +103,10 @@
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
 let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null, expandedLane=null;
-const WD=11, WEEKW=WD*5, TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
+let ZOOM=(parseFloat(localStorage.getItem('evZoom'))||1);
+let WEEKW=Math.round(55*ZOOM), WD=WEEKW/5;
+const TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
+function setZoom(z){ZOOM=Math.max(0.5,Math.min(2.6,Math.round(z*100)/100));WEEKW=Math.round(55*ZOOM);WD=WEEKW/5;try{localStorage.setItem('evZoom',ZOOM);}catch(e){}renderTimeline();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 /* which stage covers a given week (used to colour/assign substages by position) */
 function stageKeyAtWeek(lane,wk){
@@ -157,7 +161,8 @@ function render(){
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
     '<div class="panel"><h3>Timeline <span class="hint">— same lanes as the overview · <b>click a lane</b> to open its substages in full · drag a substage to move · +/− to resize · click it to edit tasks</span></h3>'+
-      '<div id="addbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:2px 0 10px"></div>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 8px"><div id="addbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>'+
+      '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
       '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
     '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div>';
@@ -170,6 +175,8 @@ function render(){
     if(b.dataset.et==='imp')renderImpactTab();
   });
   renderTeam(); renderAddBar(); renderTimeline(); renderTasks(); wire();
+  document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
+  document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
 }
 
 /* ---- € Results tab: this event's finance summary + weekly money ---- */
@@ -263,7 +270,7 @@ function renderTimeline(){
   const NW=preExtent(ev)+2+6, BW=NW*WEEKW;
   const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
   const mg=DB.canManage();
-  const SUBROW=SUBH+4, COLLH=STGH+8;
+  const OPENH=54, SUBROW=OPENH+3, COLLH=STGH+11; // expanded rows are tall so substages can hold longer text
   // a selected substage keeps its lane open
   if(selSub){const ss=DB.substages.find(s=>s.id===selSub);if(ss)expandedLane=ss.lane;}
 
@@ -330,12 +337,12 @@ function renderTimeline(){
           const sub=o.s, span=o.span, c=o.c, st=stageAtCol(L.bars,c);
           const x=c*WEEKW+2, pw=span*WEEKW-4;
           const fill=darken(subColor(sub,st.color),0.78);
-          const pill=document.createElement('div');pill.className='subpill'+(selSub===sub.id?' sel':'');
-          pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+SUBH+'px;line-height:'+SUBH+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
+          const pill=document.createElement('div');pill.className='subpill open'+(selSub===sub.id?' sel':'');
+          pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+(OPENH-4)+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
           pill.textContent=sub.name;pill.title=sub.name+' — drag to move · +/− to resize · click to edit tasks';
           pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:sub.week,moved:false};e.preventDefault();});
           tl.appendChild(pill);
-          if(mg){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+SUBH+'px;line-height:'+(SUBH-3)+'px';b.title=tip+' '+sub.name;
+          if(mg){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+(OPENH-4)+'px;line-height:'+(OPENH-8)+'px';b.title=tip+' '+sub.name;
             b.addEventListener('mousedown',e=>e.stopPropagation());
             b.onclick=e=>{e.stopPropagation();let ns=Math.max(1,(sub.span||1)+delta);
               if(delta>0)ns=Math.min(ns,Math.max(1,evIdx-c+1)); // rows resolve overlaps, so grow up to the event edge
@@ -395,7 +402,7 @@ function renderTasks(){
   const tks=DB.tasksForSub(sub.id);
   const mg=DB.canManage(); // managers & admins edit everything; members tick the status of their OWN tasks
   let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage)+'</b>'+
-    (mg?'<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" style="width:230px">'
+    (mg?'<input id="subname" value="'+(sub.name||'').replace(/"/g,'&quot;')+'" placeholder="Name / short description — type as much as you need" style="width:min(560px,100%);flex:1 1 320px">'
        :'<span style="font-weight:600">'+(sub.name||'')+'</span>');
   if(sub.lane==='marketing'){h+=mg?('<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>')
                                  :(sub.type?'<span class="hint">'+sub.type+'</span>':'');}

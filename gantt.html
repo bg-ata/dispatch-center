@@ -76,6 +76,7 @@
   <div class="bar-top">
     <button class="btn primary" id="addBtn">+ Add event</button>
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
+    <span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:12px;color:var(--muted)">Zoom</span><button class="btn" id="zOut" style="padding:5px 11px">−</button><span id="zLbl" style="font-size:12px;color:var(--muted);min-width:40px;text-align:center;font-weight:600">100%</span><button class="btn" id="zIn" style="padding:5px 11px">+</button></span>
     <div class="legend">
       <span><span class="sw" style="background:#A9CBEE"></span>PM</span>
       <span><span class="sw" style="background:#FFC9A3"></span>Marketing</span>
@@ -113,7 +114,10 @@
 
 <script src="store.js?v=36"></script>
 <script>
-const WEEKW=18, LINEH=15, GAP=2, TOPH=16;
+let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
+let WEEKW=Math.round(18*ZOOM);
+const LINEH=15, GAP=2, TOPH=16;
+function setZoom(z){ZOOM=Math.max(0.5,Math.min(3,Math.round(z*100)/100));WEEKW=Math.round(18*ZOOM);try{localStorage.setItem('gZoom',ZOOM);}catch(e){}render();scrollToToday();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 document.getElementById('nav').innerHTML=navBar('overview');
 let dragMk=null, dragW0=null, editingId=null;
@@ -231,9 +235,11 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
+document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
+document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
 
 function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const {start}=bounds();const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
-boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();});
+boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';});
 window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
 </script>
 </body>
