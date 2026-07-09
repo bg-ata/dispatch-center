@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Tool</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column}
+  .top{padding:14px 22px 0;flex:0 0 auto}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:2px 0 10px}
+  .ic{flex:0 0 30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px}
+  .bar h1{margin:0;font-size:18px;font-weight:700;color:var(--charcoal)}
+  .bar .sub{font-size:12px;color:var(--muted);margin:0}
+  .bar .actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .btn{text-decoration:none;font-size:12.5px;font-weight:600;color:var(--charcoal);background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 12px}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange)}
+  .badge{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:#FFF3E8;color:#8a4a12;border-radius:999px;padding:2px 9px}
+  .frameWrap{flex:1 1 auto;margin:0 14px 14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;position:relative;min-height:300px}
+  iframe{width:100%;height:100%;border:0;display:block}
+  .msg{padding:40px 22px;max-width:560px;color:var(--muted)}
+  .msg h2{color:var(--charcoal);font-size:18px;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div class="top">
+  <div id="nav"></div>
+  <div class="bar" id="bar"></div>
+</div>
+<div id="stage"></div>
+<script src="store.js?v=31"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('tools');
+function render(){
+  const id=new URLSearchParams(location.search).get('id');
+  const t=toolById(id);
+  const bar=document.getElementById('bar'),stage=document.getElementById('stage');
+  // unknown tool, or one not deployed yet
+  if(!t||!t.url){
+    bar.innerHTML='<a class="btn" href="tools.html">← All tools</a>';
+    stage.innerHTML='<div class="msg"><h2>'+(t?t.name:'Tool not found')+'</h2><p>'+
+      (t?'This tool is still being finished — it isn’t available yet.':'That link doesn’t match any team tool.')+
+      ' <a href="tools.html">Back to the tools board</a>.</p></div>';
+    return;
+  }
+  // Proposals Dashboard (and any mgrOnly tool): managers & up only, even by direct link
+  if(t.mgrOnly&&!DB.canManage()){
+    bar.innerHTML='<a class="btn" href="tools.html">← All tools</a>';
+    stage.innerHTML='<div class="msg"><h2>'+t.name+'</h2><p>This tool is limited to managers and above. '+
+      '<a href="tools.html">Back to the tools board</a>.</p></div>';
+    return;
+  }
+  bar.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
+    '<div><h1>'+t.name+'</h1><p class="sub">'+t.desc+'</p></div>'+
+    '<div class="actions">'+
+      (t.ownLogin?'<span class="badge">own login</span>':'')+
+      '<a class="btn" href="tools.html">← All tools</a>'+
+      '<a class="btn primary" href="'+t.url+'" target="_blank" rel="noopener">Open in new tab ↗</a>'+
+    '</div>';
+  stage.className='frameWrap';
+  stage.innerHTML='<iframe src="'+toolEmbedUrl(t)+'" allow="clipboard-read; clipboard-write; fullscreen" '+
+    'sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals allow-popups-to-escape-sandbox"></iframe>';
+}
+boot(render);
+</script>
+</body>
+</html>

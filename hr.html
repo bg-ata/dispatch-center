@@ -74,6 +74,15 @@
   tr.auto td{color:var(--muted);background:#faf9f6}
   tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
   .code{font-size:11px;color:var(--muted)}
+  /* compact allocation form: projects flow into as many columns as fit → one screen */
+  .autoline{font-size:12px;color:var(--muted);background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:7px 11px;margin-bottom:10px}
+  .autoline b{color:var(--charcoal)}
+  .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:2px 18px}
+  .acell{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #efede8;min-width:0}
+  .acell .alab{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acell input.hrs{width:70px;text-align:right;padding:4px 7px;flex:0 0 auto}
+  .atot{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:700;border-top:2px solid var(--line);background:#f6f5f1;padding:9px 11px;margin-top:8px;border-radius:0 0 9px 9px}
+  .atot .num{font-variant-numeric:tabular-nums}
   .mx{overflow-x:auto}
   .mx table{font-size:12px;min-width:640px}
   .mx td.c{text-align:center}
@@ -91,7 +100,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=30"></script>
+<script src="store.js?v=31"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -443,7 +452,13 @@ function renderCal(){
 }
 /* ================= TAB 2: ALLOCATION ================= */
 const fmtH=v=>(Math.round(v*100)/100).toLocaleString('es-ES');
-function activeProjects(){return DB.projects.filter(p=>p.active!==false&&!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0));}
+/* project numbers follow an order: category prefix ("02.") first, then the running
+   accounting code, then insertion order. New event codes continue the sequence. */
+function projPrefix(p){const m=(p.label||'').match(/^\s*(\d+)/);return m?+m[1]:99;}
+function projCodeNum(p){const m=(p.code||'').match(/\d+/);return m?+m[0]:0;}
+function projCmp(a,b){return projPrefix(a)-projPrefix(b)||projCodeNum(a)-projCodeNum(b)||(a.sort||0)-(b.sort||0);}
+function nextProjectCode(){const mx=Math.max(70314,...DB.projects.map(projCodeNum));return String(mx+1);}
+function activeProjects(){return DB.projects.filter(p=>p.active!==false&&!p.kind).sort(projCmp);}
 function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
 function renderAlloc(){
   document.getElementById('content').innerHTML=
@@ -452,7 +467,7 @@ function renderAlloc(){
     '<div class="mnav"><button class="btn" id="w_prev">‹</button><b id="w_lab"></b><button class="btn" id="w_next">›</button>'+
     '<button class="btn" id="w_now" style="font-size:12px">This week</button>'+
     '<span id="w_msg" style="font-size:12px;color:var(--green)"></span></div>'+
-    '<div class="chips" id="chips"></div><table id="ts"></table>'+
+    '<div class="chips" id="chips"></div><div id="ts"></div>'+
     '<div style="margin-top:12px"><button class="btn primary" id="saveBtn">Save my hours</button></div></div>'+
     '<div id="mgr"></div>';
   renderAlarms();renderWeek();renderMgr();
@@ -489,19 +504,19 @@ function renderWeek(){
     (w.leave>0?'<span class="chipbox">On leave (auto)<b>'+fmtH(w.leave)+' h</b></span>':'')+
     '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
     '<span class="chipbox '+(exact?'good':'bad')+'" id="remChip">'+(over?'⚠ Over by':'Remaining')+'<b>'+(exact?'✓ 0':fmtH(Math.abs(remaining))+' h')+'</b></span>';
-  let h='<tr><th>Project</th><th class="num" style="width:110px">Hours</th></tr>';
   const fp=autoProject('festivos'),vp=autoProject('vacaciones');
-  if(w.fest>0&&fp)h+='<tr class="auto"><td>'+fp.label+' <span class="code">auto · '+w.festNames.join(', ')+'</span></td><td class="num">'+fmtH(w.fest)+'</td></tr>';
-  if(w.vac>0&&vp)h+='<tr class="auto"><td>'+vp.label+' <span class="code">auto · approved holidays</span></td><td class="num">'+fmtH(w.vac)+'</td></tr>';
-  activeProjects().forEach(p=>{
-    h+='<tr><td>'+p.label+(p.code?' <span class="code">('+p.code+')</span>':'')+'</td>'+
-      '<td class="num"><input class="hrs" type="number" min="0" step="0.25" data-pid="'+p.id+'" value="'+(manual[p.id]!=null?manual[p.id]:'')+'" placeholder="0"></td></tr>';
-  });
-  h+='<tr class="total"><td>Total (with auto lines)</td><td class="num" id="tsTotal">'+fmtH(sum+w.fest+w.vac)+' / '+fmtH(w.required)+'</td></tr>';
+  const autos=[];
+  if(w.fest>0&&fp)autos.push('<b>'+fp.label+'</b> '+fmtH(w.fest)+' h <span class="code">('+w.festNames.join(', ')+')</span>');
+  if(w.vac>0&&vp)autos.push('<b>'+vp.label+'</b> '+fmtH(w.vac)+' h <span class="code">(approved holidays)</span>');
+  let h=autos.length?'<div class="autoline">Auto-filled for you: '+autos.join(' &nbsp;·&nbsp; ')+'</div>':'';
+  h+='<div class="agrid">'+activeProjects().map(p=>
+      '<label class="acell" title="'+p.label+(p.code?' ('+p.code+')':'')+'"><span class="alab">'+p.label+(p.code?' <span class="code">('+p.code+')</span>':'')+'</span>'+
+      '<input class="hrs" type="number" min="0" step="0.25" data-pid="'+p.id+'" value="'+(manual[p.id]!=null?manual[p.id]:'')+'" placeholder="0"></label>').join('')+'</div>';
+  h+='<div class="atot"><span>Total (with auto-filled lines)</span><span class="num" id="tsTotal">'+fmtH(sum+w.fest+w.vac)+' / '+fmtH(w.required)+' h</span></div>';
   document.getElementById('ts').innerHTML=h;
   document.querySelectorAll('#ts input').forEach(inp=>inp.oninput=()=>{
     let s=0;document.querySelectorAll('#ts input').forEach(i=>s+=(+i.value||0));
-    document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required);
+    document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required)+' h';
     const rem=Math.round((w.toAllocate-s)*100)/100,ov=rem<-0.01,ex=Math.abs(rem)<0.01;
     const chip=document.getElementById('remChip');
     chip.className='chipbox '+(ex?'good':'bad');
@@ -564,32 +579,42 @@ function renderMgr(){
       '<tr><th>Project</th><th>Code</th><th class="num">Hours</th><th class="num">Share</th></tr>';
     if(fp&&festT>0)h+=row(fp.label+' (auto)','',festT);
     if(vp&&vacT>0)h+=row(vp.label+' (auto)','',vacT);
-    DB.projects.filter(p=>!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0)).forEach(p=>{
+    DB.projects.filter(p=>!p.kind).sort(projCmp).forEach(p=>{
       if(totals[p.id])h+=row(p.label,p.code,totals[p.id]);
     });
     h+='<tr class="total"><td>Total</td><td></td><td class="num">'+fmtH(allT)+'</td><td></td></tr></table>'+
       '<div style="margin-top:10px"><button class="btn" id="xlsBtn">⬇ Excel (all allocations)</button></div>';
-    if(DB.isAdmin()){
-      h+='<h3 style="margin-top:18px">Projects</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays).</p><table>'+
-        '<tr><th>Project</th><th>Code</th><th></th></tr>'+
-        DB.projects.filter(p=>!p.kind).sort((a,b)=>(a.sort||0)-(b.sort||0)).map(p=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td>'+p.label+'</td><td class="code">'+(p.code||'')+'</td>'+
-          '<td><button class="btn" style="font-size:11px;padding:3px 9px" data-tgl="'+p.id+'">'+(p.active===false?'Reactivate':'Retire')+'</button></td></tr>').join('')+
-        '</table><div class="padd"><label>New project label<input id="np_label" placeholder="02. Hidrógeno 27"></label>'+
-        '<label>Cost code<input id="np_code" placeholder="70324" style="width:100px"></label>'+
-        '<button class="btn primary" id="np_add" style="font-size:12px">+ Add</button></div>';
-    }
     h+='</div>';
+  }
+  // Project numbers: created / retired ONLY by Belén, Carlos and Jesús (accounting).
+  // They follow an order — new event codes continue the running accounting sequence.
+  if(DB.canManageProjects()){
+    h+='<div class="panel"><h3>Project numbers</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays). '+
+      'Only Belén, Carlos and Jesús can create these — and the code follows the running order.</p><table>'+
+      '<tr><th>#</th><th>Project</th><th>Code</th><th></th></tr>'+
+      DB.projects.filter(p=>!p.kind).sort(projCmp).map((p,i)=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td class="code">'+(i+1)+'</td><td>'+p.label+'</td><td class="code">'+(p.code||'—')+'</td>'+
+        '<td><button class="btn" style="font-size:11px;padding:3px 9px" data-tgl="'+p.id+'">'+(p.active===false?'Reactivate':'Retire')+'</button></td></tr>').join('')+
+      '</table><div class="padd"><label>New project label<input id="np_label" placeholder="02. Hidrógeno 27"></label>'+
+      '<label>Cost code<input id="np_code" value="'+nextProjectCode()+'" style="width:100px"></label>'+
+      '<button class="btn primary" id="np_add" style="font-size:12px">+ Add</button></div>'+
+      '<p class="hint" style="margin-top:8px">Next code in sequence: <b>'+nextProjectCode()+'</b> — change it only if this event isn’t the next in line.</p></div>';
   }
   box.innerHTML=h;
   const xb=document.getElementById('xlsBtn');
   if(xb)xb.onclick=exportHours;
   box.querySelectorAll('[data-tgl]').forEach(b=>b.onclick=()=>{
+    if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can retire project numbers.');return;}
     const p=DB.projects.find(x=>x.id==b.dataset.tgl);if(!p)return;
     p.active=(p.active===false);DB.save();renderMgr();renderWeek();});
   const ab=document.getElementById('np_add');
   if(ab)ab.onclick=()=>{
+    if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can create project numbers.');return;}
     const l=document.getElementById('np_label').value.trim();if(!l){alert('Give the project a label.');return;}
-    DB.projects.push({id:DB.newId(),label:l,code:document.getElementById('np_code').value.trim()||null,kind:null,
+    const code=document.getElementById('np_code').value.trim()||null;
+    if(code&&DB.projects.some(p=>(p.code||'')===code)){alert('Code '+code+' is already in use by "'+DB.projects.find(p=>(p.code||'')===code).label+'". Codes must be unique and follow the order.');return;}
+    const suggested=nextProjectCode();
+    if(code&&/^\d+$/.test(code)&&+code<+suggested&&!confirm('Code '+code+' is below the next number in sequence ('+suggested+'). Add it out of order anyway?'))return;
+    DB.projects.push({id:DB.newId(),label:l,code:code,kind:null,
       sort:Math.max(0,...DB.projects.map(p=>p.sort||0))+1,active:true});
     DB.save();renderMgr();renderWeek();};
 }

@@ -31,33 +31,25 @@
 <div class="app">
   <div id="nav"></div>
   <h1>Team tools</h1>
-  <p class="sub">Everything in one place. Same login as the timelines; tools marked "own login" still ask for their own credentials for now.</p>
+  <p class="sub">Everything in one place — each tool opens inside the Dispatch Center. Tools marked “own login” still ask for their own credentials inside the window for now.</p>
   <div class="grid" id="grid"></div>
   <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished.</p>
 </div>
-<script src="store.js?v=30"></script>
+<script src="store.js?v=31"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
-const TOOLS=[
-  {name:'Agenda Builder',desc:'Bilingual event agendas with branded Word & PDF export.',url:'https://bg-ata.github.io/RENMAD-generator/agenda_app/',accent:'#3E8C28',ini:'AB',badge:'own login'},
-  {name:'Proposal Builder',desc:'Sponsorship decks per event, salesperson, colour and client logo.',url:'',accent:'#E84830',ini:'PB'},
-  {name:'Image Generator',desc:'Speaker cards, panels, logo walls and title slides.',url:'',accent:'#4C3079',ini:'IG'},
-  {name:'Webinar Reports',desc:'Two CSVs + stats in, branded PPTX report out.',url:'',accent:'#29ACE3',ini:'WR'},
-  {name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.',url:'https://proposal-dashboard.streamlit.app/',accent:'#2B2B2B',ini:'PD',badge:'own login',mgrOnly:true},
-  {name:'BESS BOSS',desc:'The renewables minigrid game — learn the grid, top the leaderboard.',url:'https://bg-ata.github.io/GridShero/',accent:'#FF4A00',ini:'BB',badge:'game'},
-];
 function render(){
   const g=document.getElementById('grid');g.innerHTML='';
-  TOOLS.forEach(t=>{
-    if(t.mgrOnly&&!DB.canManage())return; // dashboard tile: admins & managers only
+  DISPATCH_TOOLS.forEach(t=>{
+    if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
     const pending=!t.url;
     const el=document.createElement(pending?'div':'a');
     el.className='tile'+(pending?' pending':'');
-    if(!pending){el.href=t.url;el.target='_blank';el.rel='noopener';}
-    const badge=pending?'coming soon':(t.badge||'');
+    if(!pending){el.href='tool.html?id='+t.id;} // open through the dispatch shell, not a bare new tab
+    const badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
     el.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
       '<span><h3>'+t.name+'</h3><p>'+t.desc+'</p></span>'+
-      (badge?'<span class="badge'+(t.badge==='own login'?' own':'')+'">'+badge+'</span>':'');
+      (badge?'<span class="badge'+(t.ownLogin?' own':'')+'">'+badge+'</span>':'');
     g.appendChild(el);
   });
 }

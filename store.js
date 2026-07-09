@@ -621,6 +621,10 @@ const DB={
   isHRAdmin(){const u=this.currentUser;return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
+  /* who may CREATE / retire the hour-allocation project numbers: Belén, Carlos and
+     Jesús (accounting). Mirrors dc_can_finance() in SQL = admin OR finance flag, so
+     the client shows the panel to exactly whom the server-side RLS will let write. */
+  canManageProjects(){const u=this.currentUser;return !!(u&&(u.access==='admin'||u.finance));},
   /* admins & managers set any status; members set the status of their OWN tasks
      (all of this is also enforced server-side by row-level security) */
   canEditStatus(t){if(this.canManage())return true;return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
@@ -716,6 +720,26 @@ function showLogin(){return new Promise(resolve=>{
 });}
 
 /* ---- shared UI ---- */
+/* ===== Team tools registry (shared by tools.html grid + tool.html embed shell) =====
+   id     = slug used in tool.html?id=<id>
+   url    = external app; '' = not deployed yet (shows "coming soon", not embeddable)
+   embed  = false when the app refuses to run inside a frame → always opens in a new tab
+   mgrOnly= only managers & up (admins + managers) may see / open it */
+const DISPATCH_TOOLS=[
+  {id:'agenda',   name:'Agenda Builder',    desc:'Bilingual event agendas with branded Word & PDF export.', url:'https://bg-ata.github.io/RENMAD-generator/agenda_app/', accent:'#3E8C28', ini:'AB', ownLogin:true},
+  {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'', accent:'#E84830', ini:'PB'},
+  {id:'images',   name:'Image Generator',   desc:'Speaker cards, panels, logo walls and title slides.', url:'', accent:'#4C3079', ini:'IG'},
+  {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out.', url:'', accent:'#29ACE3', ini:'WR'},
+  {id:'dashboard',name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.', url:'https://proposal-dashboard.streamlit.app/', accent:'#2B2B2B', ini:'PD', ownLogin:true, mgrOnly:true},
+  {id:'bessboss', name:'BESS BOSS',         desc:'The renewables minigrid game — learn the grid, top the leaderboard.', url:'https://bg-ata.github.io/GridShero/', accent:'#FF4A00', ini:'BB', game:true},
+];
+function toolById(id){return DISPATCH_TOOLS.find(t=>t.id===id)||null;}
+/* the URL to load inside the iframe: Streamlit apps need ?embed=true to drop their chrome */
+function toolEmbedUrl(t){
+  if(!t||!t.url)return '';
+  if(/streamlit\.app/i.test(t.url))return t.url+(t.url.includes('?')?'&':'?')+'embed=true';
+  return t.url;
+}
 function navBar(active){
   return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Events</a>'+
