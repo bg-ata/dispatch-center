@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 15;
+const STORE_VERSION = 16;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -227,12 +227,52 @@ function hrVisiblePeople(){
   if(DB.isAdmin()||DB.isHR())return all;
   return all.filter(p=>p.role===me.role);
 }
+/* ---- time clock (registro horario) helpers ---- */
+const TC_START='2026-07-13'; // first day punching is expected (module go-live Monday)
+function tcRows(personId,day){return DB.timeclock.filter(r=>r.personId==personId&&r.day===day);}
+function tcEffective(personId,day){ // amended entries stop counting; 'void' amendments count nothing
+  const rows=tcRows(personId,day);
+  const amended={};rows.forEach(r=>{if(r.amends!=null)amended[r.amends]=true;});
+  return rows.filter(r=>!amended[r.id]&&r.kind!=='void').sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+}
+function tcMinutes(t){const p=(t||'0:0').split(':');return (+p[0])*60+(+p[1]);}
+function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if today
+  const es=tcEffective(personId,day);
+  let total=0,openSince=null;
+  es.forEach(e=>{
+    if(e.kind==='in'){if(openSince==null)openSince=tcMinutes(e.time);}
+    else if(e.kind==='out'&&openSince!=null){total+=Math.max(0,tcMinutes(e.time)-openSince);openSince=null;}
+  });
+  const today=toISO(new Date());
+  if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*60+now.getMinutes()-openSince);}
+  return {entries:es,total,open:openSince!=null};
+}
+function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and approved vacation days
+  const d=ymd(iso);
+  if(d.getDay()===0||d.getDay()===6||madHol(iso))return 0;
+  if(personVacDays(personId,iso,iso).length)return 0;
+  return hoursPerDay(d);
+}
+function tcMissingDays(personId){ // expected days with no punches at all (since go-live, before today)
+  const out=[],today=toISO(new Date());
+  for(let d=ymd(TC_START);toISO(d)<today;d=addDays(d,1)){
+    const iso=toISO(d);
+    if(tcExpectedDay(personId,iso)<=0)continue;
+    if(!tcEffective(personId,iso).length)out.push(iso);
+  }
+  return out.slice(-15);
+}
+function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved');}
 /* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
 function decorateNav(){
   if(!DB.hrReady()||!DB.currentUser)return;
-  const n=myPendingApprovals()+missingWeeks(DB.currentUser.id).length;
+  let n=myPendingApprovals()+missingWeeks(DB.currentUser.id).length;
+  if(DB.tcReady()){
+    n+=tcMissingDays(DB.currentUser.id).length;
+    if(DB.isHRAdmin())n+=openReports().length;
+  }
   const el=document.getElementById('nav-hr');
-  if(el&&n>0)el.innerHTML+=' <span title="holiday decisions waiting on you and/or weeks without your hours" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
+  if(el&&n>0)el.innerHTML+=' <span title="HR needs you: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
 }
 
 /* ---- seed ---- */
@@ -330,7 +370,7 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -341,7 +381,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
   people:['id','name','role','access','email','finance','hr','holidayDays'],
@@ -350,10 +390,12 @@ const COLS={
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
   projects:['id','label','code','kind','sort','active'],
-  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type'],
+  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces'],
   timesheets:['id','personId','week','hours'],
+  timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
+  tcreports:['id','personId','day','entryId','thread','status'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -393,6 +435,18 @@ const DB={
         this.data.projects=pr.data||[];this.data.holidays=ho.data||[];this.data.timesheets=ts.data||[];
         _hrReady=true;
       }catch(e){console.warn('HR module not ready:',e.message||e);}
+      /* time clock (registro horario): append-only + no "deleted" column → own paged load */
+      this.data.timeclock=[];this.data.tcreports=[];_tcReady=false;
+      try{
+        let from=0,page=1000;
+        for(;;){const tr=await sb.from('dc_timeclock').select('*').order('id').range(from,from+page-1);
+          if(tr.error)throw tr.error;
+          this.data.timeclock.push.apply(this.data.timeclock,tr.data||[]);
+          if(!tr.data||tr.data.length<page)break;from+=page;}
+        const rp=await sb.from('dc_tcreports').select('*').eq('deleted',false).order('id');
+        if(rp.error)throw rp.error;this.data.tcreports=rp.data||[];
+        _tcReady=true;
+      }catch(e){console.warn('time clock module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -418,6 +472,7 @@ const DB={
         if(k==='finance'&&!_finReady)continue; // finance table not created yet
         if(k==='weekly'&&!_weeklyReady)continue; // weekly table not created yet
         if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)continue; // HR tables not created yet
+        if((k==='timeclock'||k==='tcreports')&&!_tcReady)continue; // time clock tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -425,6 +480,7 @@ const DB={
           else if(_shadow[k][r.id]!==s)updates.push(p);
         });
         Object.keys(_shadow[k]).forEach(id=>{if(!seen[id])dels.push(id);});
+        if(k==='timeclock'){updates.length=0;dels.length=0;} // registro horario: APPEND-ONLY, never update/delete
         if(inserts.length){const {error}=await sb.from(tbl).insert(inserts);if(error)throw error;}
         for(const p of updates){const {error}=await sb.from(tbl).update(p).eq('id',p.id);if(error)throw error;}
         if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
@@ -463,6 +519,11 @@ const DB={
   get timesheets(){return this.data.timesheets||[];},
   hrReady(){return !USE_SUPABASE||_hrReady;},
   isHR(){return !!(this.currentUser&&this.currentUser.hr);},
+  get timeclock(){return this.data.timeclock||[];},
+  get tcreports(){return this.data.tcreports||[];},
+  tcReady(){return !USE_SUPABASE||_tcReady;},
+  /* HR admin = Belén + the HR tick (Jesús). Deliberately NOT every events admin. */
+  isHRAdmin(){const u=this.currentUser;return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
   /* admins & managers set any status; members set the status of their OWN tasks
@@ -480,6 +541,8 @@ function subscribeRealtime(){
       if(k==='weekly')return; // bulk table, no realtime — dashboard reloads on demand
       if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)return;
       if(k==='timesheets')return; // own-row edits, no realtime needed
+      if(k==='timeclock')return; // append-only, reloaded on demand
+      if(k==='tcreports'&&!_tcReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -558,12 +621,12 @@ function showLogin(){return new Promise(resolve=>{
 
 /* ---- shared UI ---- */
 function navBar(active){
-  return '<div class="nav"><a href="gantt.html" class="'+(active==='overview'?'on':'')+'">Overview</a>'+
-         '<a href="people.html" class="'+(active==='people'?'on':'')+'">Personnel</a>'+
-         '<a href="dashboard.html" class="'+(active==='dashboard'?'on':'')+'">€ Dashboard</a>'+
-         '<a href="impact.html" class="'+(active==='impact'?'on':'')+'">Impact</a>'+
-         '<a href="hr.html" id="nav-hr" class="'+(active==='hr'?'on':'')+'">HR</a>'+
-         '<a href="tools.html" class="'+(active==='tools'?'on':'')+'">Tools</a>'+
+  return '<div class="nav"><a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">🧭 Overview</a>'+
+         '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
+         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'">💶 Revenue</a>'+
+         '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
+         '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
+         '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+
          '<span class="brandlet"><span id="whoami" style="color:#7c7c78"></span>RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="changePasswordUI();return false" style="color:#7c7c78;text-decoration:none">change password</a> &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }

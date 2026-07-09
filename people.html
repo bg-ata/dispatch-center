@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RENMAD Dispatch Center — Personnel</title>
+<title>RENMAD Dispatch Center — Team</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#E24B4A;}
   *{box-sizing:border-box}
@@ -42,7 +42,7 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>Personnel</h1>
+  <h1>👥 Team</h1>
   <div class="toolbar">
     <button class="btn primary" id="addBtn">+ Add person</button>
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
@@ -64,7 +64,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=24"></script>
+<script src="store.js?v=25"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
