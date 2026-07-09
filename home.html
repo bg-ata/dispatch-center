@@ -46,7 +46,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=28"></script>
+<script src="store.js?v=29"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -115,26 +115,37 @@ function renderAlarms(){
     (myOpenTasks?'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">You have <b>'+myOpenTasks+'</b> open task'+(myOpenTasks===1?'':'s')+' (below).</div>':'');
 }
 
-/* ---- profile ---- */
+/* ---- profile (self-service photo + phone) ---- */
 function renderProfile(){
   const me=DB.currentUser,box=document.getElementById('profPanel');
-  const yr=String(new Date().getFullYear());
+  const yr=new Date().getFullYear();
   let balHtml='';
   if(DB.hrReady()){
-    const used=DB.holidays.filter(h=>h.personId==me.id&&h.status==='approved'&&(h.type||'vacation')!=='remote'&&h.dateFrom.slice(0,4)===yr).reduce((s,h)=>s+(+h.workDays||0),0);
-    balHtml='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' / '+(+me.holidayDays||23)+' days</span></div>';
+    const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
+    balHtml='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' used · '+rem+' left'+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
+      '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 2px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(yr)+'.</div>';
   }
   box.innerHTML='<h3>👤 Me</h3>'+
-    '<div class="kv"><span class="k">Name</span><span class="v">'+me.name+'</span></div>'+
+    '<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px">'+avatarHtml(me,64)+
+      '<div><div style="font-weight:700;font-size:15px;color:var(--charcoal)">'+me.name+'</div>'+
+      '<label class="btn" style="font-size:11px;padding:3px 8px;cursor:pointer;display:inline-block;margin-top:4px">Change photo<input type="file" id="pf_photo" accept="image/*" style="display:none"></label>'+
+      (me.photo?' <button class="btn" id="pf_rmphoto" style="font-size:11px;padding:3px 8px">Remove</button>':'')+
+      '<span id="pf_pmsg" style="font-size:11px;color:var(--green);margin-left:6px"></span></div></div>'+
     '<div class="kv"><span class="k">Job title</span><span class="v">'+me.role+'</span></div>'+
     '<div class="kv"><span class="k">Access</span><span class="v">'+(ACCESS_LABEL[me.access||'member']||me.access)+'</span></div>'+
     '<div class="kv"><span class="k">Email</span><span class="v">'+(me.email||'—')+'</span></div>'+
+    '<div class="kv"><span class="k">Work phone</span><span class="v"><input id="pf_phone" value="'+(me.phone||'').replace(/"/g,'&quot;')+'" placeholder="add your work phone" style="border:1px solid var(--line);border-radius:6px;padding:3px 7px;font:inherit;text-align:right;width:150px"> <button class="btn" id="pf_savephone" style="font-size:11px;padding:3px 8px">Save</button></span></div>'+
     balHtml+
     '<div class="prof-actions">'+
     '<a class="btn" href="person.html?id='+me.id+'">My full timeline</a>'+
     (typeof changePasswordUI==='function'&&USE_SUPABASE?'<button class="btn" id="cpw">Change password</button>':'')+
     '</div>';
   const cp=document.getElementById('cpw');if(cp)cp.onclick=()=>changePasswordUI();
+  document.getElementById('pf_photo').onchange=e=>{const f=e.target.files[0];if(!f)return;
+    resizeImage(f,url=>{if(!url){alert('Could not read that image.');return;}me.photo=url;DB.save();renderProfile();});};
+  const rmp=document.getElementById('pf_rmphoto');if(rmp)rmp.onclick=()=>{me.photo=null;DB.save();renderProfile();};
+  document.getElementById('pf_savephone').onclick=()=>{me.phone=document.getElementById('pf_phone').value.trim();DB.save();
+    const m=document.getElementById('pf_pmsg');/* reuse */ document.getElementById('pf_savephone').textContent='Saved ✓';setTimeout(()=>{const b=document.getElementById('pf_savephone');if(b)b.textContent='Save';},2000);};
 }
 
 /* ---- my events & tasks ---- */

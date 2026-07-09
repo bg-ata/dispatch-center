@@ -141,9 +141,17 @@ function workingDaysBetween(fromISO,toISO_){
     if(madHol(toISO(d)))continue;n++;}
   return n;
 }
-function personVacDays(personId,fromISO,toISO_){ // approved vacation working days in a range (remote ≠ vacation)
+/* leave & holiday types.
+   OFF = person is away → no clock-in / no hour allocation expected.
+   LEAVE = the HR-managed absences (sick/maternity/paternity) — don't spend the
+   23-day holiday allowance. 'adjust' = a signed balance change (carry-over / borrow). */
+const OFF_TYPES=['vacation','sick','maternity','paternity'];
+const LEAVE_TYPES=['sick','maternity','paternity'];
+const TYPE_LABEL={vacation:'Holiday',remote:'Remote working',sick:'Sick leave',maternity:'Maternity leave',paternity:'Paternity leave',adjust:'Balance adjustment'};
+const TYPE_EMOJI={vacation:'🌴',remote:'🏠',sick:'🤒',maternity:'👶',paternity:'👶',adjust:'±'};
+function personDaysOfTypes(personId,fromISO,toISO_,types){ // approved working days of given types in a range
   const out=[];
-  DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&h.type!=='remote').forEach(h=>{
+  DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&types.includes(h.type||'vacation')).forEach(h=>{
     for(let d=ymd(h.dateFrom);toISO(d)<=h.dateTo;d=addDays(d,1)){
       const iso=toISO(d);
       if(iso<fromISO||iso>toISO_)continue;
@@ -151,16 +159,36 @@ function personVacDays(personId,fromISO,toISO_){ // approved vacation working da
       out.push(iso);}});
   return out;
 }
-function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vacaciones for one week
-  const mon=ymd(mondayISO);let required=0,fest=0,festNames=[],vac=0;
-  const vacDays=personId!=null?personVacDays(personId,mondayISO,toISO(addDays(mon,4))):[];
+function personVacDays(personId,fromISO,toISO_){return personDaysOfTypes(personId,fromISO,toISO_,['vacation']);}
+function personLeaveDays(personId,fromISO,toISO_){return personDaysOfTypes(personId,fromISO,toISO_,LEAVE_TYPES);}
+function personOffDays(personId,fromISO,toISO_){return personDaysOfTypes(personId,fromISO,toISO_,OFF_TYPES);}
+/* is the person on an approved absence today (or on date)? → {type,label,emoji,until} or null */
+function currentLeave(personId,onISO){
+  const day=onISO||toISO(new Date());
+  const h=DB.holidays.find(x=>x.personId==personId&&x.status==='approved'&&OFF_TYPES.includes(x.type||'vacation')&&x.dateFrom<=day&&x.dateTo>=day);
+  if(!h)return null;
+  return {type:h.type||'vacation',label:TYPE_LABEL[h.type||'vacation'],emoji:TYPE_EMOJI[h.type||'vacation'],until:h.dateTo};
+}
+/* holiday balance for a year: allowance (23) + carry-over/borrow adjustments − vacation used */
+const HOL_DEADLINE_MD='02-28'; // carry-over must be enjoyed before end of February
+function holAllowance(p){return (p&&p.holidayDays!=null)?+p.holidayDays:23;}
+function holUsed(personId,year){return DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&(h.type||'vacation')==='vacation'&&(h.dateFrom||'').slice(0,4)===String(year)).reduce((a,h)=>a+(+h.workDays||0),0);}
+function holAdjust(personId,year){return DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&h.type==='adjust'&&(h.dateFrom||'').slice(0,4)===String(year)).reduce((a,h)=>a+(+h.workDays||0),0);}
+function holRemaining(personId,year){const p=DB.person(personId);return holAllowance(p)+holAdjust(personId,year)-holUsed(personId,year);}
+function holDeadlineText(year){return 'enjoy them before 28 Feb '+(year+1);}
+function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vacaciones/Leave for one week
+  const mon=ymd(mondayISO);let required=0,fest=0,festNames=[],vac=0,leave=0;
+  const friISO=toISO(addDays(mon,4));
+  const vacDays=personId!=null?personVacDays(personId,mondayISO,friISO):[];
+  const leaveDays=personId!=null?personLeaveDays(personId,mondayISO,friISO):[];
   for(let i=0;i<5;i++){const d=addDays(mon,i),iso=toISO(d),h=hoursPerDay(d);
     required+=h;
     const hol=madHol(iso);
     if(hol){fest+=h;festNames.push(iso.slice(5)+' '+hol);}
     else if(vacDays.includes(iso))vac+=h;
+    else if(leaveDays.includes(iso))leave+=h;
   }
-  return {required,fest,festNames,vac,toAllocate:Math.max(0,required-fest-vac)};
+  return {required,fest,festNames,vac,leave,toAllocate:Math.max(0,required-fest-vac-leave)};
 }
 const HR_START='2026-07-06'; // first week the timesheet is mandatory (module go-live)
 function tsFor(personId,weekISO){return DB.timesheets.find(t=>t.personId==personId&&t.week===weekISO);}
@@ -261,10 +289,10 @@ function tcLiveSeconds(personId,day){
   if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*3600+now.getMinutes()*60+now.getSeconds()-openSince);}
   return {seconds:total,open:openSince!=null};
 }
-function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and approved vacation days
+function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and any approved leave (holiday/sick/maternity/paternity)
   const d=ymd(iso);
   if(d.getDay()===0||d.getDay()===6||madHol(iso))return 0;
-  if(personVacDays(personId,iso,iso).length)return 0;
+  if(personOffDays(personId,iso,iso).length)return 0;
   return hoursPerDay(d);
 }
 function tcMissingDays(personId){ // expected days with no punches at all (since go-live, before today)
@@ -418,7 +446,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
-  people:['id','name','role','access','email','finance','hr','holidayDays'],
+  people:['id','name','role','access','email','finance','hr','holidayDays','photo','phone'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -688,4 +716,17 @@ function changePasswordUI(){
   };
 }
 function loadXLSX(cb){if(window.XLSX)return cb();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=cb;document.head.appendChild(s);}
+/* shrink an uploaded image to a small square JPEG data-URL (keeps dc_people rows tiny) */
+function resizeImage(file,cb,size){size=size||160;const rd=new FileReader();
+  rd.onload=e=>{const img=new Image();img.onload=()=>{
+    const s=Math.min(img.width,img.height),cv=document.createElement('canvas');cv.width=cv.height=size;
+    const cx=cv.getContext('2d');cx.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size);
+    cb(cv.toDataURL('image/jpeg',0.82));};img.onerror=()=>cb(null);img.src=e.target.result;};
+  rd.onerror=()=>cb(null);rd.readAsDataURL(file);}
+/* avatar HTML: the photo, or a coloured initials circle */
+function avatarHtml(p,px){px=px||34;const init=(p.name||'?').split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const pal=['#FF4A00','#185FA5','#3E8C28','#4C3079','#29ACE3','#C77800','#D32230','#0E7C6B'];
+  const col=pal[(p.id||0)%pal.length];
+  if(p.photo)return '<span style="display:inline-block;width:'+px+'px;height:'+px+'px;border-radius:50%;background-image:url('+p.photo+');background-size:cover;background-position:center;vertical-align:middle;flex:0 0 auto"></span>';
+  return '<span style="display:inline-flex;width:'+px+'px;height:'+px+'px;border-radius:50%;background:'+col+';color:#fff;font-weight:700;font-size:'+Math.round(px*0.4)+'px;align-items:center;justify-content:center;vertical-align:middle;flex:0 0 auto">'+init+'</span>';}
 function exportXLSX(filename,sheets){loadXLSX(()=>{const wb=XLSX.utils.book_new();sheets.forEach(s=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(s.rows),s.name.slice(0,31)));XLSX.writeFile(wb,filename);});}

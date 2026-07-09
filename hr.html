@@ -60,6 +60,7 @@
   .blk.pend{background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)}
   .blk.rmt{background:var(--blue)}
   .blk.rmtp{background:repeating-linear-gradient(45deg,#29ACE3,#29ACE3 4px,#cdeaf7 4px,#cdeaf7 8px)}
+  .blk.lv{background:var(--amber)}
   .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
   .legend span.sw{display:inline-block;width:14px;height:11px;border-radius:3px;vertical-align:-1px;margin:0 4px 0 10px}
   .mnav{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
@@ -90,7 +91,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=28"></script>
+<script src="store.js?v=29"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -145,7 +146,9 @@ function reqAlarms(r){ // ⚠ strings for one request (used at request time AND 
   });
   return alarms;
 }
-function typeChip(r){return (r.type==='remote')?'<span class="chip" style="background:var(--blue)">Remote</span> ':'';}
+function typeChip(r){const ty=r.type||'vacation';if(ty==='vacation')return '';
+  const col=ty==='remote'?'var(--blue)':'var(--amber)';
+  return '<span class="chip" style="background:'+col+'">'+TYPE_LABEL[ty]+'</span> ';}
 function statusChip(h){
   if(h.status==='approved')return '<span class="chip" style="background:var(--green)">Approved</span>';
   if(h.status==='denied')return '<span class="chip" style="background:var(--red)">Denied</span>';
@@ -184,15 +187,29 @@ function renderHolidays(){
       '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
       '<label>Note<input id="b_note" placeholder="loaded from record" style="width:160px"></label>'+
       '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
-      (DB.isHRAdmin()?'<div class="padd" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"><label>Cancel an approved holiday<select id="x_hol" style="max-width:340px"></select></label>'+
-      '<button class="btn no" id="x_go">Cancel it</button><span id="x_msg" style="font-size:12px;color:var(--green)"></span></div>':'')+
-      '</div>':'')+
+      '<div class="padd" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"><label>Cancel an approved holiday<select id="x_hol" style="max-width:340px"></select></label>'+
+      '<button class="btn no" id="x_go">Cancel it</button><span id="x_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+      '</div>'+
+      '<div class="panel"><h3>Place someone on leave (HR)</h3><p class="hint">Sick / maternity / paternity leave. During it the person doesn’t have to clock in or allocate hours — the app stops expecting either. This does <b>not</b> use their 23-day holiday allowance.</p>'+
+      '<div class="padd"><label>Person<select id="lv_who"></select></label>'+
+      '<label>Type<select id="lv_type"><option value="sick">Sick leave</option><option value="maternity">Maternity</option><option value="paternity">Paternity</option></select></label>'+
+      '<label>From<input type="date" id="lv_from"></label><label>To<input type="date" id="lv_to"></label>'+
+      '<label>Note<input id="lv_note" placeholder="optional" style="width:150px"></label>'+
+      '<button class="btn primary" id="lv_add">Add leave</button><span id="lv_msg" style="font-size:12px;color:var(--green)"></span></div></div>'+
+      '<div class="panel"><h3>Carry-over / borrowed days (HR)</h3><p class="hint">Add days a person carries over from last year, or lets them borrow from next year (upon approval). Positive = extra days available this year; use a negative number to remove. Carried-over days should be enjoyed before 28 Feb.</p>'+
+      '<div class="padd"><label>Person<select id="aj_who"></select></label>'+
+      '<label>Year<input type="number" id="aj_year" value="'+new Date().getFullYear()+'" style="width:90px"></label>'+
+      '<label>Days (+/−)<input type="number" step="0.5" id="aj_days" style="width:90px" placeholder="e.g. 3"></label>'+
+      '<label>Reason<select id="aj_kind"><option value="carryover">Carry-over from last year</option><option value="borrow">Borrowed from next year</option><option value="other">Other adjustment</option></select></label>'+
+      '<button class="btn primary" id="aj_add">Add</button><span id="aj_msg" style="font-size:12px;color:var(--green)"></span></div></div>'
+      :'')+
     '<div class="panel"><h3>Team calendar</h3><p class="hint" id="calHint"></p>'+
     '<div class="mnav"><button class="btn" id="c_prev">‹</button><b id="c_lab"></b><button class="btn" id="c_next">›</button></div>'+
     '<div class="cal" id="cal"></div>'+
     '<div class="legend"><span class="sw" style="background:var(--green)"></span>holidays'+
     '<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending'+
     '<span class="sw" style="background:var(--blue)"></span>remote'+
+    '<span class="sw" style="background:var(--amber)"></span>sick / parental leave'+
     '<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday'+
     '<span class="sw" style="background:#f2f0ea"></span>weekend</div>'+
     '<p class="hint" id="holList" style="margin-top:8px"></p></div>'+
@@ -241,20 +258,22 @@ function renderMine(){
   const me=DB.currentUser;const tbl=document.getElementById('mine');
   if(!me){tbl.innerHTML='<tr><td class="empty">Log in to request holidays.</td></tr>';return;}
   document.getElementById('chainTxt').textContent=holChain(me).map(s=>s.key==='hr'?'HR':s.who.name).join(' → ');
-  const yr=String(new Date().getFullYear());
-  const mine=DB.holidays.filter(h=>h.personId==me.id).sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-  const used=mine.filter(h=>h.status==='approved'&&(h.type||'vacation')!=='remote'&&h.dateFrom.slice(0,4)===yr).reduce((a,h)=>a+(+h.workDays||0),0);
-  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' / '+(+me.holidayDays||23)+'</b> working days.';
+  const yr=new Date().getFullYear();
+  const mine=DB.holidays.filter(h=>h.personId==me.id&&(h.type||'vacation')!=='adjust').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
+  const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
+  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' used · '+rem+' left</b> of '+holAllowance(me)+(adj?' ('+(adj>0?'+':'')+adj+' carry/borrow)':'')+
+    ' — <span style="color:#8a4a12">'+holDeadlineText(yr)+'</span>.';
   let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
   if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
   mine.forEach(r=>{
     const deny=(r.log||[]).filter(l=>l.action==='denied').map(l=>l.note).filter(Boolean).join('; ');
     const pending=['manager','belen','hr'].includes(r.status);
+    const hrLeave=LEAVE_TYPES.includes(r.type); // sick/mat/pat added by HR — not self-cancellable
     const chg=r.replaces?' <span style="color:var(--muted);font-size:11px" title="'+esc2(changeAdvice(r)||'')+'">🔁 change</span>':'';
     h+='<tr><td>'+typeChip(r)+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
       '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+deny+'</span>':'')+'</td>'+
-      '<td>'+(pending?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
-      (r.status==='approved'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
+      '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
+      (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
   });
   tbl.innerHTML=h;
   tbl.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{
@@ -340,6 +359,39 @@ function renderBackfill(){
       render();
     };
   }
+  /* HR: place someone on sick / maternity / paternity leave */
+  const lw=document.getElementById('lv_who');
+  if(lw){
+    lw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    document.getElementById('lv_add').onclick=()=>{
+      const f=document.getElementById('lv_from').value,t=document.getElementById('lv_to').value;
+      if(!f||!t||t<f){alert('Pick a valid date range.');return;}
+      const wd=workingDaysBetween(f,t);
+      const ty=document.getElementById('lv_type').value;
+      DB.holidays.push({id:DB.newId(),personId:+lw.value,dateFrom:f,dateTo:t,workDays:wd,type:ty,
+        note:document.getElementById('lv_note').value.trim()||TYPE_LABEL[ty],status:'approved',
+        log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:'placed on '+TYPE_LABEL[ty].toLowerCase()+' by HR'}]});
+      DB.save();
+      const m=document.getElementById('lv_msg');m.textContent='Leave added ✓';setTimeout(()=>m.textContent='',3000);
+      render();
+    };
+  }
+  /* HR: carry-over / borrowed days adjustment (a signed balance change for a year) */
+  const aw=document.getElementById('aj_who');
+  if(aw){
+    aw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    document.getElementById('aj_add').onclick=()=>{
+      const yr=+document.getElementById('aj_year').value,days=+document.getElementById('aj_days').value,kind=document.getElementById('aj_kind').value;
+      if(!yr||!days){alert('Enter a year and a number of days (can be negative).');return;}
+      const d0=yr+'-01-01';
+      DB.holidays.push({id:DB.newId(),personId:+aw.value,dateFrom:d0,dateTo:d0,workDays:days,type:'adjust',
+        note:(kind==='carryover'?'Carry-over from '+(yr-1):kind==='borrow'?'Borrowed from '+(yr+1):'Adjustment'),status:'approved',
+        log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:(days>0?'+':'')+days+' days '+kind+' by HR'}]});
+      DB.save();
+      const m=document.getElementById('aj_msg');m.textContent='Adjustment added ✓';setTimeout(()=>m.textContent='',3000);
+      render();
+    };
+  }
 }
 function renderCal(){
   const me=DB.currentUser;
@@ -356,23 +408,22 @@ function renderCal(){
   const WD=['D','L','M','X','J','V','S'];
   for(let d=1;d<=nDays;d++){const dt=new Date(y,m,d);h+='<th>'+WD[dt.getDay()]+'<br>'+d+'</th>';}
   h+='<th style="text-align:left;padding-left:8px">balance</th></tr>';
-  const yr=String(y);
   people.forEach(p=>{
-    const used=DB.holidays.filter(x=>x.personId==p.id&&x.status==='approved'&&(x.type||'vacation')!=='remote'&&x.dateFrom.slice(0,4)===yr).reduce((a,x)=>a+(+x.workDays||0),0);
+    const rem=holRemaining(p.id,y),used=holUsed(p.id,y);
     h+='<tr><td class="lab">'+p.name+' <span class="m">'+p.role+'</span></td>';
     for(let d=1;d<=nDays;d++){
       const dt=new Date(y,m,d),iso=toISO(dt);
       const we=dt.getDay()===0||dt.getDay()===6,hol=hols[iso];
       let cls='dcell'+(hol?' hol':we?' we':''),inner='';
       if(!we&&!hol){
-        const req=DB.holidays.find(x=>x.personId==p.id&&x.status!=='denied'&&x.status!=='cancelled'&&x.dateFrom<=iso&&x.dateTo>=iso);
-        if(req){const remB=(req.type==='remote');
-          const c=req.status==='approved'?(remB?'rmt':'ok'):(remB?'rmtp':'pend');
-          inner='<span class="blk '+c+'" title="'+(remB?'remote · ':'')+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}
+        const req=DB.holidays.find(x=>x.personId==p.id&&x.status!=='denied'&&x.status!=='cancelled'&&(x.type||'vacation')!=='adjust'&&x.dateFrom<=iso&&x.dateTo>=iso);
+        if(req){const ty=req.type||'vacation',remB=ty==='remote',lv=LEAVE_TYPES.includes(ty);
+          const c=req.status!=='approved'?(remB?'rmtp':'pend'):remB?'rmt':lv?'lv':'ok';
+          inner='<span class="blk '+c+'" title="'+(TYPE_LABEL[ty]||'')+' · '+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}
       }
       h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
     }
-    h+='<td class="lab"><span class="m">'+used+'/'+(+p.holidayDays||23)+' days</span></td></tr>';
+    h+='<td class="lab"><span class="m">'+used+' used · '+rem+' left</span></td></tr>';
   });
   document.getElementById('cal').innerHTML=h+'</table>';
   const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
@@ -431,6 +482,7 @@ function renderWeek(){
     '<span class="chipbox">Required<b>'+fmtH(w.required)+' h</b></span>'+
     (w.fest>0?'<span class="chipbox" title="'+w.festNames.join(', ')+'">00. Festivos (auto)<b>'+fmtH(w.fest)+' h</b></span>':'')+
     (w.vac>0?'<span class="chipbox">04. Vacaciones (auto)<b>'+fmtH(w.vac)+' h</b></span>':'')+
+    (w.leave>0?'<span class="chipbox">On leave (auto)<b>'+fmtH(w.leave)+' h</b></span>':'')+
     '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
     '<span class="chipbox '+(exact?'good':'bad')+'" id="remChip">'+(over?'⚠ Over by':'Remaining')+'<b>'+(exact?'✓ 0':fmtH(Math.abs(remaining))+' h')+'</b></span>';
   let h='<tr><th>Project</th><th class="num" style="width:110px">Hours</th></tr>';
