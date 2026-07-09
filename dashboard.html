@@ -190,11 +190,19 @@ const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if
 Chart.register(vlines);
 /* draw the exact value inside each stacked bar segment (used when charts show % mix) */
 const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins||{}).barlabels;if(!o)return;
-  const ctx=c.ctx;ctx.save();ctx.font='700 10px Segoe UI';ctx.textAlign='center';ctx.textBaseline='middle';
+  const cmp=v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v);
+  const ctx=c.ctx;ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';
   c.data.datasets.forEach((ds,di)=>{const meta=c.getDatasetMeta(di);if(meta.hidden)return;
-    meta.data.forEach((bar,i)=>{const v=ds.data[i];if(v==null||v<(o.min||6))return;
-      const yTop=bar.y,yBase=bar.base!=null?bar.base:bar.y;const h=Math.abs(yBase-yTop);if(h<13)return;
-      ctx.fillStyle='#fff';ctx.fillText((o.fmt==='pct'?(Math.round(v*10)/10)+'%':new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)),bar.x,(yTop+yBase)/2);});});
+    meta.data.forEach((bar,i)=>{
+      const yTop=bar.y,yBase=bar.base!=null?bar.base:bar.y,h=Math.abs(yBase-yTop),cy=(yTop+yBase)/2;
+      if(o.both){ // show BOTH the % and the € figure in each segment
+        const p=ds._pct?ds._pct[i]:null,e=ds._eur?ds._eur[i]:null;
+        if(p==null||p<(o.min||8)||h<14)return;
+        if(h>=27){ctx.font='700 10px Segoe UI';ctx.fillText(Math.round(p)+'%',bar.x,cy-6);ctx.font='600 9px Segoe UI';ctx.fillText(cmp(e),bar.x,cy+6);}
+        else{ctx.font='700 10px Segoe UI';ctx.fillText(Math.round(p)+'%',bar.x,cy);}
+        return;}
+      const v=ds.data[i];if(v==null||v<(o.min||6)||h<13)return;
+      ctx.font='700 10px Segoe UI';ctx.fillText((o.fmt==='pct'?(Math.round(v*10)/10)+'%':cmp(v)),bar.x,cy);});});
   ctx.restore();}};
 Chart.register(barlabels);
 function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
@@ -611,25 +619,27 @@ function drawComposition(ms){
   const wk=cur?cur.week:0;
   const carryAt=(e,k,W)=>{let last=0;e.rows.forEach(r=>{if(r.week<=W&&r[k]!=null)last=+r[k];});return last;};
   const W=(compMode==='week')?wk:99;
-  const vals=list.map(e=>{const spx=carryAt(e,'spxAcc',W),tik=carryAt(e,'ticketsAcc',W),sof=carryAt(e,'soFarEur',W);
-    let oth=Math.max(0,sof-spx-tik);
-    if(compMode==='pct'){const t=(spx+tik+oth)||1;return{spx:100*spx/t,tik:100*tik/t,oth:100*oth/t};}
-    return{spx,tik,oth};});
+  const raw=list.map(e=>{const spx=carryAt(e,'spxAcc',W),tik=carryAt(e,'ticketsAcc',W),sof=carryAt(e,'soFarEur',W);
+    return {spx,tik,oth:Math.max(0,sof-spx-tik)};});
+  const tot=raw.map(r=>(r.spx+r.tik+r.oth)||1);
+  const pct=raw.map((r,i)=>({spx:100*r.spx/tot[i],tik:100*r.tik/tot[i],oth:100*r.oth/tot[i]}));
+  const vals=(compMode==='pct')?pct:raw;
   const seg=document.getElementById('compSeg');
   seg.innerHTML=[['now','Total so far'],['week','At W'+(wk<0?wk:'+'+wk)],['pct','% mix']]
     .map(([m,l])=>'<button class="'+(compMode===m?'on':'')+'" data-cm="'+m+'">'+l+'</button>').join('');
   seg.querySelectorAll('[data-cm]').forEach(b=>b.onclick=()=>{compMode=b.dataset.cm;drawComposition(ms);});
   document.getElementById('compHint').textContent=
-    compMode==='pct'?'Share of each revenue source per event — compares the mix regardless of size.'
+    (compMode==='pct'?'Share of each revenue source per event, bars scaled to 100% — the € behind each is shown too.'
     :compMode==='week'?'Everyone measured at the same point: W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now.'
-    :'Sponsorship vs tickets vs other, per event — finished events show final money, live ones what they have so far.';
-  const fmtV=v=>compMode==='pct'?((Math.round(v*10)/10)+' %'):eur(v);
-  const mk=(label,key,color)=>({label,data:vals.map(v=>v[key]),backgroundColor:color});
+    :'Sponsorship vs tickets vs other, per event — finished events show final money, live ones what they have so far.')
+    +' Each block shows both the € and its % share.';
+  const mk=(label,key,color)=>({label,data:vals.map(v=>v[key]),backgroundColor:color,_eur:raw.map(r=>r[key]),_pct:pct.map(p=>p[key])});
   mkChart('comp',{type:'bar',data:{labels:list.map(e=>e.name),
     datasets:[mk('Sponsorship (SPX)','spx','#FF4A00'),mk('Tickets','tik','#29ACE3'),mk('Other (telesales, recordings…)','oth','#9AA0A8')]},
     options:{maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y)}},
-        barlabels:compMode==='pct'?{fmt:'pct',min:5}:false},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},
+        tooltip:{callbacks:{label:c=>{const d=c.dataset;return d.label+': '+eur(d._eur[c.dataIndex])+' · '+Math.round(d._pct[c.dataIndex])+'%';}}},
+        barlabels:{both:true,min:7}},
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
@@ -816,8 +826,8 @@ function renderInsights(){
     '<div class="panel"><h3>Where the money comes from <span class="seg" id="mixSeg"></span></h3><p class="hint" id="mixHint"></p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
     '<div class="panel"><h3>Franchises — growing or fading</h3><p class="hint">Final revenue of each event family, year over year (top families; current year is still in play).</p><div class="chartbox sm"><canvas id="fam"></canvas></div></div>'+
     '</div><div class="two">'+
-    '<div class="panel"><h3>When sponsors sign</h3><p class="hint">All completed events: sponsorship € per week-to-event vs the discount windows.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
-    '<div class="panel"><h3>…and how that is changing</h3><p class="hint">Share of each year’s sponsorship signed early, mid-campaign and in the final four weeks.</p><div class="chartbox sm"><canvas id="signevo"></canvas></div></div>'+
+    '<div class="panel"><h3>When in the campaign does sponsorship land?</h3><p class="hint">Across every past event added together: how many € of sponsorship were signed in each week before the event (W0 = event week). The hump shows when sponsors typically commit — it builds around the discount deadlines (LD/SE/EB/LC). Taller bar = more money came in that week.</p><div class="chartbox sm"><canvas id="sign"></canvas></div></div>'+
+    '<div class="panel"><h3>Are sponsors committing earlier or later?</h3><p class="hint">Each year’s total sponsorship = 100 %, split by <b>when</b> it was signed: <span style="color:#3E8C28">early (13+ wks out)</span> · <span style="color:#C77800">mid-campaign</span> · <span style="color:#D32230">final 4 weeks</span> · <span style="color:#9AA0A8">after the event</span>. A growing green slice = sponsors booking sooner.</p><div class="chartbox sm"><canvas id="signevo"></canvas></div></div>'+
     '</div>'+
     '<div class="panel"><h3>The shape of a campaign <span class="seg" id="paceSeg"></span></h3><p class="hint" id="paceHint"></p><div class="chartbox sm"><canvas id="pace"></canvas></div></div>'+
     '<div class="two">'+
@@ -839,15 +849,17 @@ function drawMix(ms){
   const seg=document.getElementById('mixSeg');
   seg.innerHTML=[['eur','€'],['pct','% share']].map(([m,l])=>'<button class="'+(mixMode===m?'on':'')+'" data-mx="'+m+'">'+l+'</button>').join('');
   seg.querySelectorAll('[data-mx]').forEach(b=>b.onclick=()=>{mixMode=b.dataset.mx;drawMix(ms);});
-  document.getElementById('mixHint').textContent=mixMode==='pct'
+  document.getElementById('mixHint').textContent=(mixMode==='pct'
     ?'Share of the year’s revenue per source — watch sponsorship take over.'
-    :'Final revenue per year, by source. The current year is still accumulating.';
-  let ds=raw;
-  if(mixMode==='pct'){const tot=years.map((y,i)=>raw.reduce((a,s)=>a+s.data[i],0)||1);
-    ds=raw.map(s=>Object.assign({},s,{data:s.data.map((v,i)=>100*v/tot[i])}));}
+    :'Final revenue per year, by source. The current year is still accumulating.')
+    +' Each block shows both the € and its % share.';
+  const totY=years.map((y,i)=>raw.reduce((a,s)=>a+s.data[i],0)||1);
+  const ds=raw.map(s=>{const eArr=s.data.slice(),pArr=s.data.map((v,i)=>100*v/totY[i]);
+    return Object.assign({},s,{data:(mixMode==='pct'?pArr:eArr),_eur:eArr,_pct:pArr});});
   mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
-    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(mixMode==='pct'?c.parsed.y.toFixed(1)+' %':eur(c.parsed.y))}},
-      barlabels:mixMode==='pct'?{fmt:'pct',min:6}:false},
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>{const d=c.dataset;return d.label+': '+eur(d._eur[c.dataIndex])+' · '+d._pct[c.dataIndex].toFixed(0)+'%';}}},
+      barlabels:{both:true,min:6}},
     scales:{x:{stacked:true},y:{stacked:true,max:mixMode==='pct'?100:undefined,ticks:{callback:v=>mixMode==='pct'?v+' %':compact(v)}}}}});
 }
 function drawFam(done){
@@ -890,13 +902,19 @@ function drawPace(done){
   seg.innerHTML=[['total','All revenue'],['spx','Sponsorship'],['tik','Tickets']].map(([m,l])=>'<button class="'+(paceMode===m?'on':'')+'" data-pm="'+m+'">'+l+'</button>').join('');
   seg.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{paceMode=b.dataset.pm;drawPace(done);});
   const at=W=>{const v=pc.med[WEEKS.indexOf(W)];return v==null?'—':Math.round(v)+' %';};
-  document.getElementById('paceHint').textContent=cfg[2]+' as % of the final total, week by week, across '+pc.n+' completed events — median with the middle-half band. Typically '+at(-8)+' is in at W-8, '+at(-4)+' at W-4. This is the yardstick behind the Portfolio pulse.';
+  // one benchmark line per year we've run events, to see if the shape has shifted
+  const YPAL=['#185FA5','#3E8C28','#C77800','#8E5BC9','#29ACE3','#D32230','#0E7C6B','#E8A13C'];
+  const years=insYears(done);
+  const yearDs=years.map((y,i)=>{const yc=pctCurve(done.filter(e=>e.year===y),cfg[0],cfg[1]);
+    return {label:''+y+' ('+yc.n+')',data:yc.med,borderColor:YPAL[i%YPAL.length],backgroundColor:YPAL[i%YPAL.length],borderWidth:1.7,pointRadius:0,tension:.25,spanGaps:true,_year:true};});
+  document.getElementById('paceHint').textContent=cfg[2]+' as % of the final total, week by week. The bold black line is the benchmark across all '+pc.n+' completed events (with the middle-half band); each coloured line is one year, so you can see if sponsors are pacing earlier or later. Typically '+at(-8)+' is in at W-8, '+at(-4)+' at W-4.';
   mkChart('pace',{type:'line',data:{labels:WLAB,datasets:[
-    {label:'75th percentile',data:pc.q3,borderWidth:0,pointRadius:0,fill:'+1',backgroundColor:'rgba(255,74,0,.12)'},
-    {label:'25th percentile',data:pc.q1,borderWidth:0,pointRadius:0},
-    {label:'Median event',data:pc.med,borderColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25}]},
+    {label:'75th percentile',data:pc.q3,borderWidth:0,pointRadius:0,fill:'+1',backgroundColor:'rgba(43,43,43,.06)'},
+    {label:'25th percentile',data:pc.q1,borderWidth:0,pointRadius:0}]
+    .concat(yearDs,[
+    {label:'All events (benchmark)',data:pc.med,borderColor:'#2B2B2B',borderWidth:3.2,pointRadius:0,tension:.25}])},
     options:{maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{boxWidth:12,font:{size:11},filter:i=>i.text==='Median event'}},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11},filter:i=>i.text.indexOf('percentile')<0}},
         vlines:{lines:[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}]},
         tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(0)+' %'}}},
       scales:{y:{min:0,max:110,ticks:{callback:v=>v+' %'}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
