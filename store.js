@@ -304,6 +304,7 @@ function tcContinuousSeconds(personId){
 const BREAK_AFTER_H=5, BREAK_SNOOZE_MIN=60;
 let _breakSnoozeUntil=0,_breakTimer=null;
 function breakReminderTick(){
+  try{flushPendingPunches();}catch(e){} // retry any punch that failed to save
   if(!DB.currentUser||!DB.tcReady())return;
   const cont=tcContinuousSeconds(DB.currentUser.id),el=document.getElementById('breakToast');
   if(cont>=BREAK_AFTER_H*3600 && Date.now()>_breakSnoozeUntil){ if(!el)showBreakToast(cont); }
@@ -319,10 +320,10 @@ function showBreakToast(cont){
     '<div style="display:flex;gap:8px"><button id="bt_out" style="background:#FF4A00;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;font:inherit">Clock out for a break</button>'+
     '<button id="bt_dismiss" style="background:none;color:#cfcdc7;border:1px solid #55534e;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">Not yet</button></div>';
   document.body.appendChild(d);
-  document.getElementById('bt_out').onclick=()=>{
-    const me=DB.currentUser;
-    DB.timeclock.push({id:DB.newId(),personId:me.id,day:toISO(new Date()),time:nowHMS(),kind:'out',manual:false,amends:null,reason:null,note:null,reportId:null});
-    DB.save();d.remove();_breakSnoozeUntil=0;window.dispatchEvent(new Event('dc-remote'));
+  document.getElementById('bt_out').onclick=async ()=>{
+    d.remove();_breakSnoozeUntil=0;
+    await DB.punch('out'); // awaited + queued-on-failure, like the clock buttons
+    window.dispatchEvent(new Event('dc-remote'));
   };
   document.getElementById('bt_dismiss').onclick=()=>{_breakSnoozeUntil=Date.now()+BREAK_SNOOZE_MIN*60000;d.remove();};
 }
@@ -342,6 +343,53 @@ function tcMissingDays(personId){ // expected days with no punches at all (since
   return out.slice(-15);
 }
 function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved');}
+/* ---- pending-punch safety net ----
+   Punches are too important for the debounced background sync: they are inserted
+   IMMEDIATELY and awaited. If the database cannot be reached (offline, expired
+   session, server error) the punch is kept here — localStorage, survives closing
+   the browser — shown in a red banner and retried until it lands. */
+const PUNCH_QUEUE_KEY='dcPendingPunches';
+let _punchAck=null,_punchFlushing=false;
+function pendingPunches(){try{return JSON.parse(localStorage.getItem(PUNCH_QUEUE_KEY))||[];}catch(e){return [];}}
+function setPendingPunches(q){try{if(q.length)localStorage.setItem(PUNCH_QUEUE_KEY,JSON.stringify(q));else localStorage.removeItem(PUNCH_QUEUE_KEY);}catch(e){}renderPunchBanner();}
+async function flushPendingPunches(){
+  if(!USE_SUPABASE||!sb||_punchFlushing)return;
+  const q=pendingPunches();if(!q.length)return;
+  _punchFlushing=true;
+  try{
+    const left=[];
+    for(const p of q){
+      try{
+        const {error}=await sb.from('dc_timeclock').insert([p]);
+        if(error&&!(error.code==='23505'||/duplicate key/i.test(error.message||''))){left.push(p);continue;} // duplicate = it DID save on an earlier try
+        if(DB.data&&DB.data.timeclock&&!DB.data.timeclock.some(r=>r.id==p.id))DB.data.timeclock.push(p);
+        if(_shadow&&_shadow.timeclock)_shadow.timeclock[p.id]=JSON.stringify(p);
+      }catch(e){left.push(p);}
+    }
+    const saved=q.length-left.length;
+    setPendingPunches(left);
+    if(saved)window.dispatchEvent(new Event('dc-remote'));
+  }finally{_punchFlushing=false;}
+}
+function renderPunchBanner(){
+  const q=USE_SUPABASE?pendingPunches():[];
+  let el=document.getElementById('punchPendingBar');
+  if(!q.length){if(el)el.remove();return;}
+  if(!el){el=document.createElement('div');el.id='punchPendingBar';document.body.prepend(el);}
+  el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#D32230;color:#fff;padding:8px 16px;font:13px Segoe UI,system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.25)';
+  el.innerHTML='<b>⚠ '+q.length+' clock punch'+(q.length>1?'es':'')+' not saved yet</b>'+
+    '<span style="opacity:.92">'+q.map(p=>p.kind.toUpperCase()+' '+p.day+' '+(p.time||'').slice(0,5)).join(' · ')+'</span>'+
+    '<span style="opacity:.8">Kept safe on this device — retrying automatically.</span>'+
+    '<button id="ppRetry" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Retry now</button>';
+  document.getElementById('ppRetry').onclick=()=>flushPendingPunches();
+}
+function punchAckHtml(){ // confirmation line under the clock button (both clock cards)
+  if(!_punchAck||Date.now()-_punchAck.at>20000)return '';
+  return _punchAck.ok
+    ?'<div style="color:var(--green,#1D6B34);font-weight:700;font-size:12.5px;margin-top:6px">✓ Saved in the record — '+_punchAck.kind.toUpperCase()+' '+_punchAck.time+'</div>'
+    :'<div style="color:#D32230;font-weight:700;font-size:12.5px;margin-top:6px">⚠ Could not reach the database — your punch is kept safe on this device and will retry automatically.</div>';
+}
+window.addEventListener('online',()=>{try{flushPendingPunches();}catch(e){}});
 /* weekly overtime: hours clocked vs the hours ALLOWED that week (37.5, or 35 in Jul/Aug,
    less bank holidays). Daily distribution is flexible — only the WEEKLY total matters. */
 function tcWeekOvertime(personId,mondayISO){
@@ -586,7 +634,7 @@ const DB={
     if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
     return this.data;
   },
-  save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>this.syncNow(),700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
+  save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>{_saveTimer=null;this.syncNow();},700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
   /* diff vs the last-synced picture and write ONLY the touched rows:
      new rows -> insert, changed rows -> per-row update, vanished rows -> soft delete.
      Two people editing different rows no longer overwrite each other. */
@@ -621,6 +669,26 @@ const DB={
     if(_pendingSync){_pendingSync=false;this.syncNow();}
   },
   newId(){let id=Date.now()*10+Math.floor(Math.random()*10);if(id<=_lastId)id=_lastId+1;_lastId=id;return id;},
+  /* registro horario: insert the punch NOW, await the database's answer, and never
+     lose it — on failure it goes to the pending queue (banner + auto-retry). */
+  async punch(kind){
+    const me=this.currentUser;if(!me)return {ok:false,msg:'not logged in'};
+    const row={id:this.newId(),personId:me.id,day:toISO(new Date()),time:nowHMS(),kind,manual:false,amends:null,reason:null,note:null,reportId:null};
+    if(!USE_SUPABASE){this.timeclock.push(row);this.save();_punchAck={ok:true,kind,time:row.time,at:Date.now()};return {ok:true,row};}
+    try{
+      const {error}=await sb.from('dc_timeclock').insert([pickRow(row,'timeclock')]);
+      if(error)throw error;
+      this.data.timeclock.push(row);
+      if(_shadow&&_shadow.timeclock)_shadow.timeclock[row.id]=JSON.stringify(pickRow(row,'timeclock'));
+      _punchAck={ok:true,kind,time:row.time,at:Date.now()};
+      return {ok:true,row};
+    }catch(e){
+      console.error('punch failed',e);
+      const q=pendingPunches();q.push(pickRow(row,'timeclock'));setPendingPunches(q);
+      _punchAck={ok:false,kind,time:row.time,msg:(e.message||''+e),at:Date.now()};
+      return {ok:false,row,msg:e.message||''+e};
+    }
+  },
   async logout(){if(sb)await sb.auth.signOut();location.reload();},
   reset(){if(!USE_SUPABASE)localStorage.removeItem('dispatchStore');},
   get events(){return this.data.events;},get people(){return this.data.people;},
@@ -704,6 +772,8 @@ function scheduleRemoteRender(){clearTimeout(_remoteTimer);_remoteTimer=setTimeo
 function injectSB(){return new Promise(res=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;document.head.appendChild(s);});}
 /* resilience: pages restored from the back/forward cache re-initialise cleanly */
 window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
+/* don't let a navigation swallow an edit still waiting in the 700 ms sync window */
+window.addEventListener('beforeunload',e=>{if(_saveTimer||_syncing){e.preventDefault();e.returnValue='';}});
 async function boot(renderFn){
   if(USE_SUPABASE){
     await injectSB();
@@ -725,6 +795,7 @@ async function boot(renderFn){
   ensureSubDefaults();
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
+  try{renderPunchBanner();flushPendingPunches();}catch(e){} // recover punches that failed to save last time
   try{if(_breakTimer)clearInterval(_breakTimer);breakReminderTick();_breakTimer=setInterval(breakReminderTick,60000);}catch(e){} // break nudge on any page
 }
 function rosterBanner(em){
