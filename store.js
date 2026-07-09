@@ -289,6 +289,39 @@ function tcLiveSeconds(personId,day){
   if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*3600+now.getMinutes()*60+now.getSeconds()-openSince);}
   return {seconds:total,open:openSince!=null};
 }
+/* seconds clocked in WITHOUT a break since the last clock-in (resets on any clock-out) */
+function tcContinuousSeconds(personId){
+  if(!DB.tcReady())return 0;
+  const es=tcEffective(personId,toISO(new Date()));let openAt=null;
+  es.forEach(e=>{if(e.kind==='in'){if(openAt==null)openAt=tcSecondsOf(e.time);}else if(e.kind==='out')openAt=null;});
+  if(openAt==null)return 0;const now=new Date();return Math.max(0,now.getHours()*3600+now.getMinutes()*60+now.getSeconds()-openAt);
+}
+/* gentle "time for a break?" nudge after a long unbroken stretch (like a car's fatigue alert).
+   Not mandatory — fully dismissible; re-appears after a snooze if they keep going. */
+const BREAK_AFTER_H=5, BREAK_SNOOZE_MIN=60;
+let _breakSnoozeUntil=0,_breakTimer=null;
+function breakReminderTick(){
+  if(!DB.currentUser||!DB.tcReady())return;
+  const cont=tcContinuousSeconds(DB.currentUser.id),el=document.getElementById('breakToast');
+  if(cont>=BREAK_AFTER_H*3600 && Date.now()>_breakSnoozeUntil){ if(!el)showBreakToast(cont); }
+  else if(el&&cont<60){el.remove();} // they clocked out — clear it
+}
+function showBreakToast(cont){
+  const h=Math.floor(cont/3600),m=Math.floor((cont%3600)/60);
+  const d=document.createElement('div');d.id='breakToast';
+  d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:9998;background:#2B2B2B;color:#fff;border-radius:12px;padding:14px 16px;max-width:320px;box-shadow:0 8px 30px rgba(0,0,0,.28);font-family:Segoe UI,system-ui,sans-serif;font-size:13px';
+  d.innerHTML='<div style="font-weight:700;margin-bottom:4px">🚗☕ Time for a break?</div>'+
+    '<div style="color:#e6e4df;margin-bottom:10px">You’ve been clocked in for '+h+' h '+String(m).padStart(2,'0')+' without a break. Stopping for lunch or a rest? Remember to clock back in when you’re back.</div>'+
+    '<div style="display:flex;gap:8px"><button id="bt_out" style="background:#FF4A00;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;font:inherit">Clock out for a break</button>'+
+    '<button id="bt_dismiss" style="background:none;color:#cfcdc7;border:1px solid #55534e;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">Not yet</button></div>';
+  document.body.appendChild(d);
+  document.getElementById('bt_out').onclick=()=>{
+    const me=DB.currentUser;
+    DB.timeclock.push({id:DB.newId(),personId:me.id,day:toISO(new Date()),time:nowHMS(),kind:'out',manual:false,amends:null,reason:null,note:null,reportId:null});
+    DB.save();d.remove();_breakSnoozeUntil=0;window.dispatchEvent(new Event('dc-remote'));
+  };
+  document.getElementById('bt_dismiss').onclick=()=>{_breakSnoozeUntil=Date.now()+BREAK_SNOOZE_MIN*60000;d.remove();};
+}
 function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and any approved leave (holiday/sick/maternity/paternity)
   const d=ymd(iso);
   if(d.getDay()===0||d.getDay()===6||madHol(iso))return 0;
@@ -656,6 +689,7 @@ async function boot(renderFn){
   ensureSubDefaults();
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
+  try{if(_breakTimer)clearInterval(_breakTimer);breakReminderTick();_breakTimer=setInterval(breakReminderTick,60000);}catch(e){} // break nudge on any page
 }
 function rosterBanner(em){
   const b=document.createElement('div');

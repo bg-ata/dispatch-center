@@ -91,7 +91,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=29"></script>
+<script src="store.js?v=30"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -408,8 +408,12 @@ function renderCal(){
   const WD=['D','L','M','X','J','V','S'];
   for(let d=1;d<=nDays;d++){const dt=new Date(y,m,d);h+='<th>'+WD[dt.getDay()]+'<br>'+d+'</th>';}
   h+='<th style="text-align:left;padding-left:8px">balance</th></tr>';
+  const meNow=DB.currentUser;
   people.forEach(p=>{
-    const rem=holRemaining(p.id,y),used=holUsed(p.id,y);
+    const used=holUsed(p.id,y);
+    const seeAdj=DB.isHRAdmin()||(meNow&&meNow.id==p.id); // carry-over/borrow visible only to HR-admin & the person
+    const adj=holAdjust(p.id,y);
+    const rem=seeAdj?holRemaining(p.id,y):(holAllowance(p)-used);
     h+='<tr><td class="lab">'+p.name+' <span class="m">'+p.role+'</span></td>';
     for(let d=1;d<=nDays;d++){
       const dt=new Date(y,m,d),iso=toISO(dt);
@@ -423,7 +427,7 @@ function renderCal(){
       }
       h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
     }
-    h+='<td class="lab"><span class="m">'+used+' used · '+rem+' left</span></td></tr>';
+    h+='<td class="lab"><span class="m">'+used+' used · '+rem+' left'+(seeAdj&&adj?' <span style="color:#29ACE3">('+(adj>0?'+':'')+adj+')</span>':'')+'</span></td></tr>';
   });
   document.getElementById('cal').innerHTML=h+'</table>';
   const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
