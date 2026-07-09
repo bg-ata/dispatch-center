@@ -726,7 +726,7 @@ function showLogin(){return new Promise(resolve=>{
    embed  = false when the app refuses to run inside a frame → always opens in a new tab
    mgrOnly= only managers & up (admins + managers) may see / open it */
 const DISPATCH_TOOLS=[
-  {id:'agenda',   name:'Agenda Builder',    desc:'Bilingual event agendas with branded Word & PDF export.', url:'https://bg-ata.github.io/RENMAD-generator/agenda_app/', accent:'#3E8C28', ini:'AB', ownLogin:true},
+  {id:'agenda',   name:'Agenda Builder',    desc:'Bilingual event agendas with branded Word & PDF export.', url:'https://bg-ata.github.io/RENMAD-generator/agenda_app/', accent:'#3E8C28', ini:'AB', dcAuth:true},
   {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'https://proposal-builder-37epkukjuzdm86witcne7r.streamlit.app/', accent:'#E84830', ini:'PB', dcAuth:true},
   {id:'images',   name:'Image Generator',   desc:'Webinar & event images, logo walls and title slides.', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#4C3079', ini:'IG', dcAuth:true},
   {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out (Reports tab).', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#29ACE3', ini:'WR', dcAuth:true},
