@@ -100,7 +100,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=36"></script>
+<script src="store.js?v=37"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -339,7 +339,7 @@ function wireForm(){
 }
 function renderBackfill(){
   const who=document.getElementById('b_who');if(!who)return;
-  who.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+  who.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
   document.getElementById('b_add').onclick=()=>{
     const f=document.getElementById('b_from').value,t=document.getElementById('b_to').value;
     if(!f||!t||t<f){alert('Pick a valid date range.');return;}
@@ -373,7 +373,7 @@ function renderBackfill(){
   /* HR: place someone on sick / maternity / paternity leave */
   const lw=document.getElementById('lv_who');
   if(lw){
-    lw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    lw.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
     document.getElementById('lv_add').onclick=()=>{
       const f=document.getElementById('lv_from').value,t=document.getElementById('lv_to').value;
       if(!f||!t||t<f){alert('Pick a valid date range.');return;}
@@ -390,7 +390,7 @@ function renderBackfill(){
   /* HR: carry-over / borrowed days adjustment (a signed balance change for a year) */
   const aw=document.getElementById('aj_who');
   if(aw){
-    aw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    aw.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
     document.getElementById('aj_add').onclick=()=>{
       const yr=+document.getElementById('aj_year').value,days=+document.getElementById('aj_days').value,kind=document.getElementById('aj_kind').value;
       if(!yr||!days){alert('Enter a year and a number of days (can be negative).');return;}
@@ -414,26 +414,32 @@ function renderBalances(){
   const yearFrac=(now-new Date(y,0,1))/(new Date(y+1,0,1)-new Date(y,0,1));
   const ramp=Math.max(0,Math.min(1,(yearFrac-0.25)/0.60)); // nothing "due" before ~April, full spread by ~Nov
   const feb28=new Date(y,1,28,23,59);
-  const rows=DB.people.map(p=>{
+  // exclude the HR team login (not a person) and Belén (she tracks her own — don't nudge)
+  const rows=DB.people.filter(p=>!isTeamAccount(p)&&!isBelenP(p)).map(p=>{
     const allow=holAllowance(p),used=holUsed(p.id,y),adj=holAdjust(p.id,y),rem=holRemaining(p.id,y);
     const pending=DB.holidays.filter(h=>h.personId==p.id&&(h.type||'vacation')==='vacation'&&!['approved','denied','cancelled'].includes(h.status)&&(h.dateFrom||'').slice(0,4)===String(y)).reduce((a,h)=>a+(+h.workDays||0),0);
     const dueByNow=allow*ramp;
-    return {p,allow,adj,used,rem,pending,dueByNow,deficit:dueByNow-used};
-  }).sort((a,b)=>b.deficit-a.deficit||b.rem-a.rem);
+    return {p,allow,adj,used,rem,pending,dueByNow,deficit:dueByNow-used,over:rem<0};
+  }).sort((a,b)=>(b.over-a.over)||b.deficit-a.deficit||b.rem-a.rem); // over-allowance first
   const band=r=>{
+    if(r.over)return {c:'#fff',bg:'#B00020',lab:'⚠ over by '+Math.abs(r.rem)+'d'};
     if(ramp<0.05)return {c:'#7c7c78',bg:'#f0eee9',lab:'plenty of time'};
     if(r.used>=r.dueByNow)return {c:'#3E8C28',bg:'#EAF5E4',lab:'on track'};
     if(r.used>=r.dueByNow*0.5)return {c:'#C77800',bg:'#FFF3E8',lab:'a bit behind'};
     return {c:'#D32230',bg:'#FBEAEA',lab:'behind — nudge'};
   };
-  let h='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Taken</th><th class="num">Pending</th><th class="num">Left</th><th style="width:210px">Pace</th></tr>';
+  const over=rows.filter(r=>r.over);
+  let h=over.length?('<div class="alarm" style="margin-bottom:10px">⚠ <b>'+over.length+' over their holiday allowance:</b> '+
+    over.map(r=>r.p.name+' (by '+Math.abs(r.rem)+' day'+(Math.abs(r.rem)===1?'':'s')+')').join(' · ')+
+    ' — if any of these came from <b>last year\'s</b> allocation, add them under “Carry-over / borrowed days” below so the balance is right.</div>'):'';
+  h+='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Taken</th><th class="num">Pending</th><th class="num">Left</th><th style="width:210px">Pace</th></tr>';
   rows.forEach(r=>{const b=band(r),base=r.allow||1,pct=Math.max(0,Math.min(100,100*r.used/base));
     const carry=r.adj>0?('<div style="font-size:10px;color:'+(now<=feb28?'#C77800':'#D32230')+';margin-top:1px">'+r.adj+' carry-over day'+(r.adj===1?'':'s')+' · '+(now<=feb28?'use before 28 Feb':'past 28 Feb')+'</div>'):'';
     h+='<tr><td>'+r.p.name+' <span class="m">'+r.p.role+'</span>'+carry+'</td>'+
       '<td class="num">'+r.allow+(r.adj?' <span style="color:#29ACE3">('+(r.adj>0?'+':'')+r.adj+')</span>':'')+'</td>'+
       '<td class="num">'+r.used+'</td>'+
       '<td class="num">'+(r.pending?'<span style="color:#C77800">+'+r.pending+'</span>':'—')+'</td>'+
-      '<td class="num"><b style="font-size:15px">'+r.rem+'</b></td>'+
+      '<td class="num"><b style="font-size:15px'+(r.over?';color:#B00020':'')+'">'+r.rem+'</b></td>'+
       '<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:70px;height:9px;border-radius:5px;background:#ece9e2;overflow:hidden"><div style="height:100%;width:'+pct.toFixed(0)+'%;background:'+b.c+'"></div></div>'+
         '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+b.c+';background:'+b.bg+';border-radius:10px;padding:1px 8px;white-space:nowrap">'+b.lab+'</span></div></td></tr>';
   });
@@ -444,7 +450,7 @@ function renderCal(){
   // The holiday calendar is visible to EVERYONE — the whole company, so anyone can
   // see who's away before planning. Sick / parental leave stays private (managers,
   // HR and the person only); everyone else just sees holidays and remote working.
-  const people=DB.people.slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
+  const people=DB.people.filter(p=>!isTeamAccount(p)).slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
   const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
   document.getElementById('calHint').textContent=
     'Everyone can see who’s on holiday or working remotely. Green = approved holidays, striped = pending, blue = remote working.'+

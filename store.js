@@ -207,6 +207,9 @@ function missingWeeks(personId){
 }
 /* holiday approval chain: team manager → Belén → HR */
 function isBelenP(p){return !!p&&(p.email||'').toLowerCase()==='belen.gallego@ata.email';}
+/* the "Recursos Humanos" login is a TEAM inbox, not a person — no holiday allowance,
+   and it never appears in the holiday calendar / balances. */
+function isTeamAccount(p){return !!p&&(p.role==='HR'||(p.email||'').toLowerCase()==='rrhh@ata.email');}
 function holManager(p){ // first approver; managers/admins skip straight to Belén
   if(!p||p.access==='manager'||p.access==='admin')return null;
   const mgr=DB.people.find(x=>x.access==='manager'&&x.role===p.role&&x.id!=p.id);
