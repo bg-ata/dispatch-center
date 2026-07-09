@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RENMAD Dispatch Center — Revenue</title>
+<title>RENMAD Dispatch Center — Money</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;}
   *{box-sizing:border-box}
@@ -108,7 +108,7 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>💶 Revenue</h1>
+  <h1>💶 Money</h1>
   <p class="sub">Everything money, in one place. Figures are maintained by the accountant; every change is recorded.</p>
   <div class="tabs" id="tabs"></div>
   <div id="warnbox"></div>
@@ -146,7 +146,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=25"></script>
+<script src="store.js?v=26"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -188,6 +188,15 @@ const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if
     ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();
     ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});}};
 Chart.register(vlines);
+/* draw the exact value inside each stacked bar segment (used when charts show % mix) */
+const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins||{}).barlabels;if(!o)return;
+  const ctx=c.ctx;ctx.save();ctx.font='700 10px Segoe UI';ctx.textAlign='center';ctx.textBaseline='middle';
+  c.data.datasets.forEach((ds,di)=>{const meta=c.getDatasetMeta(di);if(meta.hidden)return;
+    meta.data.forEach((bar,i)=>{const v=ds.data[i];if(v==null||v<(o.min||6))return;
+      const yTop=bar.y,yBase=bar.base!=null?bar.base:bar.y;const h=Math.abs(yBase-yTop);if(h<13)return;
+      ctx.fillStyle='#fff';ctx.fillText((o.fmt==='pct'?(Math.round(v*10)/10)+'%':new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)),bar.x,(yTop+yBase)/2);});});
+  ctx.restore();}};
+Chart.register(barlabels);
 function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
 function esc(s){return (s==null?'':''+s).replace(/"/g,'&quot;');}
 
@@ -482,11 +491,40 @@ function renderDetail(){
   ensureHero(ms);
   const ev=ms.find(e=>e.code===heroCode);
   document.getElementById('content').innerHTML=
-    '<div class="panel"><h3>Week by week — '+heroSelHtml(ms,'heroSel')+'</h3>'+
+    '<div class="panel"><h3>Where it should be — '+heroSelHtml(ms,'heroSel')+'</h3>'+
+    '<p class="hint" id="benchHint"></p><div class="chartbox"><canvas id="wkchart"></canvas></div></div>'+
+    '<div class="panel"><h3>Week by week — the numbers</h3>'+
     '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     detailAnalysis(ms,ev);
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderDetail();};
-  drawWeekTable(ev);
+  drawWeekChart(ms,ev);drawWeekTable(ev);
+}
+/* the benchmark: how events USUALLY behave (median trajectory of completed events),
+   scaled to THIS event's target — so people see where they should be to hit / beat target */
+function drawWeekChart(ms,ev){
+  const shape=medianPace(ms);                 // median soFar/final by week, across completed events
+  const actual=curve(ev);
+  const benchT=ev.target?shape.map(s=>s==null?null:+(ev.target*s).toFixed(0)):null;
+  const benchS=ev.stretch?shape.map(s=>s==null?null:+(ev.stretch*s).toFixed(0)):null;
+  const ds=[{label:ev.name+' — actual',data:actual,borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25,spanGaps:true}];
+  if(benchT)ds.push({label:'Benchmark to target',data:benchT,borderColor:'#8A8F98',borderWidth:2,pointRadius:0,tension:.25,borderDash:[7,4],spanGaps:true});
+  if(benchS)ds.push({label:'Benchmark to stretch',data:benchS,borderColor:'#3E8C28',borderWidth:1.5,pointRadius:0,tension:.25,borderDash:[2,3],spanGaps:true});
+  if(ev.target)ds.push({label:'Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  const lines=[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}];
+  const today=new Date().toISOString().slice(0,10);
+  const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
+  if(cur)lines.push({at:cur.week,label:'today',color:'#FF4A00',dash:[2,2],w:2});
+  const hint=document.getElementById('benchHint');
+  if(ev.target&&cur){const i=WEEKS.indexOf(cur.week);const should=benchT[i],have=+cur.soFarEur||0;
+    hint.innerHTML='The grey line is where a typical event that lands on target sits each week. At W'+cur.week+' that is <b>'+eur(should)+'</b>; '+ev.name+' has <b>'+eur(have)+'</b> — '+
+      (should&&have>=should?'<span style="color:#3E8C28;font-weight:600">ahead of the pace for target</span>':'<span style="color:#C77800;font-weight:600">behind the pace for target</span>')+'. Above the green dashes = on track to beat it.';}
+  else if(ev.target)hint.textContent='The grey line is where a typical event that lands on target sits each week — compare the orange actual against it. Above the green dashes = on track to exceed target.';
+  else hint.textContent='Set a target for this event (Year status → add figures) to see the benchmark line.';
+  mkChart('wkchart',{type:'line',data:{labels:WLAB,datasets:ds},options:{maintainAspectRatio:false,animation:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{boxWidth:14,font:{size:11}}},vlines:{lines:lines},
+      tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
 function drawWeekTable(ev){
   const rows=ev.rows.slice().sort((a,b)=>a.week-b.week);
@@ -517,7 +555,7 @@ function drawWeekTable(ev){
 }
 
 /* ================= TAB 4: COMPARE ================= */
-let compMode='now';
+let compMode='pct';
 function renderCompare(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   ensureHero(ms);
@@ -585,12 +623,13 @@ function drawComposition(ms){
     compMode==='pct'?'Share of each revenue source per event — compares the mix regardless of size.'
     :compMode==='week'?'Everyone measured at the same point: W'+(wk<0?wk:'+'+wk)+', where '+ev.name+' is now.'
     :'Sponsorship vs tickets vs other, per event — finished events show final money, live ones what they have so far.';
-  const fmtV=v=>compMode==='pct'?(Math.round(v)+' %'):eur(v);
+  const fmtV=v=>compMode==='pct'?((Math.round(v*10)/10)+' %'):eur(v);
   const mk=(label,key,color)=>({label,data:vals.map(v=>v[key]),backgroundColor:color});
   mkChart('comp',{type:'bar',data:{labels:list.map(e=>e.name),
     datasets:[mk('Sponsorship (SPX)','spx','#FF4A00'),mk('Tickets','tik','#29ACE3'),mk('Other (telesales, recordings…)','oth','#9AA0A8')]},
     options:{maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y)}}},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+fmtV(c.parsed.y)}},
+        barlabels:compMode==='pct'?{fmt:'pct',min:5}:false},
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
@@ -706,7 +745,7 @@ function compareAnalysis(ms,ev){
 
 /* ================= TAB 5: INSIGHTS ================= */
 const FPAL=['#FF4A00','#185FA5','#3E8C28','#4C3079','#29ACE3','#C77800','#D32230','#9AA0A8'];
-let mixMode='eur',paceMode='total';
+let mixMode='pct',paceMode='total';
 const compact=v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v);
 function doneOf(ms){return ms.filter(e=>e.completed&&e.final>5000);}
 function insYears(list){const ys=[...new Set(list.map(e=>e.year).filter(Boolean))].sort();
@@ -807,7 +846,8 @@ function drawMix(ms){
   if(mixMode==='pct'){const tot=years.map((y,i)=>raw.reduce((a,s)=>a+s.data[i],0)||1);
     ds=raw.map(s=>Object.assign({},s,{data:s.data.map((v,i)=>100*v/tot[i])}));}
   mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
-    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(mixMode==='pct'?c.parsed.y.toFixed(1)+' %':eur(c.parsed.y))}}},
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(mixMode==='pct'?c.parsed.y.toFixed(1)+' %':eur(c.parsed.y))}},
+      barlabels:mixMode==='pct'?{fmt:'pct',min:6}:false},
     scales:{x:{stacked:true},y:{stacked:true,max:mixMode==='pct'?100:undefined,ticks:{callback:v=>mixMode==='pct'?v+' %':compact(v)}}}}});
 }
 function drawFam(done){

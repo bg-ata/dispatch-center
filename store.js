@@ -2,12 +2,12 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 16;
+const STORE_VERSION = 17;
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
 const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
-const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin'];
+const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin','HR'];
 /* access tiers (permission level, separate from job role): member = own lane; manager = stage/release; admin = everything */
 const ACCESS=['member','manager','admin'];
 const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
@@ -205,7 +205,7 @@ function holActsOnMe(req){ // is it MY turn to decide this request?
   const p=DB.person(req.personId);if(!p)return false;
   if(req.status==='manager'){const m=holManager(p);return (m&&m.id==me.id)||me.access==='admin';}
   if(req.status==='belen')return isBelenP(me);
-  if(req.status==='hr')return !!me.hr||(isBelenP(me)&&!DB.people.some(x=>x.hr&&!x.deleted));
+  if(req.status==='hr')return !!me.hr||isBelenP(me); // HR (rrhh + Jesús) are the approvers; Belén can always act too
   return false;
 }
 function holNextStatus(req){
@@ -271,8 +271,8 @@ function decorateNav(){
     n+=tcMissingDays(DB.currentUser.id).length;
     if(DB.isHRAdmin())n+=openReports().length;
   }
-  const el=document.getElementById('nav-hr');
-  if(el&&n>0)el.innerHTML+=' <span title="HR needs you: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
+  const pill='<span title="Things need your attention: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
+  ['nav-hr','nav-home'].forEach(id=>{const el=document.getElementById(id);if(el&&n>0)el.innerHTML+=' '+pill;});
 }
 
 /* ---- seed ---- */
@@ -308,6 +308,8 @@ const SEED_PEOPLE=[
  {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:'julian.uribe@ata.email'},
  /* Administration */
  {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email',finance:true}, // Accounting — the finance editor
+ /* Human Resources — the final holiday approver (Belén + Jesús can also act) */
+ {id:18,name:'Recursos Humanos',role:'HR',access:'member',email:'rrhh@ata.email',hr:true}, // HR access only; primary final approver
 ];
 function buildSeed(){
   const events=JSON.parse(JSON.stringify(SEED_EVENTS));
@@ -370,7 +372,7 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],nextEvent:7,nextPerson:18,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -621,9 +623,10 @@ function showLogin(){return new Promise(resolve=>{
 
 /* ---- shared UI ---- */
 function navBar(active){
-  return '<div class="nav"><a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">🧭 Overview</a>'+
+  return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
+         '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Events</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
-         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'">💶 Revenue</a>'+
+         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'">💶 Money</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+

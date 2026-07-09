@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Overview</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;--blue:#29ACE3;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1180px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:23px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .rolepill{font-size:11px;padding:2px 9px;border-radius:20px;background:#eceae3;color:#5f5e5a;font-weight:600}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
+  .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer;font:inherit}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  .clockbig{font-size:30px;font-weight:800;color:var(--charcoal);padding:10px 30px}
+  .alarm{background:#FBEAEA;border:1px solid #E8B4B4;color:#8a1d1d;font-size:13px;padding:10px 14px;border-radius:10px;margin-bottom:10px}
+  .alarm a{color:#8a1d1d;font-weight:700}
+  .allgood{background:#EAF5E6;border:1px solid #BEE0AF;color:#2f6a1f;font-size:13px;padding:10px 14px;border-radius:10px}
+  .evchips{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 2px}
+  .evchip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;color:var(--charcoal);cursor:pointer;text-decoration:none}
+  .evchip:hover{border-color:var(--orange)} .evchip .dot{width:10px;height:10px;border-radius:3px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #efede8}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .st{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;color:#fff;white-space:nowrap}
+  .empty{color:var(--muted);font-style:italic;padding:8px 2px}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f2f0ea;font-size:13px}
+  .kv:last-child{border-bottom:none} .kv .k{color:var(--muted)} .kv .v{color:var(--charcoal);font-weight:600;text-align:right}
+  .prof-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <div id="content"></div>
+</div>
+<script src="store.js?v=26"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('home');
+const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
+const nowHM2=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
+
+function render(){
+  const me=DB.currentUser;const C=document.getElementById('content');
+  if(!me){C.innerHTML='<h1>🧭 Overview</h1><p class="sub">You are signed in but not in the staff roster yet — ask Belén to add you. Once added, this becomes your personal home.</p>';return;}
+  const acc=me.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
+  C.innerHTML=
+    '<h1>🧭 Hi, '+me.name.split(' ')[0]+' <span class="rolepill">'+me.role+'</span>'+
+      '<span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span>'+
+      (me.finance?'<span class="rolepill" style="background:#185FA5;color:#fff">€ finance</span>':'')+
+      (me.hr?'<span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</h1>'+
+    '<p class="sub">Your day at a glance — clock in, see what needs you, and jump to your events.</p>'+
+    '<div class="grid2">'+
+      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
+      '<div><div class="panel" id="profPanel"></div></div>'+
+    '</div>'+
+    '<div class="panel" id="evPanel"></div>';
+  renderClock();renderAlarms();renderProfile();renderEvents();
+}
+
+/* ---- clock in / out ---- */
+function renderClock(){
+  const me=DB.currentUser,box=document.getElementById('clockPanel');
+  if(!DB.tcReady()){box.innerHTML='<h3>⏱ Time clock</h3><p class="hint">Not active yet — run dispatch_hr3.sql. Once live, clock in/out lives right here.</p>';return;}
+  const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
+  box.innerHTML='<h3>⏱ Time clock</h3>'+
+    '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'+
+    '<button class="btn primary clockbig" id="punch">'+(info.open?'Clock OUT':'Clock IN')+'</button>'+
+    '<div><div style="font-size:15px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+'">'+(info.open?'🟢 Clocked in':'⚪ Clocked out')+'</div>'+
+    '<div style="font-size:12.5px;color:var(--muted)">Today: <b style="color:var(--charcoal)">'+fmtMin(info.total)+'</b>'+(exp?' of '+exp+' h expected':' — no work expected today')+'</div></div></div>'+
+    '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+(info.entries.length?('Punches: '+info.entries.map(e=>e.kind.toUpperCase()+' '+e.time+(e.manual?' *':'')).join(' · ')):'No punches yet today.')+'</div>'+
+    '<div style="margin-top:8px"><a href="hr.html#timeclock" style="font-size:12px;color:var(--muted)">Full month &amp; report a mistake →</a></div>';
+  document.getElementById('punch').onclick=()=>{
+    DB.timeclock.push({id:DB.newId(),personId:me.id,day:today,time:nowHM2(),kind:info.open?'out':'in',manual:false,amends:null,reason:null,note:null,reportId:null});
+    DB.save();renderClock();
+  };
+}
+
+/* ---- alarms ---- */
+function renderAlarms(){
+  const me=DB.currentUser,box=document.getElementById('alarmPanel'),a=[];
+  if(DB.hrReady()){
+    const ap=DB.holidays.filter(holActsOnMe).length;
+    if(ap)a.push({t:ap+' holiday '+(ap===1?'request':'requests')+' waiting for your decision',l:'hr.html#holidays'});
+    const mw=missingWeeks(me.id).length;
+    if(mw)a.push({t:mw+' week'+(mw===1?'':'s')+' without your hours filled in',l:'hr.html#allocation'});
+  }
+  if(DB.tcReady()){
+    const mp=tcMissingDays(me.id).length;
+    if(mp)a.push({t:mp+' day'+(mp===1?'':'s')+' with no clock punches',l:'hr.html#timeclock'});
+    if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',l:'hr.html#timeclock'});}
+  }
+  const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
+  box.innerHTML='<h3>🔔 Needs you</h3>'+
+    (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+x.l+'">'+x.t+'</a></div>').join('')
+      :'<div class="allgood">✓ All caught up — nothing waiting on you.</div>')+
+    (myOpenTasks?'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">You have <b>'+myOpenTasks+'</b> open task'+(myOpenTasks===1?'':'s')+' (below).</div>':'');
+}
+
+/* ---- profile ---- */
+function renderProfile(){
+  const me=DB.currentUser,box=document.getElementById('profPanel');
+  const yr=String(new Date().getFullYear());
+  let balHtml='';
+  if(DB.hrReady()){
+    const used=DB.holidays.filter(h=>h.personId==me.id&&h.status==='approved'&&(h.type||'vacation')!=='remote'&&h.dateFrom.slice(0,4)===yr).reduce((s,h)=>s+(+h.workDays||0),0);
+    const rem=remoteDaysUsed(me.id,yr);
+    balHtml='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' / '+(+me.holidayDays||22)+' days</span></div>'+
+      '<div class="kv"><span class="k">Remote used</span><span class="v">'+rem+' / '+REMOTE_MAX_DAYS+' days</span></div>';
+  }
+  box.innerHTML='<h3>👤 Me</h3>'+
+    '<div class="kv"><span class="k">Name</span><span class="v">'+me.name+'</span></div>'+
+    '<div class="kv"><span class="k">Job title</span><span class="v">'+me.role+'</span></div>'+
+    '<div class="kv"><span class="k">Access</span><span class="v">'+(ACCESS_LABEL[me.access||'member']||me.access)+'</span></div>'+
+    '<div class="kv"><span class="k">Email</span><span class="v">'+(me.email||'—')+'</span></div>'+
+    balHtml+
+    '<div class="prof-actions">'+
+    '<a class="btn" href="person.html?id='+me.id+'">My full timeline</a>'+
+    (typeof changePasswordUI==='function'&&USE_SUPABASE?'<button class="btn" id="cpw">Change password</button>':'')+
+    '</div>';
+  const cp=document.getElementById('cpw');if(cp)cp.onclick=()=>changePasswordUI();
+}
+
+/* ---- my events & tasks ---- */
+function renderEvents(){
+  const me=DB.currentUser,box=document.getElementById('evPanel');
+  const myTasks=DB.tasksOf(me.id);
+  const evIds=new Set(myTasks.map(t=>t.eventId));
+  DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==me.id))evIds.add(ev.id);});
+  if(me.access==='admin')DB.events.forEach(e=>evIds.add(e.id));
+  const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
+  let h='<h3>📅 My events &amp; tasks</h3>';
+  if(!events.length){box.innerHTML=h+'<p class="empty">No events assigned to you yet.</p>';return;}
+  h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+e.name+'</a>').join('')+'</div>';
+  const openT=myTasks.filter(t=>t.status!=='Done').sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
+  h+='<table style="margin-top:10px"><tr><th>Task</th><th>Event</th><th>When</th><th>Status</th></tr>';
+  if(!openT.length)h+='<tr><td colspan="4" class="empty">No open tasks — all done. 🎉</td></tr>';
+  openT.slice(0,18).forEach(t=>{const e=DB.event(t.eventId);
+    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+t.title+'</td><td>'+(e?e.name:'—')+'</td>'+
+      '<td>'+(t.deadline?('due '+t.deadline):('wk '+fmtD(taskDate(t))))+'</td>'+
+      '<td><span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+t.status+'</span></td></tr>';});
+  h+='</table>'+(openT.length>18?'<p class="hint" style="margin-top:6px">Showing 18 of '+openT.length+' — <a href="person.html?id='+me.id+'">see all →</a></p>':'');
+  box.innerHTML=h;
+}
+
+boot(render);
+window.addEventListener('dc-remote',render);
+</script>
+</body>
+</html>
