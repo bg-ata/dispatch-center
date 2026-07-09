@@ -730,7 +730,7 @@ const DISPATCH_TOOLS=[
   {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'https://proposal-builder-37epkukjuzdm86witcne7r.streamlit.app/', accent:'#E84830', ini:'PB', dcAuth:true},
   {id:'images',   name:'Image Generator',   desc:'Webinar & event images, logo walls and title slides.', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#4C3079', ini:'IG', dcAuth:true},
   {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out (Reports tab).', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#29ACE3', ini:'WR', dcAuth:true},
-  {id:'dashboard',name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.', url:'https://proposal-dashboard.streamlit.app/', accent:'#2B2B2B', ini:'PD', ownLogin:true, mgrOnly:true},
+  {id:'dashboard',name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.', url:'https://proposal-dashboard.streamlit.app/', accent:'#2B2B2B', ini:'PD', dcAuth:true, mgrOnly:true},
   {id:'bessboss', name:'BESS BOSS',         desc:'The renewables minigrid game — learn the grid, top the leaderboard.', url:'https://bg-ata.github.io/GridShero/', accent:'#FF4A00', ini:'BB', game:true},
 ];
 function toolById(id){return DISPATCH_TOOLS.find(t=>t.id===id)||null;}
