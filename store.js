@@ -277,6 +277,24 @@ function tcMissingDays(personId){ // expected days with no punches at all (since
   return out.slice(-15);
 }
 function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved');}
+/* weekly overtime: hours clocked vs the hours ALLOWED that week (37.5, or 35 in Jul/Aug,
+   less bank holidays). Daily distribution is flexible — only the WEEKLY total matters. */
+function tcWeekOvertime(personId,mondayISO){
+  const w=weekWorkInfo(mondayISO,personId);
+  const allowed=Math.max(0,w.required-w.fest); // bank holidays lower the week; vacation not subtracted
+  const mon=ymd(mondayISO);let sec=0;
+  for(let i=0;i<7;i++)sec+=tcLiveSeconds(personId,toISO(addDays(mon,i))).seconds;
+  const workedH=sec/3600;
+  return {allowed,workedH,over:workedH-allowed};
+}
+function tcOvertimeWeeks(personId){ // weeks (this + recent) where clocked hours exceed the allowance
+  const out=[],curMon=monday(new Date());
+  for(let m=monday(ymd(TC_START));toISO(m)<=toISO(curMon);m=addDays(m,7)){
+    const o=tcWeekOvertime(personId,toISO(m));
+    if(o.over>0.5)out.push({week:toISO(m),over:o.over,worked:o.workedH,allowed:o.allowed});
+  }
+  return out.slice(-8);
+}
 /* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
 function decorateNav(){
   if(!DB.hrReady()||!DB.currentUser)return;

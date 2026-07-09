@@ -90,7 +90,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=27"></script>
+<script src="store.js?v=28"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -244,7 +244,7 @@ function renderMine(){
   const yr=String(new Date().getFullYear());
   const mine=DB.holidays.filter(h=>h.personId==me.id).sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
   const used=mine.filter(h=>h.status==='approved'&&(h.type||'vacation')!=='remote'&&h.dateFrom.slice(0,4)===yr).reduce((a,h)=>a+(+h.workDays||0),0);
-  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' / '+(+me.holidayDays||22)+'</b> working days.';
+  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' / '+(+me.holidayDays||23)+'</b> working days.';
   let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
   if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
   mine.forEach(r=>{
@@ -372,7 +372,7 @@ function renderCal(){
       }
       h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
     }
-    h+='<td class="lab"><span class="m">'+used+'/'+(+p.holidayDays||22)+' days</span></td></tr>';
+    h+='<td class="lab"><span class="m">'+used+'/'+(+p.holidayDays||23)+' days</span></td></tr>';
   });
   document.getElementById('cal').innerHTML=h+'</table>';
   const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
@@ -426,12 +426,13 @@ function renderWeek(){
   const manual=t?Object.assign({},t.hours):{};
   const sum=Object.values(manual).reduce((a,v)=>a+(+v||0),0);
   const remaining=Math.round((w.toAllocate-sum)*100)/100;
+  const over=remaining<-0.01, exact=Math.abs(remaining)<0.01;
   document.getElementById('chips').innerHTML=
     '<span class="chipbox">Required<b>'+fmtH(w.required)+' h</b></span>'+
     (w.fest>0?'<span class="chipbox" title="'+w.festNames.join(', ')+'">00. Festivos (auto)<b>'+fmtH(w.fest)+' h</b></span>':'')+
     (w.vac>0?'<span class="chipbox">04. Vacaciones (auto)<b>'+fmtH(w.vac)+' h</b></span>':'')+
     '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
-    '<span class="chipbox '+(Math.abs(remaining)<0.01?'good':'bad')+'">Remaining<b>'+(Math.abs(remaining)<0.01?'✓ 0':fmtH(remaining))+'</b></span>';
+    '<span class="chipbox '+(exact?'good':'bad')+'" id="remChip">'+(over?'⚠ Over by':'Remaining')+'<b>'+(exact?'✓ 0':fmtH(Math.abs(remaining))+' h')+'</b></span>';
   let h='<tr><th>Project</th><th class="num" style="width:110px">Hours</th></tr>';
   const fp=autoProject('festivos'),vp=autoProject('vacaciones');
   if(w.fest>0&&fp)h+='<tr class="auto"><td>'+fp.label+' <span class="code">auto · '+w.festNames.join(', ')+'</span></td><td class="num">'+fmtH(w.fest)+'</td></tr>';
@@ -445,17 +446,28 @@ function renderWeek(){
   document.querySelectorAll('#ts input').forEach(inp=>inp.oninput=()=>{
     let s=0;document.querySelectorAll('#ts input').forEach(i=>s+=(+i.value||0));
     document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required);
+    const rem=Math.round((w.toAllocate-s)*100)/100,ov=rem<-0.01,ex=Math.abs(rem)<0.01;
+    const chip=document.getElementById('remChip');
+    chip.className='chipbox '+(ex?'good':'bad');
+    chip.innerHTML=(ov?'⚠ Over by':'Remaining')+'<b>'+(ex?'✓ 0':fmtH(Math.abs(rem))+' h')+'</b>';
+    // flag the over amount on the total row too
+    const tot=document.getElementById('tsTotal');tot.style.color=ov?'var(--red)':'';
   });
 }
 function saveWeek(){
   const me=DB.currentUser;if(!me){alert('Log in first.');return;}
   const hours={};
   document.querySelectorAll('#ts input').forEach(i=>{const v=+i.value;if(v>0)hours[i.dataset.pid]=v;});
+  const w=weekWorkInfo(weekISO,me.id);
+  const sum=Object.values(hours).reduce((a,v)=>a+(+v||0),0);
+  if(sum-w.toAllocate>0.01){ // the week can't hold more than it has — block it
+    alert('You have allocated '+fmtH(sum)+' h but this week only has '+fmtH(w.toAllocate)+' h to allocate'+
+      ((w.fest||w.vac)?' (bank holidays / holidays already take the rest)':'')+'.\n\nPlease take '+fmtH(sum-w.toAllocate)+' h off before saving.');
+    return;
+  }
   let t=tsFor(me.id,weekISO);
   if(t)t.hours=hours;else DB.timesheets.push({id:DB.newId(),personId:me.id,week:weekISO,hours});
   DB.save();
-  const w=weekWorkInfo(weekISO,me.id);
-  const sum=Object.values(hours).reduce((a,v)=>a+(+v||0),0);
   const m=document.getElementById('w_msg');
   m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
   m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
@@ -470,10 +482,11 @@ function lastWeeks(n){
 function renderMgr(){
   const box=document.getElementById('mgr');
   const seeTotals=DB.isHRAdmin(); // hours & allocations oversight = Belén + HR (Jesús) only
-  if(!(DB.canManage()||DB.isHR())){box.innerHTML='';return;}
+  // the status of people (who's tracked their hours) is admin-only, per Belén
+  if(!(DB.isAdmin()||DB.isHRAdmin())){box.innerHTML='';return;}
   const weeks=lastWeeks(8),curW=toISO(monday(new Date()));
-  const team=hrVisiblePeople();
-  let h='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). '+(seeTotals?'Whole company.':'Your team.')+'</p><div class="mx"><table>'+
+  const team=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  let h='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Whole company · admin only.</p><div class="mx"><table>'+
     '<tr><th>Person</th>'+weeks.map(w=>'<th class="num">'+w.slice(5)+'</th>').join('')+'</tr>';
   team.forEach(p=>{
     h+='<tr><td>'+p.name+'</td>'+weeks.map(w=>{
@@ -610,7 +623,11 @@ function renderTcAlarm(){
   const me=DB.currentUser,box=document.getElementById('tcAlarm');
   if(!me){box.innerHTML='';return;}
   const miss=tcMissingDays(me.id);
-  box.innerHTML=miss.length?'<div class="alarm">⏰ <b>Days with no punches:</b> '+miss.join(' · ')+' — report what happened so HR can complete the record.</div>':'';
+  const ot=tcOvertimeWeeks(me.id);
+  let h='';
+  if(miss.length)h+='<div class="alarm">⏰ <b>Days with no punches:</b> '+miss.join(' · ')+' — report what happened so HR can complete the record.</div>';
+  if(ot.length)h+='<div class="alarm">⚠ <b>Over the weekly hours:</b> '+ot.map(o=>o.week+' — '+fmtHMS(o.worked*3600).replace(/:\d\d$/,'')+' h clocked vs '+o.allowed+' h allowed (+'+(Math.round(o.over*10)/10)+' h)').join(' · ')+'. The day-to-day is flexible, but the weekly total is over — please balance it.</div>';
+  box.innerHTML=h;
 }
 function wireReport(){
   const me=DB.currentUser;
