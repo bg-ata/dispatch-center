@@ -821,6 +821,7 @@ function renderInsights(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   const done=doneOf(ms);
   document.getElementById('content').innerHTML=
+    '<div id="taBox"></div>'+
     '<div class="panel"><h3>What the data says</h3><p class="hint">Computed live from '+done.length+' completed events since 2021 — it updates itself as new weeks are imported.</p><ul class="keyf">'+keyFindings(ms,done).map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
     '<div class="two">'+
     '<div class="panel"><h3>Where the money comes from <span class="seg" id="mixSeg"></span></h3><p class="hint" id="mixHint"></p><div class="chartbox sm"><canvas id="mix"></canvas></div></div>'+
@@ -831,11 +832,22 @@ function renderInsights(){
     '</div>'+
     '<div class="panel"><h3>The shape of a campaign <span class="seg" id="paceSeg"></span></h3><p class="hint" id="paceHint"></p><div class="chartbox sm"><canvas id="pace"></canvas></div></div>'+
     '<div class="two">'+
+    '<div class="panel"><h3>Do the discount deadlines work?</h3><p class="hint">Total sponsorship € signed in the weeks around each discount deadline, across all past events — taller = that deadline pulls in more money.</p><div class="chartbox sm"><canvas id="windows"></canvas></div></div>'+
+    '<div class="panel"><h3>How soon can we trust the forecast?</h3><p class="hint">Median error of the pace projection at each week — how far “money so far ÷ typical share” lands from the real final. It tightens as the event nears; around EB it’s usually reliable.</p><div class="chartbox sm"><canvas id="forecast"></canvas></div></div>'+
+    '</div><div class="two">'+
+    '<div class="panel"><h3>€ per delegate &amp; delegate numbers</h3><p class="hint">Bars = total delegates that year; line = revenue per delegate. Falling €/delegate with rising bars = growth is volume, not price.</p><div class="chartbox sm"><canvas id="eurdeleg"></canvas></div></div>'+
+    '<div class="panel"><h3>Are sponsors signing earlier? (lead time)</h3><p class="hint">The week by which half of the year’s sponsorship € is already in — bigger W-number each year = sponsors committing sooner.</p><div class="chartbox sm"><canvas id="leadtime"></canvas></div></div>'+
+    '</div>'+
+    '<div class="panel"><h3>Best months to run an event</h3><p class="hint">Median result vs target by month of the event (green = beat target, red = under). Which calendar slots tend to over- or under-deliver.</p><div class="chartbox sm"><canvas id="season"></canvas></div></div>'+
+    '<div class="two">'+
     '<div class="panel"><h3>Do leads become money?</h3><p class="hint" id="scHint"></p><div class="chartbox sm"><canvas id="scat"></canvas></div></div>'+
     '<div class="panel"><h3>What a lead is worth — by franchise</h3><p class="hint">Final € per 💰 engaged lead, per family and year. Flat lead counts with a rising line = better commercial conversion, not better marketing reach.</p><div class="chartbox sm"><canvas id="eurlead"></canvas></div></div>'+
     '</div>'+
     '<div class="panel"><h3>Funnel check — live events</h3><p class="hint">Two independent projections: <b>pace</b> = money so far ÷ the share past events typically had at this week (only shown from about W-10, earlier it is guesswork) · <b>leads</b> = engaged leads so far × what a lead ends up being worth in this franchise (a floor — leads keep coming until the event).</p><div class="wstbl"><table id="livetbl"></table></div></div>';
-  drawMix(ms);drawFam(done);drawSign(done);drawSignEvo(done);drawPace(done);drawScat(done);drawEurLead(done);liveTable(ms,done);
+  renderTargetAccuracy(done);
+  drawMix(ms);drawFam(done);drawSign(done);drawSignEvo(done);drawPace(done);
+  drawWindows(done);drawForecast(done);drawEurDeleg(done);drawLeadTime(done);drawSeason(done);
+  drawScat(done);drawEurLead(done);liveTable(ms,done);
 }
 function drawMix(ms){
   const years=insYears(ms);
@@ -941,6 +953,91 @@ function drawEurLead(done){
   mkChart('eurlead',{type:'line',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
     plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Math.round(c.parsed.y)+' € per lead'}}},
     scales:{y:{ticks:{callback:v=>v+' €'}}}}});
+}
+/* ---- month of the event (from the W0 row, else the last row) ---- */
+function evMonth(e){const w0=e.rows.find(r=>r.week===0)||e.rows[e.rows.length-1];return (w0&&w0.date)?(+w0.date.slice(5,7)):null;}
+/* ================= TARGET ACCURACY — PRIVATE TO BELÉN (she sets the targets) ================= */
+function targetStats(done){
+  const md=a=>{a=a.filter(v=>isFinite(v)).slice().sort((x,y)=>x-y);return a.length?a[Math.floor(a.length/2)]:null;};
+  const rows=done.filter(e=>e.target>0).map(e=>({name:e.name,fam:e.fam,year:e.year,target:e.target,final:e.final,ratio:e.final/e.target}));
+  const years=[...new Set(rows.map(r=>r.year))].sort();
+  const byYear=years.map(y=>{const rs=rows.filter(r=>r.year===y);return{y,n:rs.length,med:md(rs.map(r=>r.ratio)),hit:rs.filter(r=>r.ratio>=1).length};});
+  const fams=[...new Set(rows.map(r=>r.fam))];
+  const byFam=fams.map(f=>{const rs=rows.filter(r=>r.fam===f);return{f,n:rs.length,med:md(rs.map(r=>r.ratio))};}).filter(x=>x.n>=2).sort((a,b)=>a.med-b.med);
+  const worst=rows.slice().sort((a,b)=>a.ratio-b.ratio).slice(0,6);
+  return {rows,byYear,byFam,worst,overall:md(rows.map(r=>r.ratio)),hit:rows.filter(r=>r.ratio>=1).length,total:rows.length};
+}
+function renderTargetAccuracy(done){
+  const box=document.getElementById('taBox');if(!box)return;
+  if(!isBelenP(DB.currentUser)){box.innerHTML='';return;} // private — you set the targets
+  const s=targetStats(done);if(!s.total){box.innerHTML='';return;}
+  const P=v=>v==null?'—':Math.round(v*100)+'%';
+  const opt=s.byFam.filter(f=>f.med<0.85),cons=s.byFam.filter(f=>f.med>1.12);
+  const tks=['Completed events landed at a median <b>'+P(s.overall)+'</b> of target — <b>'+s.hit+' of '+s.total+'</b> hit or beat it.'];
+  if(opt.length)tks.push('Targets that ran <b>optimistic</b> (came in low): '+opt.map(f=>f.f+' '+P(f.med)).join(', ')+'.');
+  if(cons.length)tks.push('Targets consistently <b>beaten</b> (maybe set too soft): '+cons.map(f=>f.f+' '+P(f.med)).join(', ')+'.');
+  if(s.worst.length)tks.push('Biggest single misses: '+s.worst.slice(0,3).map(w=>w.name+' '+P(w.ratio)).join(', ')+'.');
+  const T='width:100%;font-size:12px;border-collapse:collapse';
+  box.innerHTML='<div class="panel" style="border:2px solid #B00020;background:#fffafa">'+
+    '<h3>🔒 Target accuracy — private to you <button class="btn" id="taCopy" style="float:right;font-size:12px">📧 Copy for managers</button></h3>'+
+    '<p class="hint">Only <b>you</b> see this panel — it isn’t on anyone else’s dashboard (you set the targets). Use the button to send it to managers when you choose.</p>'+
+    '<ul class="keyf">'+tks.map(t=>'<li>'+t+'</li>').join('')+'</ul>'+
+    '<div class="two"><div><table style="'+T+'"><tr><th style="text-align:left">Year</th><th>Events</th><th>Median vs target</th><th>Hit</th></tr>'+
+      s.byYear.map(y=>'<tr><td>'+y.y+'</td><td style="text-align:center">'+y.n+'</td><td style="text-align:center">'+P(y.med)+'</td><td style="text-align:center">'+y.hit+'/'+y.n+'</td></tr>').join('')+'</table></div>'+
+    '<div><table style="'+T+'"><tr><th style="text-align:left">Franchise</th><th>n</th><th>Median vs target</th></tr>'+
+      s.byFam.map(f=>'<tr><td>'+f.f+'</td><td style="text-align:center">'+f.n+'</td><td style="text-align:center;font-weight:700;color:'+(f.med<0.85?'#D32230':f.med>1.12?'#3E8C28':'#7c7c78')+'">'+P(f.med)+'</td></tr>').join('')+'</table></div></div></div>';
+  const btn=document.getElementById('taCopy');if(btn)btn.onclick=()=>copyTargetReport(s);
+}
+function copyTargetReport(s){
+  const P=v=>v==null?'—':Math.round(v*100)+'%';
+  let t='Target accuracy — RENMAD events (private review)\n\n';
+  t+='Overall: median '+P(s.overall)+' of target; '+s.hit+'/'+s.total+' events hit or beat target.\n\nBy year:\n';
+  s.byYear.forEach(y=>t+='  '+y.y+': '+y.n+' events · median '+P(y.med)+' of target · '+y.hit+'/'+y.n+' hit.\n');
+  t+='\nBy franchise (median result vs target):\n';s.byFam.forEach(f=>t+='  '+f.f+': '+P(f.med)+' ('+f.n+' events).\n');
+  t+='\nBiggest misses:\n';s.worst.slice(0,5).forEach(w=>t+='  '+w.name+': '+P(w.ratio)+' (target '+eur(w.target)+' · final '+eur(w.final)+').\n');
+  const done2=()=>{const b=document.getElementById('taCopy');if(b){b.textContent='✓ Copied — paste into your email';setTimeout(()=>b.textContent='📧 Copy for managers',3000);}};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done2,()=>alert(t));else alert(t);
+}
+/* ================= EXTRA INSIGHTS (managers) ================= */
+function drawWindows(done){
+  const B=[['LD (W-18…-15)',-18,-15,'#C9B3E8'],['SE (W-14…-11)',-14,-11,'#B39BD8'],['EB (W-10…-7)',-10,-7,'#9D82C8'],['LC (W-6…-3)',-6,-3,'#8E5BC9'],['Final push (W-2…0)',-2,0,'#FF4A00']];
+  const data=B.map(([l,a,b])=>done.reduce((acc,e)=>acc+e.rows.reduce((s,r)=>s+((r.week>=a&&r.week<=b)?(+r.sponsorsEur||0):0),0),0));
+  mkChart('windows',{type:'bar',data:{labels:B.map(b=>b[0]),datasets:[{data,backgroundColor:B.map(b=>b[3])}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>eur(c.parsed.y)+' signed'}}},scales:{y:{ticks:{callback:compact}},x:{ticks:{font:{size:9}}}}}});
+}
+function drawForecast(done){
+  const pc=pctCurve(done,'soFarEur','final');
+  const errs=WEEKS.map((W,i)=>{const share=pc.med[i]/100;if(!share||share<0.05)return null;
+    const es=done.filter(e=>e.final>0).map(e=>{let s=0;e.rows.forEach(r=>{if(r.week<=W&&r.soFarEur!=null)s=+r.soFarEur;});return s>0?Math.abs((s/share)/e.final-1):null;}).filter(v=>v!=null&&isFinite(v)).sort((a,b)=>a-b);
+    return es.length?100*es[Math.floor(es.length/2)]:null;});
+  mkChart('forecast',{type:'line',data:{labels:WLAB,datasets:[{label:'error',data:errs,borderColor:'#185FA5',borderWidth:2.5,pointRadius:0,tension:.25,spanGaps:true,fill:true,backgroundColor:'rgba(24,95,165,.08)'}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},vlines:{lines:[{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}]},tooltip:{callbacks:{label:c=>'±'+c.parsed.y.toFixed(0)+'% off the final at this week'}}},scales:{y:{min:0,ticks:{callback:v=>'±'+v+'%'}},x:{ticks:{font:{size:9},maxRotation:0}}}}});
+}
+function drawEurDeleg(done){
+  const years=insYears(done);
+  const val=years.map(y=>{const es=done.filter(e=>e.year===y),d=es.reduce((a,e)=>a+e.rows.reduce((s,r)=>s+(+r.delegatesN||0),0),0);return d?es.reduce((a,e)=>a+e.final,0)/d:null;});
+  const cnt=years.map(y=>done.filter(e=>e.year===y).reduce((a,e)=>a+e.rows.reduce((s,r)=>s+(+r.delegatesN||0),0),0));
+  mkChart('eurdeleg',{data:{labels:years,datasets:[
+    {type:'bar',label:'Delegates',data:cnt,backgroundColor:'#CFE0F0',yAxisID:'y1',order:2},
+    {type:'line',label:'€ per delegate',data:val,borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:2.5,pointRadius:3,yAxisID:'y',order:1,tension:.2,spanGaps:true}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(c.dataset.type==='line'?Math.round(c.parsed.y)+' €':compact(c.parsed.y))}}},
+      scales:{y:{position:'left',ticks:{callback:v=>v+' €'}},y1:{position:'right',grid:{display:false},ticks:{callback:compact}}}}});
+}
+function drawLeadTime(done){
+  const years=insYears(done);
+  const data=years.map(y=>{const es=done.filter(e=>e.year===y);
+    const tot=es.reduce((a,e)=>a+e.rows.reduce((s,r)=>s+(+r.sponsorsEur||0),0),0)||1;let cum=0,mw=null;
+    for(const W of WEEKS){cum+=es.reduce((a,e)=>a+e.rows.reduce((s,r)=>s+((r.week===W)?(+r.sponsorsEur||0):0),0),0);if(cum/tot>=0.5){mw=W;break;}}
+    return mw==null?null:-mw;});
+  mkChart('leadtime',{type:'bar',data:{labels:years,datasets:[{data,backgroundColor:'#3E8C28'}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Half the € is in by W-'+c.parsed.y}}},scales:{y:{ticks:{callback:v=>'W-'+v}},x:{}}}});
+}
+function drawSeason(done){
+  const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const withT=done.filter(e=>e.target>0);
+  const data=MON.map((m,i)=>{const es=withT.filter(e=>evMonth(e)===i+1);if(!es.length)return null;const r=es.map(e=>e.final/e.target).sort((a,b)=>a-b);return 100*r[Math.floor(r.length/2)];});
+  mkChart('season',{type:'bar',data:{labels:MON,datasets:[{data,backgroundColor:data.map(v=>v==null?'#eceae3':v>=100?'#3E8C28':v>=80?'#C77800':'#D32230')}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y==null?'no events':Math.round(c.parsed.y)+'% of target'}}},scales:{y:{ticks:{callback:v=>v+'%'}},x:{}}}});
 }
 function liveTable(ms,done){
   const today=new Date().toISOString().slice(0,10);
