@@ -34,10 +34,10 @@
   <div class="bar" id="bar"></div>
 </div>
 <div id="stage"></div>
-<script src="store.js?v=31"></script>
+<script src="store.js?v=33"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
-function render(){
+async function render(){
   const id=new URLSearchParams(location.search).get('id');
   const t=toolById(id);
   const bar=document.getElementById('bar'),stage=document.getElementById('stage');
@@ -64,7 +64,8 @@ function render(){
       '<a class="btn primary" href="'+t.url+'" target="_blank" rel="noopener">Open in new tab ↗</a>'+
     '</div>';
   stage.className='frameWrap';
-  stage.innerHTML='<iframe src="'+toolEmbedUrl(t)+'" allow="clipboard-read; clipboard-write; fullscreen" '+
+  const token=t.dcAuth?await dcToken():'';   // dispatch session token → the app's dc_auth gate
+  stage.innerHTML='<iframe src="'+toolEmbedUrl(t,token)+'" allow="clipboard-read; clipboard-write; fullscreen" '+
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals allow-popups-to-escape-sandbox"></iframe>';
 }
 boot(render);

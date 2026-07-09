@@ -727,18 +727,29 @@ function showLogin(){return new Promise(resolve=>{
    mgrOnly= only managers & up (admins + managers) may see / open it */
 const DISPATCH_TOOLS=[
   {id:'agenda',   name:'Agenda Builder',    desc:'Bilingual event agendas with branded Word & PDF export.', url:'https://bg-ata.github.io/RENMAD-generator/agenda_app/', accent:'#3E8C28', ini:'AB', ownLogin:true},
-  {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'', accent:'#E84830', ini:'PB'},
-  {id:'images',   name:'Image Generator',   desc:'Speaker cards, panels, logo walls and title slides.', url:'', accent:'#4C3079', ini:'IG'},
-  {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out.', url:'', accent:'#29ACE3', ini:'WR'},
+  {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'https://proposal-builder-37epkukjuzdm86witcne7r.streamlit.app/', accent:'#E84830', ini:'PB', dcAuth:true},
+  {id:'images',   name:'Image Generator',   desc:'Webinar & event images, logo walls and title slides.', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#4C3079', ini:'IG', dcAuth:true},
+  {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out (Reports tab).', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#29ACE3', ini:'WR', dcAuth:true},
   {id:'dashboard',name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.', url:'https://proposal-dashboard.streamlit.app/', accent:'#2B2B2B', ini:'PD', ownLogin:true, mgrOnly:true},
   {id:'bessboss', name:'BESS BOSS',         desc:'The renewables minigrid game — learn the grid, top the leaderboard.', url:'https://bg-ata.github.io/GridShero/', accent:'#FF4A00', ini:'BB', game:true},
 ];
 function toolById(id){return DISPATCH_TOOLS.find(t=>t.id===id)||null;}
-/* the URL to load inside the iframe: Streamlit apps need ?embed=true to drop their chrome */
-function toolEmbedUrl(t){
+/* the URL to load inside the iframe: Streamlit apps need ?embed=true to drop their chrome.
+   Tools flagged dcAuth get the current Supabase access token appended as dc_token —
+   the app validates it server-side, so it only opens for logged-in dispatch users. */
+function toolEmbedUrl(t,token){
   if(!t||!t.url)return '';
-  if(/streamlit\.app/i.test(t.url))return t.url+(t.url.includes('?')?'&':'?')+'embed=true';
-  return t.url;
+  let u=t.url;
+  const add=q=>{u+=(u.includes('?')?'&':'?')+q;};
+  if(/streamlit\.app/i.test(u))add('embed=true');
+  if(t.dcAuth&&token)add('dc_token='+encodeURIComponent(token));
+  return u;
+}
+/* current Supabase access token (for dcAuth tool embeds); '' in local mode */
+async function dcToken(){
+  if(!USE_SUPABASE||!sb)return '';
+  try{const {data:{session}}=await sb.auth.getSession();return (session&&session.access_token)||'';}
+  catch(e){return '';}
 }
 function navBar(active){
   return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
