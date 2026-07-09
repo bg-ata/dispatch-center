@@ -100,7 +100,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=35"></script>
+<script src="store.js?v=36"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -734,13 +734,33 @@ function renderTcState(){
     '<div style="font-size:34px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums;line-height:1.05" id="tcLive">0:00:00</div>'+
     '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">worked today'+(exp?' · '+exp+' h expected':' · no work expected today')+'</div>'+
     '<button class="btn primary" id="punchBtn" style="font-size:15px;padding:10px 22px">'+(info.open?'Clock OUT':'Clock IN')+'</button>'+
-    '<div style="margin-top:12px;font-size:12.5px">'+(info.entries.length?('Today: '+info.entries.map(entryLabel).join(' · ')):'No punches yet today.')+'</div>';
-  const tick=()=>{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('tcLive');if(el)el.textContent=fmtHMS(li.seconds);};
+    '<div style="margin-top:12px;font-size:12.5px">'+(info.entries.length?('Today: '+info.entries.map(entryLabel).join(' · ')):'No punches yet today.')+'</div>'+
+    '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkTxt" style="font-size:12px;color:var(--muted)"></span></div>'+
+      '<div style="height:14px;border-radius:8px;background:#ece9e2;overflow:hidden"><div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div></div>'+
+      '<div id="wkNote" style="font-size:12.5px;margin-top:6px;min-height:16px"></div>'+
+    '</div>';
+  const tick=()=>{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('tcLive');if(el)el.textContent=fmtHMS(li.seconds);updateWeekBar(me);};
   tick();if(info.open)_tcTick=setInterval(tick,1000);
   document.getElementById('punchBtn').onclick=()=>{
     DB.timeclock.push({id:DB.newId(),personId:me.id,day:today,time:nowHMS(),kind:info.open?'out':'in',manual:false,amends:null,reason:null,note:null,reportId:null});
     DB.save();renderTcState();renderMyMonth();
   };
+}
+/* the weekly-hours bar: red when far off, filling green as hours are clocked; live */
+function updateWeekBar(me){
+  const bar=document.getElementById('wkBar');if(!bar||!me)return;
+  const p=tcWeekProgress(me.id);
+  bar.style.width=Math.round(p.pct*100)+'%';
+  bar.style.background='hsl('+Math.round(p.pct*120)+',68%,42%)'; // 0=red → 60=amber → 120=green
+  const fmt=h=>{const H=Math.floor(h+1e-9),M=Math.round((h-H)*60);return M?H+'h '+M+'m':H+'h';};
+  const txt=document.getElementById('wkTxt');
+  if(txt)txt.textContent=p.target<=0?'no hours expected this week':(fmt(p.worked)+' of '+fmt(p.target));
+  const note=document.getElementById('wkNote');if(!note)return;
+  if(p.target<=0)note.innerHTML='<span style="color:var(--muted)">Holiday week — nothing to clock.</span>';
+  else if(p.done)note.innerHTML='<span style="color:var(--green);font-weight:700">✓ Week complete — that’s your '+fmt(p.target)+'. Nice one.</span>';
+  else if(p.remaining<=WEEK_NEAR_H)note.innerHTML='<span style="color:#D32230;font-weight:700">🔔 Under 30 minutes to go this week!</span>';
+  else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
 }
 function renderTcAlarm(){
   const me=DB.currentUser,box=document.getElementById('tcAlarm');

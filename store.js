@@ -305,6 +305,7 @@ function breakReminderTick(){
   const cont=tcContinuousSeconds(DB.currentUser.id),el=document.getElementById('breakToast');
   if(cont>=BREAK_AFTER_H*3600 && Date.now()>_breakSnoozeUntil){ if(!el)showBreakToast(cont); }
   else if(el&&cont<60){el.remove();} // they clocked out — clear it
+  try{weeklyGoalTick();}catch(e){} // also check the weekly hours goal (last-30-min nudge)
 }
 function showBreakToast(cont){
   const h=Math.floor(cont/3600),m=Math.floor((cont%3600)/60);
@@ -355,6 +356,34 @@ function tcOvertimeWeeks(personId){ // weeks (this + recent) where clocked hours
     if(o.over>0.5)out.push({week:toISO(m),over:o.over,worked:o.workedH,allowed:o.allowed});
   }
   return out.slice(-8);
+}
+/* progress toward THIS week's required hours. target = hours actually expected
+   (required − bank holidays − approved vacation/leave); worked includes the live tick. */
+function tcWeekProgress(personId,mondayISO){
+  const mon=mondayISO||toISO(monday(new Date()));
+  const w=weekWorkInfo(mon,personId), target=w.toAllocate;
+  const monD=ymd(mon);let sec=0;for(let i=0;i<7;i++)sec+=tcLiveSeconds(personId,toISO(addDays(monD,i))).seconds;
+  const worked=sec/3600;
+  return {target,worked,remaining:Math.max(0,target-worked),pct:target>0?Math.min(1,worked/target):1,done:target>0&&worked>=target-1e-6};
+}
+/* nudge when someone is within the last 30 min of their weekly hours (global, like the break toast) */
+const WEEK_NEAR_H=0.5; let _weekNearShownWk='';
+function weeklyGoalTick(){
+  if(!DB.currentUser||!DB.tcReady())return;
+  const me=DB.currentUser, info=tcDayInfo(me.id,toISO(new Date()));
+  const p=tcWeekProgress(me.id), wk=toISO(monday(new Date())), el=document.getElementById('weekNearToast');
+  if(info.open&&p.remaining>0&&p.remaining<=WEEK_NEAR_H&&_weekNearShownWk!==wk){ if(!el){showWeekNearToast(p);_weekNearShownWk=wk;} }
+  else if(el&&p.remaining<=0){const b=el.querySelector('.wnt-body');if(b)b.innerHTML='✓ That’s your '+Math.round(p.target)+' h — you can clock out whenever.';}
+}
+function showWeekNearToast(p){
+  const rem=Math.max(1,Math.round(p.remaining*60));
+  const d=document.createElement('div');d.id='weekNearToast';
+  d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:9998;background:#1D6B34;color:#fff;border-radius:12px;padding:14px 16px;max-width:320px;box-shadow:0 8px 30px rgba(0,0,0,.28);font-family:Segoe UI,system-ui,sans-serif;font-size:13px';
+  d.innerHTML='<div style="font-weight:700;margin-bottom:4px">🔔 Almost done for the week</div>'+
+    '<div class="wnt-body" style="color:#dff0e4;margin-bottom:10px">Under 30 minutes — about '+rem+' min left to reach your '+Math.round(p.target)+' h this week.</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end"><button id="wn_ok" style="background:#fff;color:#1D6B34;border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;font:inherit">Got it</button></div>';
+  document.body.appendChild(d);
+  document.getElementById('wn_ok').onclick=()=>d.remove();
 }
 /* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
 function decorateNav(){
