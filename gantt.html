@@ -112,7 +112,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=38"></script>
+<script src="store.js?v=39"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -149,8 +149,8 @@ function render(){
     const row=document.createElement('div');row.className='row';
     const head=document.createElement('div');head.className='head';
     head.innerHTML='<button class="edit" title="edit">✎</button>'+
-      '<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+ev.name+'</span>'+(ev.prov?' <span class="prov">prov</span>':'')+'</div>'+
-      '<div class="ln">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+'</div>';
+      '<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span>'+(ev.prov?' <span class="prov">prov</span>':'')+'</div>'+
+      '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+'</div>';
     head.querySelector('.edit').onclick=e=>{e.stopPropagation();openModal(ev.id);};
     head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
 
@@ -227,7 +227,7 @@ function openModal(id){editingId=id;const ev=id?DB.event(id):{name:'',topic:'Ren
 document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
-document.getElementById('m_delete').onclick=()=>{DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
+document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
   else{const id=DB.newId();const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});

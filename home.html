@@ -46,7 +46,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=38"></script>
+<script src="store.js?v=39"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -63,11 +63,11 @@ function render(){
       (me.hr?'<span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</h1>'+
     '<p class="sub">Your day at a glance — clock in, see what needs you, and jump to your events.</p>'+
     '<div class="grid2">'+
-      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
+      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="awayPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
       '<div><div class="panel" id="profPanel"></div></div>'+
     '</div>'+
     '<div class="panel" id="evPanel"></div>';
-  renderClock();renderAlarms();renderProfile();renderEvents();
+  renderClock();renderAway();renderAlarms();renderProfile();renderEvents();
 }
 
 /* ---- clock in / out ---- */
@@ -95,6 +95,39 @@ function renderClock(){
   };
 }
 
+/* ---- "at an event" (away from the office) ---- */
+function renderAway(){
+  const me=DB.currentUser,box=document.getElementById('awayPanel');if(!box)return;
+  if(!DB.eventReady()){box.innerHTML='<h3>📣 At an event?</h3><p class="hint">This turns on once the events update is run in Supabase. It lets you flag days you’re away at an event so the team knows you’re out of the office.</p>';return;}
+  const today=toISO(new Date());
+  const mine=DB.eventaway.filter(e=>e.personId==me.id).sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||''));
+  const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d2=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
+  const rng=e=>e.dateFrom===e.dateTo?d2(e.dateFrom):d2(e.dateFrom)+'–'+d2(e.dateTo);
+  box.innerHTML='<h3>📣 At an event?</h3>'+
+    '<p class="hint">Attending an event — ours or someone else’s? Flag the days here so the team sees you’re out of the office and less available. You still clock in and out as normal.</p>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'+
+      '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px;flex:1 1 180px">Event<input id="aw_title" placeholder="e.g. RENMAD Storage Madrid" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
+      '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px">From<input type="date" id="aw_from" value="'+today+'" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
+      '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px">To<input type="date" id="aw_to" value="'+today+'" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
+      '<button class="btn primary" id="aw_add">Add</button>'+
+    '</div>'+
+    (mine.length?'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">My event days</div>'+
+      mine.slice(0,8).map(e=>{const cur=(e.dateFrom||'')<=today&&(e.dateTo||'')>=today;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f2f0ea;font-size:13px">'+
+        '<span style="flex:1"><b style="color:var(--charcoal)">'+esc(e.title||'Event')+'</b> <span style="color:var(--muted)">· '+rng(e)+(cur?' <span style="color:#185FA5;font-weight:700">· now</span>':'')+'</span></span>'+
+        '<button class="btn" data-awdel="'+e.id+'" style="font-size:11px;padding:2px 8px;color:#A32D2D;border-color:#f0c4c4">Remove</button></div>';}).join('')
+      :'<p class="empty" style="font-size:12.5px;color:var(--muted)">No event days flagged.</p>');
+  document.getElementById('aw_add').onclick=()=>{
+    const title=document.getElementById('aw_title').value.trim();
+    const from=document.getElementById('aw_from').value,to=document.getElementById('aw_to').value;
+    if(!from||!to){alert('Pick the dates.');return;}
+    if(to<from){alert('The “to” date is before the “from” date.');return;}
+    DB.eventaway.push({id:DB.newId(),personId:me.id,dateFrom:from,dateTo:to,title:title||'Event',note:''});
+    DB.save();renderAway();
+  };
+  box.querySelectorAll('[data-awdel]').forEach(b=>b.onclick=()=>{DB.data.eventaway=DB.eventaway.filter(x=>x.id!=b.dataset.awdel);DB.save();renderAway();});
+}
 /* ---- alarms ---- */
 function renderAlarms(){
   const me=DB.currentUser,box=document.getElementById('alarmPanel'),a=[];
@@ -130,7 +163,7 @@ function renderProfile(){
   }
   box.innerHTML='<h3>👤 Me</h3>'+
     '<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px">'+avatarHtml(me,64)+
-      '<div><div style="font-weight:700;font-size:15px;color:var(--charcoal)">'+me.name+'</div>'+
+      '<div><div style="font-weight:700;font-size:15px;color:var(--charcoal)">'+esc(me.name)+'</div>'+
       '<label class="btn" style="font-size:11px;padding:3px 8px;cursor:pointer;display:inline-block;margin-top:4px">Change photo<input type="file" id="pf_photo" accept="image/*" style="display:none"></label>'+
       (me.photo?' <button class="btn" id="pf_rmphoto" style="font-size:11px;padding:3px 8px">Remove</button>':'')+
       '<span id="pf_pmsg" style="font-size:11px;color:var(--green);margin-left:6px"></span></div></div>'+
@@ -161,12 +194,12 @@ function renderEvents(){
   const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
   let h='<h3>📅 My events &amp; tasks</h3>';
   if(!events.length){box.innerHTML=h+'<p class="empty">No events assigned to you yet.</p>';return;}
-  h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+e.name+'</a>').join('')+'</div>';
+  h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
   const openT=myTasks.filter(t=>t.status!=='Done').sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
   h+='<table style="margin-top:10px"><tr><th>Task</th><th>Event</th><th>When</th><th>Status</th></tr>';
   if(!openT.length)h+='<tr><td colspan="4" class="empty">No open tasks — all done. 🎉</td></tr>';
   openT.slice(0,18).forEach(t=>{const e=DB.event(t.eventId);
-    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+t.title+'</td><td>'+(e?e.name:'—')+'</td>'+
+    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(t.title)+'</td><td>'+esc(e?e.name:'—')+'</td>'+
       '<td>'+(t.deadline?('due '+t.deadline):('wk '+fmtD(taskDate(t))))+'</td>'+
       '<td><span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+t.status+'</span></td></tr>';});
   h+='</table>'+(openT.length>18?'<p class="hint" style="margin-top:6px">Showing 18 of '+openT.length+' — <a href="person.html?id='+me.id+'">see all →</a></p>':'');

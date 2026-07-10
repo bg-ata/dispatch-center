@@ -67,7 +67,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=38"></script>
+<script src="store.js?v=39"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -80,11 +80,14 @@ function render(){
   DB.people.forEach(p=>{
     const ts=DB.tasksOf(p.id);
     const acc=p.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
-    const lv=currentLeave(p.id);
-    const status=lv?('<span style="color:'+(lv.type==='vacation'?'#3E8C28':lv.type==='remote'?'#29ACE3':'#C77800')+';font-weight:600">'+lv.emoji+' '+lv.label+' · until '+untilTxt(lv.until)+'</span>'):'<span style="color:#3E8C28">● Available</span>';
+    const s=personStatusNow(p);
+    let dtxt=s.detail||'';
+    const um=dtxt.match(/^until (\d{4}-\d{2}-\d{2})$/); if(um)dtxt='until '+untilTxt(um[1]); // pretty-print the date
+    const detail=dtxt?(' <span style="color:var(--muted);font-weight:400">· '+esc(dtxt)+'</span>'):'';
+    const status='<span style="color:'+s.color+';font-weight:600">'+s.emoji+' '+esc(s.label)+'</span>'+detail;
     h+='<tr><td style="width:44px">'+avatarHtml(p,34)+'</td>'+
-       '<td><span class="who" data-who="'+p.id+'">'+p.name+'</span></td>'+
-       '<td><span class="rolepill">'+p.role+'</span></td>'+
+       '<td><span class="who" data-who="'+p.id+'">'+esc(p.name)+'</span></td>'+
+       '<td><span class="rolepill">'+esc(p.role)+'</span></td>'+
        '<td style="font-size:12px">'+status+'</td>'+
        '<td style="color:var(--muted)">'+(p.phone||'—')+'</td>'+
        '<td style="color:var(--muted)">'+(p.email||'—')+'</td>'+
@@ -92,14 +95,14 @@ function render(){
        '<td>'+(adm?'<button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button>':'')+'</td></tr>';
     if(expanded==p.id){
       if(ts.length) ts.forEach(t=>{const e=DB.event(t.eventId);
-        h+='<tr class="assign"><td colspan="8"><span class="ev">'+(e?e.name:'?')+'</span> · '+t.lane+' · '+t.title+(t.deadline?' · due '+t.deadline:'')+' · '+t.status+'</td></tr>';});
+        h+='<tr class="assign"><td colspan="8"><span class="ev">'+esc(e?e.name:'?')+'</span> · '+esc(t.lane)+' · '+esc(t.title)+(t.deadline?' · due '+t.deadline:'')+' · '+esc(t.status)+'</td></tr>';});
       else h+='<tr class="assign"><td colspan="8">No tasks assigned yet.</td></tr>';
     }
   });
   tbl.innerHTML=h;
   tbl.querySelectorAll('[data-who]').forEach(el=>el.onclick=()=>location.href='person.html?id='+el.dataset.who);
   tbl.querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>openModal(+el.dataset.edit));
-  tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
+  tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{const p=DB.person(+el.dataset.del);if(!confirm('Remove '+(p?p.name:'this person')+' from the team? Their tasks become unassigned. (recoverable from the audit log)'))return;DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
 }
 const modal=document.getElementById('modal');
 function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',access:'member',email:'',finance:false,hr:false};
@@ -127,7 +130,7 @@ document.getElementById('m_photo_clear').onclick=()=>{editingPhoto=null;
 document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
-document.getElementById('m_del').onclick=()=>{DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
+document.getElementById('m_del').onclick=()=>{const p=DB.person(editingId);if(!confirm('Remove '+(p?p.name:'this person')+' from the team? Their tasks become unassigned. (recoverable from the audit log)'))return;DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim(),finance:document.getElementById('m_fin').checked,hr:document.getElementById('m_hr').checked,holidayDays:(+document.getElementById('m_days').value||23),phone:document.getElementById('m_phone').value.trim(),photo:editingPhoto};
   if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.newId(),...d});DB.save();modal.classList.remove('on');render();};
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx',[

@@ -2,7 +2,11 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 17;
+const STORE_VERSION = 18;
+/* escape any user-entered text before it goes into innerHTML — a task title,
+   holiday note, report message etc. containing < > & " ' must render as text,
+   never as markup (stops a "<img onerror=…>" in a title running for everyone). */
+function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -168,6 +172,38 @@ function currentLeave(personId,onISO){
   const h=DB.holidays.find(x=>x.personId==personId&&x.status==='approved'&&OFF_TYPES.includes(x.type||'vacation')&&x.dateFrom<=day&&x.dateTo>=day);
   if(!h)return null;
   return {type:h.type||'vacation',label:TYPE_LABEL[h.type||'vacation'],emoji:TYPE_EMOJI[h.type||'vacation'],until:h.dateTo};
+}
+/* ---- "at an event" (away from the office) ---- */
+/* is the person at an event on this date? → the away-record, or null */
+function atEventNow(personId,onISO){
+  const day=onISO||toISO(new Date());
+  return DB.eventaway.find(e=>e.personId==personId&&(e.dateFrom||'')<=day&&(e.dateTo||'')>=day)||null;
+}
+/* one combined "where is this person right now" for the Team status + attendance board.
+   priority: leave/holiday > at an event > clock state. Returns
+   {key,label,emoji,color,detail}. keys: leave|holiday|remote|event|working|pause|out|off|unknown */
+function personStatusNow(p){
+  const id=p.id, today=toISO(new Date());
+  const lv=currentLeave(id);
+  if(lv){const isHol=lv.type==='vacation';
+    return {key:isHol?'holiday':'leave',label:isHol?'Holiday':lv.label,emoji:lv.emoji,
+            color:isHol?'#3E8C28':'#C77800',detail:'until '+lv.until,private:!isHol};}
+  const rem=DB.holidays.find(x=>x.personId==id&&x.status==='approved'&&x.type==='remote'&&x.dateFrom<=today&&x.dateTo>=today);
+  const ev=atEventNow(id);
+  /* punches are only visible to the person themselves and HR-admins (RLS) —
+     don't infer "not clocked in" for others when we simply can't see their clock */
+  const canSeeClock=DB.isHRAdmin()||!!(DB.currentUser&&DB.currentUser.id===id);
+  const info=(DB.tcReady()&&canSeeClock)?tcDayInfo(id,today):null;
+  const clockBit=info?(info.open?'clocked in':(info.entries.length?'on a break':'not clocked in')):'';
+  if(ev)return {key:'event',label:'At an event',emoji:'📣',color:'#185FA5',detail:(ev.title||'event')+(clockBit?' · '+clockBit:'')};
+  if(rem)return {key:'remote',label:'Remote',emoji:'🏠',color:'#29ACE3',detail:clockBit};
+  if(info){
+    if(info.open)return {key:'working',label:'Working',emoji:'🟢',color:'#3E8C28',detail:''};
+    if(info.entries.length)return {key:'pause',label:'On a break',emoji:'⏸️',color:'#C77800',detail:''};
+    if(tcExpectedDay(id,today)>0)return {key:'out',label:'Not clocked in',emoji:'⚪',color:'#9AA0A8',detail:''};
+    return {key:'off',label:'Off today',emoji:'—',color:'#9AA0A8',detail:''};
+  }
+  return {key:'unknown',label:'Available',emoji:'●',color:'#3E8C28',detail:''};
 }
 /* holiday balance for a year: allowance (23) + carry-over/borrow adjustments − vacation used */
 const HOL_DEADLINE_MD='02-28'; // carry-over must be enjoyed before end of February
@@ -545,7 +581,7 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -556,7 +592,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
   people:['id','name','role','access','email','finance','hr','holidayDays','photo','phone'],
@@ -569,8 +605,9 @@ const COLS={
   timesheets:['id','personId','week','hours'],
   timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
   tcreports:['id','personId','day','entryId','thread','status'],
+  eventaway:['id','personId','dateFrom','dateTo','title','note'], // "at an event" — away from the office
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -622,6 +659,11 @@ const DB={
         if(rp.error)throw rp.error;this.data.tcreports=rp.data||[];
         _tcReady=true;
       }catch(e){console.warn('time clock module not ready:',e.message||e);}
+      /* "at an event" away-days (tolerant — app runs fine before dispatch_hr8_events.sql) */
+      this.data.eventaway=[];_eventReady=false;
+      try{const er=await sb.from('dc_eventaway').select('*').eq('deleted',false).order('id');
+        if(er.error)throw er.error;this.data.eventaway=er.data||[];_eventReady=true;
+      }catch(e){console.warn('event-away module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -648,6 +690,7 @@ const DB={
         if(k==='weekly'&&!_weeklyReady)continue; // weekly table not created yet
         if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)continue; // HR tables not created yet
         if((k==='timeclock'||k==='tcreports')&&!_tcReady)continue; // time clock tables not created yet
+        if(k==='eventaway'&&!_eventReady)continue; // event-away table not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -717,6 +760,8 @@ const DB={
   get timeclock(){return this.data.timeclock||[];},
   get tcreports(){return this.data.tcreports||[];},
   tcReady(){return !USE_SUPABASE||_tcReady;},
+  get eventaway(){return this.data.eventaway||[];},
+  eventReady(){return !USE_SUPABASE||_eventReady;},
   /* HR admin = Belén + the HR tick (Jesús). Deliberately NOT every events admin. */
   isHRAdmin(){const u=this.currentUser;return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
@@ -742,6 +787,7 @@ function subscribeRealtime(){
       if(k==='timesheets')return; // own-row edits, no realtime needed
       if(k==='timeclock')return; // append-only, reloaded on demand
       if(k==='tcreports'&&!_tcReady)return;
+      if(k==='eventaway'&&!_eventReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -767,9 +813,28 @@ function applyRemote(key,row){
   _shadow[key][row.id]=s;
   scheduleRemoteRender();
 }
-function scheduleRemoteRender(){clearTimeout(_remoteTimer);_remoteTimer=setTimeout(()=>window.dispatchEvent(new Event('dc-remote')),250);}
+/* a colleague's live edit must NOT wipe a form the user is halfway through
+   filling. If they're typing in a field, hold the re-render until they leave it. */
+let _remotePending=false;
+function userIsTyping(){const a=document.activeElement;return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')&&a.type!=='button'&&a.type!=='checkbox'&&a.type!=='radio');}
+function scheduleRemoteRender(){
+  clearTimeout(_remoteTimer);
+  _remoteTimer=setTimeout(function tick(){
+    if(userIsTyping()){_remotePending=true;_remoteTimer=setTimeout(tick,800);return;} // keep waiting while they type
+    _remotePending=false;
+    window.dispatchEvent(new Event('dc-remote'));
+  },250);
+}
+/* also catch the moment they leave a field (instant on real browsers) */
+document.addEventListener('focusout',()=>{setTimeout(()=>{if(_remotePending&&!userIsTyping()){_remotePending=false;clearTimeout(_remoteTimer);window.dispatchEvent(new Event('dc-remote'));}},0);});
 
-function injectSB(){return new Promise(res=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;document.head.appendChild(s);});}
+function cdnFailBanner(what){
+  const b=document.createElement('div');
+  b.style.cssText='background:#D32230;color:#fff;padding:10px 16px;font:13px Segoe UI,system-ui,sans-serif;text-align:center';
+  b.innerHTML='⚠ Could not load '+esc(what)+' — check your internet connection or firewall, then <a href="#" onclick="location.reload();return false" style="color:#fff;font-weight:700">reload</a>.';
+  document.body.prepend(b);
+}
+function injectSB(){return new Promise((res,rej)=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;s.onerror=()=>{cdnFailBanner('the app engine (Supabase)');rej(new Error('Supabase library failed to load'));};document.head.appendChild(s);});}
 /* resilience: pages restored from the back/forward cache re-initialise cleanly */
 window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
 /* don't let a navigation swallow an edit still waiting in the 700 ms sync window */
@@ -887,7 +952,7 @@ function changePasswordUI(){
     if(error){m.style.color='#A32D2D';m.textContent=error.message;}else{m.style.color='#1D9E75';m.textContent='Password updated.';setTimeout(()=>ov.remove(),1200);}
   };
 }
-function loadXLSX(cb){if(window.XLSX)return cb();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=cb;document.head.appendChild(s);}
+function loadXLSX(cb){if(window.XLSX)return cb();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=cb;s.onerror=()=>alert('Could not load the Excel component (check your connection / firewall). Please try again.');document.head.appendChild(s);}
 /* shrink an uploaded image to a small square JPEG data-URL (keeps dc_people rows tiny) */
 function resizeImage(file,cb,size){size=size||160;const rd=new FileReader();
   rd.onload=e=>{const img=new Image();img.onload=()=>{

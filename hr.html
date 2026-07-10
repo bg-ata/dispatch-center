@@ -100,7 +100,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=38"></script>
+<script src="store.js?v=39"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -239,9 +239,9 @@ function renderDecide(){
     const p=DB.person(r.personId);
     const flags=reqAlarms(r);
     const adv=changeAdvice(r);
-    h+='<tr><td><b>'+(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+(p?p.role:'')+'</span></td>'+
+    h+='<tr><td><b>'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span></td>'+
       '<td>'+(r.type==='remote'?'Remote':'Holidays')+'</td>'+
-      '<td>'+fmtRange(r)+'</td><td>'+(r.workDays||'?')+'</td><td>'+(r.note||'')+'</td>'+
+      '<td>'+fmtRange(r)+'</td><td>'+(r.workDays||'?')+'</td><td>'+esc(r.note||'')+'</td>'+
       '<td>'+(adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
       (flags.length?flags.map(f=>'<div class="flag">⚠ '+f+'</div>').join(''):(adv?'':'<span style="color:var(--muted)">none</span>'))+'</td>'+
       '<td style="white-space:nowrap"><button class="btn ok" data-ap="'+r.id+'">Approve</button> <button class="btn no" data-dn="'+r.id+'">Deny</button></td></tr>';
@@ -282,7 +282,7 @@ function renderMine(){
     const hrLeave=LEAVE_TYPES.includes(r.type); // sick/mat/pat added by HR — not self-cancellable
     const chg=r.replaces?' <span style="color:var(--muted);font-size:11px" title="'+esc2(changeAdvice(r)||'')+'">🔁 change</span>':'';
     h+='<tr><td>'+typeChip(r)+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
-      '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+deny+'</span>':'')+'</td>'+
+      '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+esc(deny)+'</span>':'')+'</td>'+
       '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
       (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
   });
@@ -710,7 +710,9 @@ function renderTimeclock(){
     '<div class="mnav"><button class="btn" id="tm_prev">‹</button><b id="tm_lab"></b><button class="btn" id="tm_next">›</button></div>'+
     '<div class="mx" id="myMonth"></div>'+
     '<p class="hint" style="margin-top:8px">* = entry added afterwards. Amended punches stop counting but stay in the permanent archive with who/when/why.</p></div>'+
-    (hradmin?'<div class="panel decide"><h3>🛠 Corrections queue (HR)</h3><p class="hint">Workers report, you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
+    (hradmin?'<div class="panel"><h3>👀 Who’s in today</h3><p class="hint">Live view of who has clocked in, who’s on a break, who’s off and who is at an event. Anyone expected today who hasn’t clocked in is flagged in red so you can give them a nudge.</p><div id="tcToday"></div></div>'+
+    '<div class="panel"><h3>📣 Away at events</h3><p class="hint">Who has flagged themselves out of the office at an event, and when. People add these on their own Overview page.</p><div id="tcEvents"></div></div>'+
+    '<div class="panel decide"><h3>🛠 Corrections queue (HR)</h3><p class="hint">Workers report, you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
     '<div class="panel"><h3>Team time sheet (HR)</h3><div class="mnav"><select id="tw_who"></select><button class="btn" id="tw_prev">‹</button><b id="tw_lab"></b><button class="btn" id="tw_next">›</button>'+
     '<button class="btn" id="tcXlsM" style="font-size:12px">⬇ Month, everyone</button><button class="btn" id="tcXlsA" style="font-size:12px">⬇ Full archive (hash-chained)</button></div>'+
     '<div class="mx" id="teamMonth"></div></div>':'');
@@ -726,8 +728,64 @@ function renderTimeclock(){
     document.getElementById('tw_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderMyMonth();renderTeamMonth();};
     document.getElementById('tcXlsM').onclick=exportTcMonth;
     document.getElementById('tcXlsA').onclick=exportTcArchive;
-    renderTcQueue();renderTeamMonth();
+    renderTcQueue();renderTeamMonth();renderAttendance();renderEventAway();
   }
+}
+/* HR-admin board: who is in / on a break / off / at an event right now */
+function renderAttendance(){
+  const box=document.getElementById('tcToday');if(!box)return;
+  const today=toISO(new Date());
+  const people=DB.people.filter(p=>!isTeamAccount(p));
+  const rows=people.map(p=>{
+    const s=personStatusNow(p);
+    const info=tcDayInfo(p.id,today);
+    const firstIn=info.entries.find(e=>e.kind==='in');
+    const expected=tcExpectedDay(p.id,today)>0;
+    const missing=expected&&s.key==='out';
+    return {p,s,firstIn,expected,missing};
+  });
+  const ord={out:0,working:1,pause:2,event:3,remote:4,holiday:5,leave:6,off:7,unknown:8};
+  rows.sort((a,b)=>{if(a.missing!==b.missing)return a.missing?-1:1;return (ord[a.s.key]??9)-(ord[b.s.key]??9)||a.p.name.localeCompare(b.p.name);});
+  const nWork=rows.filter(r=>r.s.key==='working').length,nMiss=rows.filter(r=>r.missing).length,nOff=rows.filter(r=>['holiday','leave','off'].includes(r.s.key)).length;
+  let h='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">'+nWork+' working now · <b style="color:'+(nMiss?'#D32230':'var(--muted)')+'">'+nMiss+' expected but not clocked in</b> · '+nOff+' off/away</div>';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  rows.forEach(r=>{
+    h+='<tr style="border-bottom:1px solid #f2f0ea'+(r.missing?';background:#FBEAEA':'')+'">'+
+      '<td style="padding:5px 8px;width:38px">'+avatarHtml(r.p,28)+'</td>'+
+      '<td style="padding:5px 8px;font-weight:600;color:var(--charcoal)">'+esc(r.p.name)+' <span style="color:var(--muted);font-weight:400;font-size:11px">'+esc(r.p.role)+'</span></td>'+
+      '<td style="padding:5px 8px"><span style="color:'+r.s.color+';font-weight:600">'+r.s.emoji+' '+esc(r.s.label)+'</span>'+(r.s.detail?' <span style="color:var(--muted);font-size:11px">· '+esc(r.s.detail)+'</span>':'')+'</td>'+
+      '<td style="padding:5px 8px;color:var(--muted);font-size:12px;text-align:right;white-space:nowrap">'+(r.firstIn?('in '+(r.firstIn.time||'').slice(0,5)):(r.missing?'<span style="color:#D32230;font-weight:600">no punch yet</span>':''))+'</td></tr>';
+  });
+  h+='</table>';
+  box.innerHTML=h;
+}
+/* HR-admin: history of who has been away at events, most recent first */
+let _evAwayAll=false;
+function renderEventAway(){
+  const box=document.getElementById('tcEvents');if(!box)return;
+  if(!DB.eventReady()){box.innerHTML='<p class="hint">The events feature switches on once <b>dispatch_hr8_events.sql</b> is run in Supabase.</p>';return;}
+  const today=toISO(new Date());
+  const all=DB.eventaway.slice().sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||''));
+  const list=_evAwayAll?all:all.slice(0,12);
+  const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d2=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()]+' '+d.getFullYear();};
+  const rng=e=>e.dateFrom===e.dateTo?d2(e.dateFrom):d2(e.dateFrom)+' – '+d2(e.dateTo);
+  if(!all.length){box.innerHTML='<p class="empty" style="color:var(--muted)">No event days flagged yet.</p>';return;}
+  let h='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Who</th><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Event</th><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">When</th><th></th></tr>';
+  list.forEach(e=>{const cur=(e.dateFrom||'')<=today&&(e.dateTo||'')>=today;
+    h+='<tr style="border-bottom:1px solid #f2f0ea'+(cur?';background:#EAF1FB':'')+'">'+
+      '<td style="padding:5px 8px;font-weight:600;color:var(--charcoal)">'+esc(DB.personName(e.personId))+'</td>'+
+      '<td style="padding:5px 8px">'+esc(e.title||'Event')+(cur?' <span style="color:#185FA5;font-weight:700;font-size:11px">· now</span>':'')+'</td>'+
+      '<td style="padding:5px 8px;color:var(--muted)">'+rng(e)+'</td>'+
+      '<td style="padding:5px 8px;text-align:right"><button class="btn" data-evdel="'+e.id+'" style="font-size:11px;padding:2px 8px;color:#A32D2D;border-color:#f0c4c4">Remove</button></td></tr>';});
+  h+='</table>';
+  h+='<div style="margin-top:8px;display:flex;gap:8px">'+
+    (all.length>12?'<button class="btn" id="ev_more" style="font-size:12px">'+(_evAwayAll?'Show recent only':'Show all '+all.length)+'</button>':'')+
+    '<button class="btn" id="ev_xls" style="font-size:12px">⬇ Excel</button></div>';
+  box.innerHTML=h;
+  const mb=document.getElementById('ev_more');if(mb)mb.onclick=()=>{_evAwayAll=!_evAwayAll;renderEventAway();};
+  document.getElementById('ev_xls').onclick=()=>exportXLSX('RENMAD_event_attendance.xlsx',[{name:'At events',rows:all.map(e=>({Person:DB.personName(e.personId),Event:e.title||'',From:e.dateFrom,To:e.dateTo}))}]);
+  box.querySelectorAll('[data-evdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this event-away entry?'))return;DB.data.eventaway=DB.eventaway.filter(x=>x.id!=b.dataset.evdel);DB.save();renderEventAway();});
 }
 function renderTcState(){
   const me=DB.currentUser,box=document.getElementById('tcState');
@@ -801,7 +859,7 @@ function wireReport(){
 }
 function threadHtml(r){
   return '<div style="background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12.5px">'+
-    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+m.by+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+m.text+'</div>').join('')+'</div>';
+    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
 }
 function reportChip(r){
   return r.status==='resolved'?'<span class="chip" style="background:var(--green)">Resolved</span>'

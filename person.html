@@ -54,7 +54,7 @@
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
 <div id="tip"></div>
-<script src="store.js?v=38"></script>
+<script src="store.js?v=39"></script>
 <script>
 const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
 document.getElementById('nav').innerHTML=navBar('people');
@@ -79,10 +79,10 @@ function render(){
   const done=myTasks.filter(t=>t.status==='Done').length, prog=myTasks.filter(t=>t.status==='In progress').length;
   const acc=person.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
 
-  let head='<h1>'+person.name+' <span class="rolepill">'+person.role+'</span> <span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span></h1>'+
-    '<p class="sub">'+(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' in progress) across '+events.length+' events'+
+  let head='<h1>'+esc(person.name)+' <span class="rolepill">'+esc(person.role)+'</span> <span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span></h1>'+
+    '<p class="sub">'+esc(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' in progress) across '+events.length+' events'+
     ' &nbsp;·&nbsp; <a href="people.html">← Personnel</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>';
-  head+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="chip" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+e.name+'</a>').join('')+'</div>';
+  head+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="chip" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
   head+='<div class="legend"><span><span class="sw" style="background:#A9CBEE"></span>PM</span><span><span class="sw" style="background:#FFC9A3"></span>Marketing</span><span><span class="sw" style="background:#BFE0A0"></span>Sales</span><span><span class="sw" style="background:#ECCA46"></span>Logistics</span><span><span class="sw" style="background:#111"></span>Event week</span><span style="color:#b9b6ad">✓ done · line = today</span></div>';
   head+='<div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>';
   document.getElementById('content').innerHTML=head;
@@ -119,8 +119,8 @@ function render(){
 
     const row=document.createElement('div');row.className='row';
     const head=document.createElement('div');head.className='head';
-    head.innerHTML='<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+ev.name+'</span></div>'+
-      '<div class="ln">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' · '+rowTasks.length+' task'+(rowTasks.length===1?'':'s')+'</div>';
+    head.innerHTML='<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span></div>'+
+      '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+' · '+rowTasks.length+' task'+(rowTasks.length===1?'':'s')+'</div>';
     head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
 
     const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
@@ -137,7 +137,7 @@ function render(){
       el.style.cssText='left:'+(it.x+2)+'px;top:'+(ROWPAD+it.row*(TASKH+TGAP))+'px;width:'+(it.w)+'px;height:'+TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
       el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
       const sub=DB.substages.find(s=>s.id==t.substageId);
-      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+t.title+'</b><br>'+ev.name+' · '+stageName(t.lane,t.stage)+(sub?' · '+sub.name:'')+'<br>'+(t.deadline?('due '+t.deadline):('week of '+fmtD(taskDate(t))))+' · '+t.status));
+      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage))+(sub?' · '+esc(sub.name):'')+'<br>'+(t.deadline?('due '+t.deadline):('week of '+fmtD(taskDate(t))))+' · '+esc(t.status)));
       el.addEventListener('mouseleave',hideTip);
       el.onclick=()=>location.href='event.html?id='+ev.id;
       body.appendChild(el);});
