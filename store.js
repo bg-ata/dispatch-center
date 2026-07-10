@@ -3,6 +3,19 @@
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
 const STORE_VERSION = 19;
+/* the team's home is dispatch.renmad.com — anyone landing on the old GitHub Pages
+   address is bounced there, keeping the exact page + parameters (?id=…). The one
+   exception: unsent clock punches queued on this device stay on the OLD origin's
+   storage, so we let those flush first and redirect on the next visit instead. */
+try{
+  if(location.hostname==='bg-ata.github.io'){
+    let pend=[];try{pend=JSON.parse(localStorage.getItem('dcPendingPunches'))||[];}catch(e){}
+    if(!pend.length){
+      const p=location.pathname.replace(/^\/dispatch-center\/?/,'/');
+      location.replace('https://dispatch.renmad.com'+(p==='/'?'/':p)+location.search+location.hash);
+    }
+  }
+}catch(e){}
 /* escape any user-entered text before it goes into innerHTML — a task title,
    holiday note, report message etc. containing < > & " ' must render as text,
    never as markup (stops a "<img onerror=…>" in a title running for everyone). */
