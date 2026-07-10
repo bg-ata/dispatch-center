@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>RENMAD Dispatch Center — Events</title>
+<title>RENMAD Dispatch Center — Projects</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#ee2233;--purple:#8E5BC9;}
   *{box-sizing:border-box}
@@ -17,6 +17,9 @@
   .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   h1{margin:6px 0 0;font-size:23px;font-weight:700;color:var(--charcoal)} h1 .accent{color:var(--orange)}
   .tagline{margin:1px 0 0;font-size:12px;color:var(--muted);font-style:italic}
+  .ptabs{display:flex;gap:6px;margin:12px 0 0}
+  .ptabs button{font:inherit;font-size:13px;font-weight:600;padding:6px 18px;border:1px solid var(--line);background:#fff;border-radius:9px;color:var(--muted);cursor:pointer}
+  .ptabs button.on{background:var(--charcoal);border-color:var(--charcoal);color:#fff}
   button{font:inherit;cursor:pointer}
   .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal)}
   .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
@@ -71,8 +74,10 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>📅 Events</h1>
-  <p class="tagline">every RENMAD event on one timeline — where the magic gets orchestrated</p>
+  <h1>📅 Projects</h1>
+  <p class="tagline" id="tagline">every RENMAD event on one timeline — where the magic gets orchestrated</p>
+  <div class="ptabs"><button id="pt_renmad" class="on">RENMAD</button><button id="pt_external">Projects</button></div>
+  <div id="extBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:9px;padding:9px 13px;font-size:13px;margin:10px 0 0"></div>
   <div class="bar-top">
     <button class="btn primary" id="addBtn">+ Add event</button>
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
@@ -105,6 +110,8 @@
     <label>PM (organizer)<input type="text" id="m_pm"></label>
     <label>Lead (optional)<input type="text" id="m_lead"></label>
     <label>Salesperson<input type="text" id="m_sales"></label>
+    <label class="full" id="m_lanes_hdr" style="border-top:1px solid var(--line);padding-top:10px;margin-top:2px">Timelines this project needs</label>
+    <div class="full" id="m_lanes" style="display:flex;gap:14px;flex-wrap:wrap"></div>
   </div>
   <div class="mrow">
     <button class="btn" id="m_delete" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
@@ -112,7 +119,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=43"></script>
+<script src="store.js?v=44"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -120,21 +127,40 @@ const LINEH=15, GAP=2, TOPH=16;
 function setZoom(z){ZOOM=Math.max(0.5,Math.min(3,Math.round(z*100)/100));WEEKW=Math.round(18*ZOOM);try{localStorage.setItem('gZoom',ZOOM);}catch(e){}render();scrollToToday();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}
 const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 document.getElementById('nav').innerHTML=navBar('overview');
-let dragMk=null, dragW0=null, editingId=null;
+let dragMk=null, dragW0=null, editingId=null, modalIsExt=false;
 
-function bounds(){
+/* two tabs: RENMAD (the events machine) vs Projects (external/one-off jobs) */
+let TAB=(location.hash==='#external')?'external':'renmad';
+function tabEvents(){return DB.events.filter(e=>evKind(e)===TAB);}
+function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#external':'#renmad');}catch(e){}
+  document.getElementById('pt_renmad').classList.toggle('on',t==='renmad');
+  document.getElementById('pt_external').classList.toggle('on',t==='external');
+  document.getElementById('addBtn').textContent=(t==='external'?'+ Add project':'+ Add event');
+  document.getElementById('tagline').textContent=(t==='external'
+    ?'external & one-off jobs — each carries only the timelines it needs'
+    :'every RENMAD event on one timeline — where the magic gets orchestrated');
+  const bn=document.getElementById('extBanner');
+  if(t==='external'&&window._extColsMissing){bn.style.display='block';
+    bn.innerHTML='<b>One-time setup:</b> the database is missing the two project columns. Run the 2-line SQL (ask Claude — it pastes it in chat) in the dispatch Supabase SQL editor, then reload. Until then external projects cannot be saved.';}
+  else bn.style.display='none';
+  render();scrollToToday();
+}
+
+function bounds(list){
   let mins=[],maxs=[];
-  DB.events.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,8*7));});
+  list.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,8*7));});
   return {start:addDays(monday(new Date(Math.min(...mins.map(d=>+d)))),-4*7), end:addDays(new Date(Math.max(...maxs.map(d=>+d))),16*7)};
 }
 function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
 
 function render(){
-  const grid=document.getElementById('grid');const {start,end}=bounds();
+  const grid=document.getElementById('grid');
+  const list=tabEvents();
+  if(!list.length){grid.innerHTML='<div style="padding:26px 22px;color:var(--muted);font-size:13px">'+
+    (TAB==='external'?'No external projects yet — click <b>+ Add project</b> to create the first one, picking only the timelines it needs.':'No events yet.')+'</div>';return;}
+  const {start,end}=bounds(list);
   const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
   const todayIdx=wIdx(new Date(),start);
-  const ys=LANES.map((l,i)=>TOPH+i*(LINEH+GAP)); const bodyH=ys[ys.length-1]+LINEH+6;
-  const topH=ys[ys.length-1]+LINEH-ys[0]; // columns span ALL lanes (full week, every line)
   grid.innerHTML='';
   const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:36px"></div>';
   const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:36px';
@@ -144,8 +170,12 @@ function render(){
   if(todayIdx>=0&&todayIdx<NW){const tlab=document.createElement('div');tlab.className='todaylab';tlab.style.left=(todayIdx*WEEKW)+'px';tlab.textContent='TODAY';hb.appendChild(tlab);}
   hrow.appendChild(hb);grid.appendChild(hrow);
 
-  DB.events.forEach(ev=>{
+  list.forEach(ev=>{
     const em=monday(ymd(ev.date)), evIdx=wIdx(em,start);
+    const isExt=(evKind(ev)==='external');
+    const evLs=evLanes(ev); // external projects carry only the lanes they need
+    const ys=evLs.map((l,i)=>TOPH+i*(LINEH+GAP)); const bodyH=ys[ys.length-1]+LINEH+6;
+    const topH=ys[ys.length-1]+LINEH-ys[0]; // columns span this event's lanes
     const row=document.createElement('div');row.className='row';
     const head=document.createElement('div');head.className='head';
     head.innerHTML='<button class="edit" title="edit">✎</button>'+
@@ -163,8 +193,8 @@ function render(){
     const btnLayer=document.createElement('div');btnLayer.style.cssText='position:absolute;inset:0;z-index:9;pointer-events:none';body.appendChild(btnLayer);
     function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+LINEH+'px;pointer-events:auto';b.title=(delta>0?'add a week to ':'remove a week from ')+stageName(lane,key);b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);DB.save();render();};btnLayer.appendChild(b);}
 
-    // 4 lanes of resizable stage bars
-    LANES.forEach((lane,i)=>{
+    // this event's lanes of resizable stage bars
+    evLs.forEach((lane,i)=>{
       const y=ys[i];
       const lt=document.createElement('div');lt.className='ltag';lt.style.top=(y+3)+'px';lt.textContent=LANE_LETTER[lane];body.appendChild(lt);
       layLane(ev,lane,evIdx).forEach(bar=>{
@@ -191,14 +221,16 @@ function render(){
       const xb=chip.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();render();};
       body.appendChild(chip);
     }
-    column(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
-    column(ev.milestones.launch,'L','var(--red)','mile','launch');
-    if(ev.alerts.LD.on) column(ev.alerts.LD.off,'LD','var(--purple)','ld','LD');
-    column(ev.alerts.SE.off,'SE','var(--purple)','alert','SE');
-    column(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
-    column(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
+    if(!isExt){ // milestone + discount-week machinery is RENMAD-only
+      column(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
+      column(ev.milestones.launch,'L','var(--red)','mile','launch');
+      if(ev.alerts.LD.on) column(ev.alerts.LD.off,'LD','var(--purple)','ld','LD');
+      column(ev.alerts.SE.off,'SE','var(--purple)','alert','SE');
+      column(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
+      column(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
+    }
     column(0,'W0','#111','w0','');
-    if(!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+ys[0]+'px';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};body.appendChild(a);}
+    if(!isExt&&!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+ys[0]+'px';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};body.appendChild(a);}
 
     body.addEventListener('mousemove',e=>{if(dragMk||dragW0)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'W0':diff>0?('W-'+diff):('+'+(-diff)))+' · wk of '+fmtD(wm));});
     body.addEventListener('mouseleave',hideTip);
@@ -219,27 +251,44 @@ document.addEventListener('mouseup',()=>{
 
 const modal=document.getElementById('modal');
 function fillSel(id,obj,sel){const s=document.getElementById(id);s.innerHTML='';Object.keys(obj).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;if(k===sel)o.selected=true;s.appendChild(o);});}
-function openModal(id){editingId=id;const ev=id?DB.event(id):{name:'',topic:'Renewables / AI',pm:'',lead:'',sales:'',city:'',country:'Spain',date:'2027-09-01',days:2};
-  document.getElementById('m_title').textContent=id?'Edit event':'Add event';
+function openModal(id){editingId=id;
+  modalIsExt=id?(evKind(DB.event(id))==='external'):(TAB==='external');
+  const defDate=modalIsExt?toISO(addDays(monday(new Date()),8*7)):'2027-09-01';
+  const ev=id?DB.event(id):{name:'',topic:'Renewables / AI',pm:'',lead:'',sales:'',city:'',country:'Spain',date:defDate,days:2};
+  document.getElementById('m_title').textContent=(id?'Edit ':'Add ')+(modalIsExt?'project':'event');
   m_name.value=ev.name;fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
   m_days.value=ev.days||2;m_date.value=ev.date;m_city.value=ev.city||'';m_pm.value=ev.pm||'';m_lead.value=ev.lead||'';m_sales.value=ev.sales||'';
+  /* external projects pick their timelines; RENMAD events always carry all four */
+  const lw=document.getElementById('m_lanes'),lh=document.getElementById('m_lanes_hdr');
+  lw.style.display=lh.style.display=modalIsExt?'':'none';
+  if(modalIsExt){const cur=id?evLanes(DB.event(id)):['project'];
+    lw.innerHTML=LANES.map(l=>'<label style="display:flex;flex-direction:row;align-items:center;gap:5px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" class="m_lane" value="'+l+'"'+(cur.indexOf(l)>=0?' checked':'')+'> '+LANE_LABEL[l]+'</label>').join('');}
   document.getElementById('m_delete').style.display=id?'inline-block':'none';modal.classList.add('on');}
 document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
-document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New event',topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
+  if(modalIsExt){
+    const sel=Array.prototype.slice.call(document.querySelectorAll('.m_lane:checked')).map(c=>c.value);
+    if(!sel.length){alert('Pick at least one timeline — a project needs somewhere to live.');return;}
+    if(window._extColsMissing){alert('One-time setup needed first — see the banner on the Projects tab.');return;}
+    d.kind='external';d.lanes=sel;
+  }
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
   else{const id=DB.newId();const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
     DB.events.push({id,...d,milestones:{goNoGo:24,launch:18},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));DB.save();modal.classList.remove('on');render();};
 
-document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_events_overview.xlsx',[{name:'Events',rows:DB.events.map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales}))}]);
+document.getElementById('xlsBtn').onclick=()=>exportXLSX(TAB==='external'?'External_projects_overview.xlsx':'RENMAD_events_overview.xlsx',
+  [{name:TAB==='external'?'Projects':'Events',rows:tabEvents().map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales,Timelines:evLanes(e).map(l=>LANE_LABEL[l]).join(', ')}))}]);
 document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
 document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
 
 function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const {start}=bounds();const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
-boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();scrollToToday();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';});
+document.getElementById('pt_renmad').onclick=()=>switchTab('renmad');
+document.getElementById('pt_external').onclick=()=>switchTab('external');
+boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));switchTab(TAB);const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';});
 window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
 </script>
 </body>

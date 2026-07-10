@@ -30,6 +30,11 @@ const POST_PM=1, POST_SALES=2;
    Pastel palette so it never clashes with the bright brand orange. */
 const LANES=['project','marketing','sales','logistics'];
 const LANE_LABEL={project:'PM / Project',marketing:'Marketing',sales:'Sales (SPX)',logistics:'Logistics'};
+/* Projects split: kind 'renmad' (default, the events machine: milestones + discount
+   weeks + all 4 lanes) vs 'external' (one-off/various jobs: only the timelines the
+   job needs — ev.lanes = subset of LANES; null/empty = all). */
+function evKind(ev){return ev&&ev.kind==='external'?'external':'renmad';}
+function evLanes(ev){const ls=ev&&ev.lanes;return (Array.isArray(ls)&&ls.length)?LANES.filter(l=>ls.indexOf(l)>=0):LANES.slice();}
 const RED='#ee2233';        // bright red — notable dates / milestones (must not be missed)
 const ALERTCOL='#C9B3E8';   // pastel purple — sales alert weeks
 /* each stage has a default duration d (weeks) + phase (pre-event / event-week / post-event).
@@ -56,7 +61,9 @@ function stageName(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);ret
 function stageDef(lane,key){return (STAGES[lane]||[]).find(s=>s.key===key);}
 /* shared timeline layout — both overview & event page call this, so they always mirror */
 function laneTotalPre(ev,lane){return STAGES[lane].filter(s=>s.phase==='pre').reduce((a,s)=>a+(ev.dur[lane][s.key]||s.d),0);}
-function preExtent(ev){let m=0;LANES.forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
+function preExtent(ev){let m=0;evLanes(ev).forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));
+  if(evKind(ev)==='external')return Math.max(m,4); // external: no milestone/discount machinery — runway = its own lanes
+  return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
 function layLane(ev,lane,evIdx){
   const sts=STAGES[lane],dur=ev.dur[lane];const bars=[];
   const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
@@ -71,7 +78,7 @@ function evIndex(ev){const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)
 /* ensure every substage has a week + span default (so ALL pages — event, person — can place tasks in time) */
 function ensureSubDefaults(){let dirty=false;
   DB.events.forEach(ev=>{const evIdx=evIndex(ev);
-    LANES.forEach(lane=>{const bars=layLane(ev,lane,evIdx);const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane);
+    evLanes(ev).forEach(lane=>{const bars=layLane(ev,lane,evIdx);const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane);
       const byStage={};subs.forEach(s=>{(byStage[s.stage]=byStage[s.stage]||[]).push(s);});
       Object.keys(byStage).forEach(k=>{const bar=bars.find(b=>b.s.key===k);if(!bar)return;const list=byStage[k];
         list.forEach((s,i)=>{if(s.week==null){const col=Math.round(bar.x+(i+0.5)*bar.w/list.length-0.5);s.week=evIdx-col;dirty=true;}});});
@@ -594,7 +601,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos'};
 const COLS={
-  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
+  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
   people:['id','name','role','access','email','finance','hr','billing','holidayDays','photo','phone'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
@@ -627,6 +634,13 @@ const DB={
       const bad=res.find(r=>r.error);
       if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
       this.data={};keys.forEach((k,i)=>{this.data[k]=res[i].data||[];});
+      /* Projects split is tolerant: until the 2-line SQL adds kind/lanes to dc_events,
+         never push those columns (PostgREST rejects unknowns) and flag the UI */
+      window._extColsMissing=false;
+      if(this.data.events.length && !('kind' in this.data.events[0])){
+        window._extColsMissing=true;
+        ['kind','lanes'].forEach(c=>{const i2=COLS.events.indexOf(c);if(i2>=0)COLS.events.splice(i2,1);});
+      }
       /* finance is tolerant: the app runs fine before dispatch_finance.sql exists */
       this.data.finance=[];_finReady=false;
       try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
@@ -984,7 +998,7 @@ async function dcToken(){
 }
 function navBar(active){
   return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
-         '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Events</a>'+
+         '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
          '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Invoicing">💶 Money</a>'+
          '<a href="facturacion.html" id="nav-fact" style="white-space:nowrap;display:none" class="'+(active==='fact'?'on':'')+'" title="Invoicing engine — billing only">🧾 Invoicing</a>'+

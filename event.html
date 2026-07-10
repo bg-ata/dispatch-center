@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=43"></script>
+<script src="store.js?v=44"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -135,7 +135,7 @@ function addSubstage(lane){
 function renderAddBar(){const bar=document.getElementById('addbar');if(!bar)return;
   if(!DB.canManage()){bar.style.display='none';return;} // members: timeline is read-only (server enforces it too)
   bar.innerHTML='<span style="font-size:12px;color:var(--muted);font-weight:600">＋ Add substage to:</span>';
-  LANES.forEach(lane=>{const b=document.createElement('button');b.className='btn sm';b.textContent=LANE_LABEL[lane]||lane;b.onclick=()=>addSubstage(lane);bar.appendChild(b);});
+  evLanes(ev).forEach(lane=>{const b=document.createElement('button');b.className='btn sm';b.textContent=LANE_LABEL[lane]||lane;b.onclick=()=>addSubstage(lane);bar.appendChild(b);});
 }
 
 function scrollToToday(){const wrap=document.querySelector('.tlwrap');if(!wrap)return;
@@ -152,11 +152,11 @@ function render(){
   if(!ev.team)ev.team=[];
   document.getElementById('content').innerHTML=
     '<h1><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span>'+esc(ev.name)+'</h1>'+
-    '<p class="sub">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>'+
+    '<p class="sub">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html'+(evKind(ev)==='external'?'#external':'')+'">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>'+
     (function(){const f=DB.financeFor(ev.id);if(!f)return'';const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});const r=finResult(fx);
       return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
       (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
-    '<div class="etabs"><button class="on" data-et="time">Timeline</button><button data-et="eur">€ Results</button><button data-et="imp">Impact</button><button data-et="del">Delegates</button></div>'+
+    '<div class="etabs"><button class="on" data-et="time">Timeline</button>'+(evKind(ev)!=='external'?'<button data-et="eur">€ Results</button><button data-et="imp">Impact</button><button data-et="del">Delegates</button>':'')+'</div>'+
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
@@ -381,7 +381,7 @@ function renderTimeline(){
 
   // ---- per-lane layout: stages always; the OPEN lane also unfolds its substages into
   //      as many rows as needed (accordion) so one topic gets the full space ----
-  const laneLay=LANES.map(lane=>{
+  const laneLay=evLanes(ev).map(lane=>{ // external projects: only their chosen timelines
     const bars=layLane(ev,lane,evIdx);
     const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane);
     let dirty=false;
@@ -474,12 +474,14 @@ function renderTimeline(){
     const xb=chip.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();renderTimeline();};
     tl.appendChild(chip);
   }
-  col(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
-  col(ev.milestones.launch,'L','var(--red)','mile','launch');
-  if(ev.alerts.LD.on) col(ev.alerts.LD.off,'LD','var(--purple)','ld','LD');
-  col(ev.alerts.SE.off,'SE','var(--purple)','alert','SE');
-  col(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
-  col(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
+  if(evKind(ev)!=='external'){ // milestone + discount-week machinery is RENMAD-only
+    col(ev.milestones.goNoGo,'G','var(--red)','mile','goNoGo');
+    col(ev.milestones.launch,'L','var(--red)','mile','launch');
+    if(ev.alerts.LD.on) col(ev.alerts.LD.off,'LD','var(--purple)','ld','LD');
+    col(ev.alerts.SE.off,'SE','var(--purple)','alert','SE');
+    col(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
+    col(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
+  }
   col(0,'W0','#111','w0','');
 
   // ---- left rail: clickable lane toggles (accordion) ----
