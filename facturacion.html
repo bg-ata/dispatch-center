@@ -44,21 +44,22 @@
   .stbadge{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700}
   .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}
   .del:hover{color:var(--red)}
-  #modal{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:14px 12px}
   #modal.on{display:flex}
-  #modal .card{background:#fff;border-radius:14px;padding:22px 24px;width:860px;max-width:96vw}
-  #modal h3{margin:0 0 14px;font-size:17px}
-  .frm{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}
-  .frm label{font-size:10.5px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  #modal .card{background:#fff;border-radius:14px;padding:14px 20px 16px;width:1120px;max-width:97vw}
+  #modal h3{margin:0 0 8px;font-size:16px}
+  .frm{display:grid;grid-template-columns:repeat(6,1fr);gap:5px 9px}
+  .frm label{font-size:9.5px;color:var(--muted);display:flex;flex-direction:column;gap:2px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden}
   .frm label.w2{grid-column:span 2}
+  .frm label.w3{grid-column:span 3}
   .frm label.w4{grid-column:1/-1}
-  .frm input,.frm select{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .frm input,.frm select{font:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;color:var(--ink);min-width:0}
   .frm input[readonly]{background:#f6f5f1;color:var(--muted)}
-  .mrow{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;align-items:center}
+  .mrow{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;align-items:center}
   .amsg{margin-right:auto;font-size:12px;min-height:15px}
-  .alloctbl td,.alloctbl th{padding:4px 6px}
-  .alloctbl input,.alloctbl select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;width:100%}
-  .sect{grid-column:1/-1;border-top:1px solid var(--line);padding-top:8px;margin-top:2px;font-size:11px;font-weight:700;color:var(--charcoal);text-transform:uppercase;letter-spacing:.5px}
+  .alloctbl td,.alloctbl th{padding:2px 5px}
+  .alloctbl input,.alloctbl select{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:100%}
+  .sect{grid-column:1/-1;border-top:1px solid var(--line);padding-top:5px;margin-top:1px;font-size:10.5px;font-weight:700;color:var(--charcoal);text-transform:uppercase;letter-spacing:.5px}
 </style>
 </head>
 <body>
@@ -238,9 +239,9 @@ function openModal(inv){
     '<label class="w2">Invoice nº *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R…"></label>'+
     '<label>Date *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
     '<label>Due date<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
-    '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
     '<label>Accounting code<input id="m_cod" list="codlist" value="'+esc(i.codigo_contable||'')+'"></label>'+
     '<label>Entered by<input id="m_by" value="'+esc(i.entered_by||actorName())+'"></label>'+
+    '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
     '<label>Product *<select id="m_prod"><option value="">—</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(i.producto===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select></label>'+
     '<label>Quantity<input id="m_cant" type="number" step="any" min="0" value="'+(i.cantidad!=null?i.cantidad:'')+'"></label>'+
     '<label id="l_pase" style="display:none">Pass type<select id="m_pase"><option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(i.tipo_pase===t?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+' passes)</option>').join('')+'</select></label>'+
@@ -252,10 +253,9 @@ function openModal(inv){
     '<label>VAT %<select id="m_iva"><option value="21" '+(i.iva_pct==21?'selected':'')+'>21%</option><option value="0" '+(i.iva_pct==0?'selected':'')+'>0%</option></select></label>'+
     '<label>VAT €<input id="m_ivai" readonly value="'+(i.iva_importe!=null?i.iva_importe:'')+'"></label>'+
     '<label>Invoice total €<input id="m_tot" readonly value="'+(i.total_factura!=null?i.total_factura:'')+'"></label>'+
+    '<label>Discount % (info)<input id="m_dto" type="number" step="any" value="'+(i.descuento_pct!=null?i.descuento_pct:'')+'"></label>'+
+    '<label style="flex-direction:row;align-items:center;gap:6px;text-transform:none;align-self:end;white-space:normal"><input id="m_usd" type="checkbox" style="width:auto" '+(i.en_usd?'checked':'')+'> invoiced in USD</label>'+
     '<label id="l_motivo" style="display:none">Reason for 0% VAT<select id="m_motivo"><option value="">—</option>'+IVA_MOTIVOS.map(m=>'<option '+(i.iva_motivo===m?'selected':'')+'>'+m+'</option>').join('')+'</select></label>'+
-    '<label>Discount % <span style="text-transform:none">(informational)</span><input id="m_dto" type="number" step="any" value="'+(i.descuento_pct!=null?i.descuento_pct:'')+'"></label>'+
-    '<label style="flex-direction:row;align-items:center;gap:6px;text-transform:none;align-self:end"><input id="m_usd" type="checkbox" style="width:auto" '+(i.en_usd?'checked':'')+'> invoiced in USD</label>'+
-    '<span></span>'+
     '<label class="usdf" style="display:none">USD amount $<input id="m_usdi" type="number" step="any" value="'+(i.importe_usd!=null?i.importe_usd:'')+'"></label>'+
     '<label class="usdf" style="display:none">Exchange rate<input id="m_rate" type="number" step="any" value="'+(i.usd_rate!=null?i.usd_rate:'')+'"></label>'+
     '<label class="usdf" style="display:none">Rate date<input id="m_rated" type="date" value="'+(i.usd_rate_date||'')+'"></label>'+
@@ -263,11 +263,11 @@ function openModal(inv){
     '<label>Status<select id="m_st">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
     '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono','na'].map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
     '<label>Paid on<input id="m_fc" type="date" value="'+(i.fecha_cobro||'')+'"></label>'+
-    '<label>Amount collected € <span style="text-transform:none">(partial ok)</span><input id="m_ic" type="number" step="any" value="'+(i.importe_cobrado!=null?i.importe_cobrado:'')+'"></label>'+
+    '<label>Collected € (partial ok)<input id="m_ic" type="number" step="any" value="'+(i.importe_cobrado!=null?i.importe_cobrado:'')+'"></label>'+
     '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
     '<label class="w4">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
     '</div>'+
-    '<div class="sect" style="margin-top:12px">Event split (analítica) <span class="hint" style="text-transform:none;font-weight:400">(one invoice can be shared across several events; the passes create the delegate seats)</span></div>'+
+    '<div class="sect" style="margin-top:8px">Event split (analítica) <span class="hint" style="text-transform:none;font-weight:400">(one invoice can be shared across several events; the passes create the delegate seats)</span></div>'+
     '<table class="alloctbl" id="atbl"></table>'+
     '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ event</button> <span id="asum" class="hint"></span></div>'+
     '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
