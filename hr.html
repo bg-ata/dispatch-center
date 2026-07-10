@@ -100,7 +100,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=40"></script>
+<script src="store.js?v=42"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -139,7 +139,7 @@ function reqAlarms(r){ // ⚠ strings for one request (used at request time AND 
   if(r.type==='remote'){
     const yr=r.dateFrom.slice(0,4);
     const used=remoteDaysUsed(r.personId,yr)+(r.id?0:(+r.workDays||0));
-    if(used>REMOTE_MAX_DAYS)alarms.push('Remote quota: '+used+' of '+REMOTE_MAX_DAYS+' working days in '+yr+' — over the 4-week limit.');
+    if(used>REMOTE_MAX_DAYS)alarms.push('Office days: '+used+' of '+REMOTE_MAX_DAYS+' in '+yr+' — over the 8-day yearly limit.');
     return alarms;
   }
   DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId!=r.personId
@@ -177,10 +177,10 @@ function renderHolidays(){
     '<div id="decidebox"></div>'+
     '<div class="two">'+
     '<div class="panel"><h3>Request time off</h3>'+
-    '<p class="hint">Your request goes to <span id="chainTxt"></span>. Remote working: up to 4 weeks ('+REMOTE_MAX_DAYS+' working days) per year. Approved holidays can be changed — use “Request change” next to them.</p>'+
+    '<p class="hint">Your request goes to <span id="chainTxt"></span>. Office days: up to '+REMOTE_MAX_DAYS+' days per year. Approved holidays can be changed — use “Request change” next to them.</p>'+
     '<div id="chgBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12.5px;padding:8px 12px;border-radius:8px;margin-bottom:10px"></div>'+
     '<div class="frm">'+
-    '<label>Type<select id="r_type"><option value="vacation">Holidays</option><option value="remote">Remote working</option></select></label>'+
+    '<label>Type<select id="r_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
     '<label>From<input type="date" id="r_from"></label>'+
     '<label>To (inclusive)<input type="date" id="r_to"></label>'+
     '<div class="days" id="r_days">&nbsp;</div><div class="flags" id="r_flags"></div>'+
@@ -194,7 +194,7 @@ function renderHolidays(){
       '<b style="color:#D32230">Behind</b> · <b style="color:#C77800">a bit behind</b> · <b style="color:#3E8C28">on track</b> · <span style="color:#7c7c78">plenty of time</span> early in the year. Carry-over days from last year are the only ones with a hard deadline — <b>use before 28 Feb</b> (flagged under the name). Most-behind first.</p><div id="balBox"></div></div>'+
       '<div class="panel"><h3>Load past holidays (HR)</h3><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
       '<div class="padd"><label>Person<select id="b_who"></select></label>'+
-      '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Remote</option></select></label>'+
+      '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
       '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
       '<label>Note<input id="b_note" placeholder="loaded from record" style="width:160px"></label>'+
       '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
@@ -219,7 +219,7 @@ function renderHolidays(){
     '<div class="cal" id="cal"></div>'+
     '<div class="legend"><span class="sw" style="background:var(--green)"></span>holidays'+
     '<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending'+
-    '<span class="sw" style="background:var(--blue)"></span>remote'+
+    '<span class="sw" style="background:var(--blue)"></span>office day'+
     '<span class="sw" style="background:var(--amber)"></span>sick / parental leave'+
     '<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday'+
     '<span class="sw" style="background:#f2f0ea"></span>weekend</div>'+
@@ -240,7 +240,7 @@ function renderDecide(){
     const flags=reqAlarms(r);
     const adv=changeAdvice(r);
     h+='<tr><td><b>'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span></td>'+
-      '<td>'+(r.type==='remote'?'Remote':'Holidays')+'</td>'+
+      '<td>'+(r.type==='remote'?'Office day':'Holidays')+'</td>'+
       '<td>'+fmtRange(r)+'</td><td>'+(r.workDays||'?')+'</td><td>'+esc(r.note||'')+'</td>'+
       '<td>'+(adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
       (flags.length?flags.map(f=>'<div class="flag">⚠ '+f+'</div>').join(''):(adv?'':'<span style="color:var(--muted)">none</span>'))+'</td>'+
@@ -299,7 +299,7 @@ function startChange(id){
   changeOf=id;
   const ban=document.getElementById('chgBanner');
   ban.style.display='block';
-  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'remote period':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
+  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'office days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
   document.getElementById('chgOff').onclick=e=>{e.preventDefault();changeOf=null;ban.style.display='none';};
   const ty=document.getElementById('r_type');ty.value=o.type||'vacation';ty.disabled=true;
   ban.scrollIntoView({block:'center',behavior:'smooth'});
@@ -322,13 +322,13 @@ function wireForm(){
     const wd=workingDaysBetween(f.value,t.value);
     if(wd<=0){alert('That range has no working days (weekend / bank holidays).');return;}
     if(ty.value==='remote'&&remoteDaysUsed(me.id,f.value.slice(0,4))+wd>REMOTE_MAX_DAYS){
-      alert('That would exceed the remote-working limit of 4 weeks ('+REMOTE_MAX_DAYS+' working days) this year.');return;}
+      alert('That would exceed the office-days limit of '+REMOTE_MAX_DAYS+' days this year.');return;}
     const chain=holChain(me);
     const orig=changeOf?DB.holidays.find(x=>x.id==changeOf):null;
     DB.holidays.push({id:DB.newId(),personId:me.id,dateFrom:f.value,dateTo:t.value,workDays:wd,type:ty.value,
       replaces:orig?orig.id:null,
       note:document.getElementById('r_note').value.trim(),status:chain[0].key,
-      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'remote working':'holidays'))}]});
+      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'office days':'holidays'))}]});
     DB.save();
     changeOf=null;document.getElementById('chgBanner').style.display='none';ty.disabled=false;
     f.value='';t.value='';document.getElementById('r_note').value='';upd();
@@ -358,7 +358,7 @@ function renderBackfill(){
   const xh=document.getElementById('x_hol');
   if(xh){
     const opts=DB.holidays.filter(h=>h.status==='approved').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+DB.personName(h.personId)+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', remote':'')+')</option>').join(''):'<option value="">— none approved —</option>';
+    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+DB.personName(h.personId)+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', office':'')+')</option>').join(''):'<option value="">— none approved —</option>';
     document.getElementById('x_go').onclick=()=>{
       const h=DB.holidays.find(x=>x.id==xh.value);if(!h)return;
       const reason=prompt('Reason for cancelling '+DB.personName(h.personId)+'’s '+fmtRange(h)+' (they will see it):');
@@ -453,7 +453,7 @@ function renderCal(){
   const people=DB.people.filter(p=>!isTeamAccount(p)).slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
   const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
   document.getElementById('calHint').textContent=
-    'Everyone can see who’s on holiday or working remotely. Green = approved holidays, striped = pending, blue = remote working.'+
+    'Everyone can see who’s on holiday or in the office. Green = approved holidays, striped = pending, blue = office days.'+
     ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'');
   const y=calM.getFullYear(),m=calM.getMonth();
   document.getElementById('c_lab').textContent=['January','February','March','April','May','June','July','August','September','October','November','December'][m]+' '+y;

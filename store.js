@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 18;
+const STORE_VERSION = 19;
 /* escape any user-entered text before it goes into innerHTML — a task title,
    holiday note, report message etc. containing < > & " ' must render as text,
    never as markup (stops a "<img onerror=…>" in a title running for everyone). */
@@ -151,8 +151,8 @@ function workingDaysBetween(fromISO,toISO_){
    23-day holiday allowance. 'adjust' = a signed balance change (carry-over / borrow). */
 const OFF_TYPES=['vacation','sick','maternity','paternity'];
 const LEAVE_TYPES=['sick','maternity','paternity'];
-const TYPE_LABEL={vacation:'Holiday',remote:'Remote working',sick:'Sick leave',maternity:'Maternity leave',paternity:'Paternity leave',adjust:'Balance adjustment'};
-const TYPE_EMOJI={vacation:'🌴',remote:'🏠',sick:'🤒',maternity:'👶',paternity:'👶',adjust:'±'};
+const TYPE_LABEL={vacation:'Holiday',remote:'Office day',sick:'Sick leave',maternity:'Maternity leave',paternity:'Paternity leave',adjust:'Balance adjustment'};
+const TYPE_EMOJI={vacation:'🌴',remote:'🏢',sick:'🤒',maternity:'👶',paternity:'👶',adjust:'±'};
 function personDaysOfTypes(personId,fromISO,toISO_,types){ // approved working days of given types in a range
   const out=[];
   DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&types.includes(h.type||'vacation')).forEach(h=>{
@@ -281,8 +281,8 @@ function holNextStatus(req){
   return (i<0||i===chain.length-1)?'approved':chain[i+1];
 }
 function myPendingApprovals(){return DB.hrReady()?DB.holidays.filter(holActsOnMe).length:0;}
-/* remote working: up to 4 weeks (20 working days) per person per year */
-const REMOTE_MAX_DAYS=20;
+/* office days: up to 8 office days per person per year — logged via the 'remote' entry type */
+const REMOTE_MAX_DAYS=8;
 function remoteDaysUsed(personId,year){
   return DB.holidays.filter(h=>h.personId==personId&&h.type==='remote'&&h.status!=='denied'&&(h.dateFrom||'').slice(0,4)===String(year))
     .reduce((a,h)=>a+(+h.workDays||0),0);
@@ -581,7 +581,7 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -592,10 +592,10 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers'],
-  people:['id','name','role','access','email','finance','hr','holidayDays','photo','phone'],
+  people:['id','name','role','access','email','finance','hr','billing','holidayDays','photo','phone'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -606,8 +606,14 @@ const COLS={
   timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
   tcreports:['id','personId','day','entryId','thread','status'],
   eventaway:['id','personId','dateFrom','dateTo','title','note'], // "at an event" — away from the office
+  /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
+     row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
+  invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by'],
+  invalloc:['id','invoice_id','eventId','amount','passes'],
+  delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
+  codigos:['id','codigo','descripcion'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -664,6 +670,19 @@ const DB={
       try{const er=await sb.from('dc_eventaway').select('*').eq('deleted',false).order('id');
         if(er.error)throw er.error;this.data.eventaway=er.data||[];_eventReady=true;
       }catch(e){console.warn('event-away module not ready:',e.message||e);}
+      /* Facturación (invoices + allocations + delegates + código lookup): tolerant —
+         the app runs fine before dispatch_facturacion.sql is applied */
+      this.data.invoices=[];this.data.invalloc=[];this.data.delegates=[];this.data.codigos=[];_billReady=false;
+      try{
+        const [iv,al,dg,cg]=await Promise.all([
+          sb.from('dc_invoices').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_invoice_alloc').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_delegates').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_codigos').select('*').eq('deleted',false).order('id')]);
+        if(iv.error)throw iv.error;if(al.error)throw al.error;if(dg.error)throw dg.error;if(cg.error)throw cg.error;
+        this.data.invoices=iv.data||[];this.data.invalloc=al.data||[];this.data.delegates=dg.data||[];this.data.codigos=cg.data||[];
+        _billReady=true;
+      }catch(e){console.warn('facturación module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -691,6 +710,7 @@ const DB={
         if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)continue; // HR tables not created yet
         if((k==='timeclock'||k==='tcreports')&&!_tcReady)continue; // time clock tables not created yet
         if(k==='eventaway'&&!_eventReady)continue; // event-away table not created yet
+        if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)continue; // facturación tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -762,6 +782,31 @@ const DB={
   tcReady(){return !USE_SUPABASE||_tcReady;},
   get eventaway(){return this.data.eventaway||[];},
   eventReady(){return !USE_SUPABASE||_eventReady;},
+  /* ---- Facturación (billing engine) ----
+     The billing key space is dc_finance.id (event-edition money row): allocations and
+     delegates carry "eventId" = dc_finance.id. Event pages resolve it via financeFor(). */
+  get invoices(){return this.data.invoices||[];},
+  get invoiceAllocs(){return this.data.invalloc||[];},
+  get delegates(){return this.data.delegates||[];},
+  get codigos(){return this.data.codigos||[];},
+  billReady(){return !USE_SUPABASE||_billReady;},
+  /* billing editor = the external invoicing freelancer (billing tick, provisioned by Belén)
+     or an admin. Mirrors dc_can_bill() in SQL. Separate from the finance flag — Jesús
+     keeps editing the € figures exactly as today. */
+  canBill(){return !!(this.currentUser&&(this.currentUser.billing||this.currentUser.access==='admin'));},
+  invoice(id){return this.invoices.find(i=>i.id==id);},
+  allocsFor(invoiceId){return this.invoiceAllocs.filter(a=>a.invoice_id==invoiceId);},
+  invoicesFor(finId){const ids={};this.invoiceAllocs.forEach(a=>{if(a.eventId==finId)ids[a.invoice_id]=1;});return this.invoices.filter(i=>ids[i.id]);},
+  delegatesFor(finId){return this.delegates.filter(d=>d.eventId==finId);},
+  /* the event's facturado = SUM of its invoice allocations (paid + unpaid; cancelled
+     invoices excluded). null when the event has no lines yet → caller falls back. */
+  invoicedTotal(finId){let sum=0,any=false;
+    this.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=this.invoice(a.invoice_id);
+      if(!inv||inv.status==='cancelado')return;any=true;sum+=(+a.amount||0);});
+    return any?sum:null;},
+  /* what the money views show: invoice-line total when lines exist, else the typed
+     dc_finance.invoiced (fallback for past events / before back-fill) */
+  finInvoiced(f){if(!f)return null;const t=this.billReady()?this.invoicedTotal(f.id):null;return t==null?f.invoiced:t;},
   /* HR admin = Belén + the HR tick (Jesús). Deliberately NOT every events admin. */
   isHRAdmin(){const u=this.currentUser;return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
@@ -775,6 +820,22 @@ const DB={
   canEditStatus(t){if(this.canManage())return true;return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
 };
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
+/* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,
+   red = linked invoice not paid, white = paid (or no invoice: speakers/freebies/manual). */
+function delegateState(d){
+  if(!((d.name||'').trim()))return {key:'unnamed',bg:'#FFF3C4',label:'pass reserved — delegate name missing'};
+  if(d.invoice_id){const inv=DB.invoice(d.invoice_id);
+    if(inv&&inv.status==='cancelado')return {key:'cancelled',bg:'#F8D7D7',label:'invoice CANCELLED'};
+    if(inv&&inv.status!=='pagado')return {key:'unpaid',bg:'#F8D7D7',label:'invoice not paid yet'};}
+  return {key:'ok',bg:'#fff',label:''};
+}
+const PRODUCTOS=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones'];
+const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Abono',comisiones:'Comisiones',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Grabaciones'};
+const TIPO_PASES={single:1,double:2,triple:3,quad:4};
+const INV_STATUS={pagado:'Pagado',no_pagado:'No pagado',cancelado:'Cancelado',abono:'Abono'};
+const IVA_MOTIVOS=['exento','no sujeto','inversión sujeto pasivo','exportación'];
+/* label used by the Facturación event picker & delegate lists: the dc_finance row */
+function finLabel(f){return (f.name||'?')+' '+(f.year||'')+(f.city?' · '+f.city:'');}
 
 /* ---- realtime: colleagues' edits appear without reloading ---- */
 function subscribeRealtime(){
@@ -788,6 +849,7 @@ function subscribeRealtime(){
       if(k==='timeclock')return; // append-only, reloaded on demand
       if(k==='tcreports'&&!_tcReady)return;
       if(k==='eventaway'&&!_eventReady)return;
+      if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -858,6 +920,7 @@ async function boot(renderFn){
   }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
+  try{const nf=document.getElementById('nav-fact');if(nf&&DB.canBill())nf.style.display='';}catch(e){} // Facturación tab: billing editor + admin only
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
   try{renderPunchBanner();flushPendingPunches();}catch(e){} // recover punches that failed to save last time
@@ -923,7 +986,8 @@ function navBar(active){
   return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Events</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
-         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'">💶 Money</a>'+
+         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Facturación">💶 Money</a>'+
+         '<a href="facturacion.html" id="nav-fact" style="white-space:nowrap;display:none" class="'+(active==='fact'?'on':'')+'" title="Invoicing engine — billing only">🧾 Facturación</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+

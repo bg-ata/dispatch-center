@@ -98,11 +98,11 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=40"></script>
+<script src="store.js?v=42"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
-let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null, expandedLane=null;
+let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null, expandedLane=null, curTab='time', delFilter='all';
 let ZOOM=(parseFloat(localStorage.getItem('evZoom'))||1);
 let WEEKW=Math.round(55*ZOOM), WD=WEEKW/5;
 const TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
@@ -153,10 +153,10 @@ function render(){
   document.getElementById('content').innerHTML=
     '<h1><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span>'+esc(ev.name)+'</h1>'+
     '<p class="sub">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>'+
-    (function(){const f=DB.financeFor(ev.id);if(!f)return'';const r=finResult(f);
-      return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(f.invoiced)+
-      (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(f))+'</a></p>';})()+
-    '<div class="etabs"><button class="on" data-et="time">Timeline</button><button data-et="eur">€ Results</button><button data-et="imp">Impact</button></div>'+
+    (function(){const f=DB.financeFor(ev.id);if(!f)return'';const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});const r=finResult(fx);
+      return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
+      (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
+    '<div class="etabs"><button class="on" data-et="time">Timeline</button><button data-et="eur">€ Results</button><button data-et="imp">Impact</button><button data-et="del">Delegates</button></div>'+
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
@@ -165,18 +165,23 @@ function render(){
       '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
       '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
-    '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div>';
+    '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>';
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
+    curTab=b.dataset.et;
     document.querySelectorAll('[data-et]').forEach(x=>x.classList.toggle('on',x===b));
     document.getElementById('sec-time').style.display=b.dataset.et==='time'?'':'none';
     document.getElementById('sec-eur').style.display=b.dataset.et==='eur'?'':'none';
     document.getElementById('sec-imp').style.display=b.dataset.et==='imp'?'':'none';
+    document.getElementById('sec-del').style.display=b.dataset.et==='del'?'':'none';
     if(b.dataset.et==='eur')renderEuroTab();
     if(b.dataset.et==='imp')renderImpactTab();
+    if(b.dataset.et==='del')renderDelegatesTab();
   });
   renderTeam(); renderAddBar(); renderTimeline(); renderTasks(); wire();
   document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
+  // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
+  if(curTab!=='time'){const b=document.querySelector('[data-et="'+curTab+'"]');if(b)b.click();}
 }
 
 /* ---- € Results tab: this event's finance summary + weekly money ---- */
@@ -186,7 +191,7 @@ function famKey(n){return (n||'').replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim();}
 function renderEuroTab(){
   const S=document.getElementById('sec-eur');
   const f=DB.financeFor(ev.id),rows=evWeekly();
-  let target=f&&f.target, stretch=f&&f.stretch, soFar=f&&f.invoiced;
+  let target=f&&f.target, stretch=f&&f.stretch, soFar=f&&DB.finInvoiced(f);
   rows.forEach(r=>{if(r.target!=null)target=+r.target;if(r.stretch!=null)stretch=+r.stretch;});
   const lastMoney=rows.filter(r=>r.soFarEur!=null&&+r.soFarEur>0).slice(-1)[0];
   if(lastMoney)soFar=+lastMoney.soFarEur;
@@ -246,6 +251,87 @@ function renderImpactTab(){
       return '<div class="fstage"><div class="fbar" style="width:'+w.toFixed(1)+'%;background:'+s.c+(dark?'':';color:#8a4a12')+'">'+nf(s.v)+'</div>'+
         '<div class="fmeta"><b>'+s.n+'</b>'+(s.conv!=null?' · <span class="fconv">'+s.conv+'</span> '+s.lab:'')+'</div></div>';
     }).join('')+'</div>').join('')+'</div></div>';
+}
+
+/* ---- Delegates tab: the per-event roster (catering base + marketing lane) ----
+   Rows live in dc_delegates keyed on the event's dc_finance row. Colour is DERIVED:
+   white = paid · red = invoice unpaid · yellow = reserved pass with no name yet.
+   Editing is gated app-side for now (SQL row-ownership hardening = follow-up):
+   billing/admin = everything · Sales = sponsor-pass names · PMs/managers = speakers
+   & freebies · Marketing = the ¿CRM? / materials ticks (on ALL rows). */
+function canEditDelegate(d){
+  if(DB.canBill())return true;
+  const me=DB.currentUser;if(!me)return false;
+  if(DB.canManage())return d.source!=='ticket'; // managers: sponsor/speaker/freebie details (ticket names = billing)
+  if(d.source==='sponsor'&&me.role==='Sales')return true;
+  if((d.source==='speaker'||d.source==='freebie')&&me.role==='PM')return true;
+  return false;
+}
+function canTickMarketing(){const me=DB.currentUser;return !!(me&&(me.role==='Marketing'||DB.canBill()||DB.canManage()));}
+function canAddSpeaker(){const me=DB.currentUser;return !!(me&&(me.role==='PM'||DB.canBill()||DB.canManage()));}
+const DELSRC={ticket:'🎟️ Ticket',sponsor:'🤝 Sponsor',speaker:'🎤 Speaker',freebie:'🎁 Freebie'};
+function renderDelegatesTab(){
+  const S=document.getElementById('sec-del');
+  if(!DB.billReady()){S.innerHTML='<div class="panel"><span class="empty">The facturación module is not active yet — run <b>dispatch_facturacion.sql</b> in Supabase, then reload.</span></div>';return;}
+  const f=DB.financeFor(ev.id);
+  if(!f){S.innerHTML='<div class="panel"><span class="empty">This event has no € Dashboard row yet — link it in 💶 Money (Add event figures) first; the delegate list hangs off that row.</span></div>';return;}
+  const all=DB.delegatesFor(f.id);
+  const list=(delFilter==='all'?all.slice():all.filter(d=>d.source===delFilter))
+    .sort((a,b)=>(a.source||'').localeCompare(b.source||'')||(a.sponsor_name||'').localeCompare(b.sponsor_name||'')||(a.id-b.id));
+  const unnamed=all.filter(d=>delegateState(d).key==='unnamed').length;
+  const unpaid=all.filter(d=>delegateState(d).key==='unpaid').length;
+  const sponsors=[...new Set(all.filter(d=>d.source==='sponsor'&&(d.sponsor_name||'').trim()).map(d=>d.sponsor_name.trim()))];
+  const mkt=canTickMarketing();
+  let h='<div class="panel"><h3>Delegate list <span class="hint">— everyone in the room: ticket buyers, sponsor passes, speakers &amp; freebies. This headcount is the catering number.</span></h3>'+
+    '<div class="cards">'+
+    '<div class="cardk"><div class="v">'+all.length+'</div><div class="k">Headcount</div></div>'+
+    Object.keys(DELSRC).map(s=>{const n=all.filter(d=>d.source===s).length;return n?'<div class="cardk"><div class="v">'+n+'</div><div class="k">'+DELSRC[s].slice(3)+'s</div></div>':'';}).join('')+
+    (unnamed?'<div class="cardk" style="background:#FFF3C4"><div class="v">'+unnamed+'</div><div class="k">Names missing</div></div>':'')+
+    (unpaid?'<div class="cardk" style="background:#F8D7D7"><div class="v">'+unpaid+'</div><div class="k">Invoice unpaid</div></div>':'')+
+    '</div>'+
+    (sponsors.length?'<p class="hint" style="margin:0 0 10px"><b>Sponsors:</b> '+sponsors.map(esc).join(' · ')+'</p>':'')+
+    '<div class="subedit"><span class="hint">Show:</span><select id="delflt">'+
+      ['all','ticket','sponsor','speaker','freebie'].map(s=>'<option value="'+s+'" '+(delFilter===s?'selected':'')+'>'+(s==='all'?'Everyone':DELSRC[s])+'</option>').join('')+'</select>'+
+    '<span class="hint" style="margin-left:auto">⬜ paid · <span style="background:#F8D7D7;padding:0 5px;border-radius:3px">invoice unpaid</span> · <span style="background:#FFF3C4;padding:0 5px;border-radius:3px">name missing</span></span></div>'+
+    '<table><tr><th>Type</th><th>Sponsor</th><th>Name</th><th>Email</th><th>Company</th><th>Job title</th><th>Vendido por</th><th title="Araceli: tagged right in the CRM">¿CRM?</th><th title="Araceli: info emails sent on payment">Materials</th><th>Notes</th><th style="width:24px"></th></tr>';
+  if(!list.length)h+='<tr><td colspan="11" class="empty">No delegates yet — ticket &amp; sponsor passes appear automatically when Facturación registers an invoice'+(canAddSpeaker()?'; speakers &amp; freebies you can add below.':'.')+'</td></tr>';
+  list.forEach(d=>{
+    const st=delegateState(d), can=canEditDelegate(d);
+    const cell=(fld,ph)=>can?('<input data-df="'+fld+'" data-id="'+d.id+'" value="'+esc(d[fld]||'')+'" placeholder="'+(ph||'')+'">'):esc(d[fld]||'');
+    const tick=fld=>'<input type="checkbox" data-dt="'+fld+'" data-id="'+d.id+'" '+(d[fld]?'checked':'')+(mkt?'':' disabled')+' style="width:auto">';
+    h+='<tr style="background:'+st.bg+'" '+(st.label?'title="'+st.label+'"':'')+'>'+
+      '<td style="white-space:nowrap">'+(DELSRC[d.source]||d.source||'')+(d.invoice_id?' <a href="facturacion.html" class="hint" title="from invoice '+esc((DB.invoice(d.invoice_id)||{}).numero_factura||'')+'">🧾</a>':'')+'</td>'+
+      '<td>'+(d.source==='sponsor'?cell('sponsor_name'):esc(d.sponsor_name||''))+'</td>'+
+      '<td>'+cell('name',st.key==='unnamed'?'name needed!':'')+'</td><td>'+cell('email')+'</td><td>'+cell('company')+'</td><td>'+cell('job_title')+'</td>'+
+      '<td>'+esc(d.seller?DB.personName(d.seller):((DB.invoice(d.invoice_id)||{}).responsable_comercial?DB.personName(DB.invoice(d.invoice_id).responsable_comercial):'—'))+'</td>'+
+      '<td style="text-align:center">'+tick('crm_tagged')+'</td><td style="text-align:center">'+tick('materials_sent')+'</td>'+
+      '<td>'+cell('notes')+'</td>'+
+      '<td>'+((can&&!d.invoice_id)?'<button class="del" data-deldel="'+d.id+'" title="Remove">×</button>':'')+'</td></tr>';
+  });
+  h+='</table>';
+  if(canAddSpeaker()){
+    const srcs=DB.canBill()?['speaker','freebie','ticket','sponsor']:['speaker','freebie'];
+    h+='<div class="subedit" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px"><b style="font-size:12px">＋ Add</b>'+
+      '<select id="nd_src">'+srcs.map(s=>'<option value="'+s+'">'+DELSRC[s]+'</option>').join('')+'</select>'+
+      '<input id="nd_name" placeholder="name" style="width:150px"><input id="nd_email" placeholder="email" style="width:170px">'+
+      '<input id="nd_co" placeholder="company" style="width:140px"><input id="nd_job" placeholder="job title" style="width:130px">'+
+      '<button class="btn sm primary" id="nd_add">Add</button></div>';
+  }
+  h+='</div>';
+  S.innerHTML=h;
+  document.getElementById('delflt').onchange=e=>{delFilter=e.target.value;renderDelegatesTab();};
+  S.querySelectorAll('[data-df]').forEach(el=>el.onchange=()=>{const d=DB.delegates.find(x=>x.id==el.dataset.id);if(!d)return;d[el.dataset.df]=el.value;DB.save();});
+  S.querySelectorAll('[data-dt]').forEach(el=>el.onchange=()=>{const d=DB.delegates.find(x=>x.id==el.dataset.id);if(!d)return;d[el.dataset.dt]=el.checked;DB.save();});
+  S.querySelectorAll('[data-deldel]').forEach(b=>b.onclick=()=>{const d=DB.delegates.find(x=>x.id==b.dataset.deldel);
+    if(!confirm('Remove '+((d&&d.name)||'this row')+' from the delegate list? (recoverable from the audit log)'))return;
+    DB.data.delegates=DB.delegates.filter(x=>x.id!=b.dataset.deldel);DB.save();renderDelegatesTab();});
+  const ad=document.getElementById('nd_add');if(ad)ad.onclick=()=>{
+    const me=DB.currentUser||{};
+    DB.delegates.push({id:DB.newId(),eventId:f.id,source:document.getElementById('nd_src').value,invoice_id:null,
+      sponsor_name:null,name:document.getElementById('nd_name').value.trim(),email:document.getElementById('nd_email').value.trim(),
+      company:document.getElementById('nd_co').value.trim(),job_title:document.getElementById('nd_job').value.trim(),
+      seller:null,crm_tagged:false,materials_sent:false,added_by:me.name||me.email||'',notes:''});
+    DB.save();renderDelegatesTab();};
 }
 
 function renderTeam(){
