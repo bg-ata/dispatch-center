@@ -105,7 +105,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Cobrado</div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Pendiente</div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Facturas <button class="btn primary sm" id="addInv">+ Nueva factura</button> <button class="btn sm" id="cfgCod">⚙ Códigos contables</button></h3>'+
+    '<div class="panel"><h3>Facturas <button class="btn primary sm" id="addInv">+ Nueva factura</button> <button class="btn sm" id="cfgCod">⚙ Códigos contables</button> <button class="btn sm" id="xls" title="Descarga las facturas con los filtros actuales + hoja de analítica">⬇ Excel</button></h3>'+
     '<div class="flt">'+
       '<select id="f_ev"><option value="all">— todos los eventos —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(flt.ev==f.id?'selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>'+
       '<select id="f_prod"><option value="all">— producto —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
@@ -121,6 +121,34 @@ function render(){
   renderTable(rows);
   document.getElementById('addInv').onclick=()=>openModal(null);
   document.getElementById('cfgCod').onclick=()=>{showCodigos=!showCodigos;render();};
+  document.getElementById('xls').onclick=()=>{
+    const list=filtered();
+    exportXLSX('RENMAD_facturas_'+todayISO()+'.xlsx',[
+      {name:'Facturas',rows:list.map(i=>({
+        'Nº factura':i.numero_factura||'',
+        'Fecha':i.fecha||'',
+        'Razón social':i.razon_social||'',
+        'Producto':PRODUCTO_LABEL[i.producto]||i.producto||'',
+        'Tipo pase':i.producto==='tickets'&&i.tipo_pase?(i.tipo_pase+((+i.pase_cantidad||0)>1?' ×'+i.pase_cantidad:'')):'',
+        'Base €':+i.importe_base||0,
+        'IVA %':i.iva_pct!=null?+i.iva_pct:'',
+        'IVA €':+i.iva_importe||0,
+        'Total €':+i.total_factura||0,
+        'Status':INV_STATUS[i.status]||i.status||'',
+        'Fecha cobro':i.fecha_cobro||'',
+        'Importe cobrado €':(i.importe_cobrado!=null&&i.importe_cobrado!=='')?+i.importe_cobrado:'',
+        'Resp. comercial':i.responsable_comercial?DB.personName(i.responsable_comercial):'',
+        'Introducido por':i.entered_by||'',
+        'Comentarios':i.comentarios||''
+      }))},
+      {name:'Analítica',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const f=finById(a.eventId);return{
+        'Nº factura':i.numero_factura||'',
+        'Evento':f?finLabel(f):('#'+a.eventId),
+        'Importe €':+a.amount||0,
+        'Pases':+a.passes||0
+      };}))}
+    ]);
+  };
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
   set('f_ev','ev');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
   const tx=document.getElementById('f_txt');tx.oninput=()=>{flt.text=tx.value;renderTable(filtered());};

@@ -292,6 +292,7 @@ function renderDelegatesTab(){
     (sponsors.length?'<p class="hint" style="margin:0 0 10px"><b>Sponsors:</b> '+sponsors.map(esc).join(' · ')+'</p>':'')+
     '<div class="subedit"><span class="hint">Show:</span><select id="delflt">'+
       ['all','ticket','sponsor','speaker','freebie'].map(s=>'<option value="'+s+'" '+(delFilter===s?'selected':'')+'>'+(s==='all'?'Everyone':DELSRC[s])+'</option>').join('')+'</select>'+
+    '<button class="btn sm" id="del_xls" title="Download the full delegate list (the catering list for the venue)">⬇ Excel</button>'+
     '<span class="hint" style="margin-left:auto">⬜ paid · <span style="background:#F8D7D7;padding:0 5px;border-radius:3px">invoice unpaid</span> · <span style="background:#FFF3C4;padding:0 5px;border-radius:3px">name missing</span></span></div>'+
     '<table><tr><th>Type</th><th>Sponsor</th><th>Name</th><th>Email</th><th>Company</th><th>Job title</th><th>Vendido por</th><th title="Araceli: tagged right in the CRM">¿CRM?</th><th title="Araceli: info emails sent on payment">Materials</th><th>Notes</th><th style="width:24px"></th></tr>';
   if(!list.length)h+='<tr><td colspan="11" class="empty">No delegates yet — ticket &amp; sponsor passes appear automatically when Facturación registers an invoice'+(canAddSpeaker()?'; speakers &amp; freebies you can add below.':'.')+'</td></tr>';
@@ -320,6 +321,24 @@ function renderDelegatesTab(){
   h+='</div>';
   S.innerHTML=h;
   document.getElementById('delflt').onchange=e=>{delFilter=e.target.value;renderDelegatesTab();};
+  document.getElementById('del_xls').onclick=()=>{
+    const rows=all.slice()
+      .sort((a,b)=>(a.source||'').localeCompare(b.source||'')||(a.sponsor_name||'').localeCompare(b.sponsor_name||'')||(a.id-b.id))
+      .map(d=>({
+        'Type':(DELSRC[d.source]||d.source||'').replace(/^[^A-Za-z]*/,''),
+        'Sponsor':d.sponsor_name||'',
+        'Name':d.name||'',
+        'Email':d.email||'',
+        'Company':d.company||'',
+        'Job title':d.job_title||'',
+        'Vendido por':d.seller?DB.personName(d.seller):((DB.invoice(d.invoice_id)||{}).responsable_comercial?DB.personName(DB.invoice(d.invoice_id).responsable_comercial):''),
+        'CRM':d.crm_tagged?'✓':'',
+        'Materials':d.materials_sent?'✓':'',
+        'Notes':d.notes||'',
+        'State':delegateState(d).key
+      }));
+    exportXLSX(ev.name.replace(/[^\w]+/g,'_')+'_delegates.xlsx',[{name:'Delegates',rows}]);
+  };
   S.querySelectorAll('[data-df]').forEach(el=>el.onchange=()=>{const d=DB.delegates.find(x=>x.id==el.dataset.id);if(!d)return;d[el.dataset.df]=el.value;DB.save();});
   S.querySelectorAll('[data-dt]').forEach(el=>el.onchange=()=>{const d=DB.delegates.find(x=>x.id==el.dataset.id);if(!d)return;d[el.dataset.dt]=el.checked;DB.save();});
   S.querySelectorAll('[data-deldel]').forEach(b=>b.onclick=()=>{const d=DB.delegates.find(x=>x.id==b.dataset.deldel);
