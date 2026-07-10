@@ -109,7 +109,7 @@
 <div class="app">
   <div id="nav"></div>
   <h1>💶 Money</h1>
-  <p class="sub">Everything money, in one place — the read-only window. Invoiced figures flow in live from the Facturación invoice lines (🧾); targets &amp; SPEX are maintained by the accountant. Every change is recorded.</p>
+  <p class="sub">Everything money, in one place — the read-only window. Invoiced figures flow in live from the Invoicing lines (🧾); targets &amp; SPEX are maintained by the accountant. Every change is recorded.</p>
   <div class="tabs" id="tabs"></div>
   <div id="warnbox"></div>
   <div id="content"></div>
@@ -146,7 +146,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=42"></script>
+<script src="store.js?v=43"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -238,7 +238,7 @@ function finRowHtml(f,canF){
      (then it can't be typed here any more); typed dc_finance.invoiced as fallback */
   const fromLines=DB.billReady()&&DB.invoicedTotal(f.id)!=null;
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
-  const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Facturación invoice lines — edit them in 🧾 Facturación"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
+  const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
   if(!canF){
     return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+(f.city||'')+'</td><td>'+(f['when']||'')+'</td><td>'+(f.pm||'')+'</td><td>'+(f.sales||'')+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
@@ -260,7 +260,7 @@ function renderYear(){
     '<select id="yearSel" style="font-size:12px"></select> '+
     (canF?'<button class="btn primary" id="addBtn" style="font-size:12px;padding:4px 10px">+ Add event figures</button> ':'')+
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
-    '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded. Invoiced marked 🧾 comes from Facturación lines and is edited there.':'Read-only · invoiced flows in from Facturación; targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
+    '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded. Invoiced marked 🧾 comes from Invoicing lines and is edited there.':'Read-only · invoiced flows in from Invoicing; targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
     yearAnalysis()+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target yet.</p>'+

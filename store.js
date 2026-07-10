@@ -830,10 +830,10 @@ function delegateState(d){
   return {key:'ok',bg:'#fff',label:''};
 }
 const PRODUCTOS=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones'];
-const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Abono',comisiones:'Comisiones',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Grabaciones'};
+const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings'};
 const TIPO_PASES={single:1,double:2,triple:3,quad:4};
-const INV_STATUS={pagado:'Pagado',no_pagado:'No pagado',cancelado:'Cancelado',abono:'Abono'};
-const IVA_MOTIVOS=['exento','no sujeto','inversión sujeto pasivo','exportación'];
+const INV_STATUS={pagado:'Paid',no_pagado:'Unpaid',cancelado:'Cancelled',abono:'Credit note'};
+const IVA_MOTIVOS=['exempt','not subject','reverse charge (ISP)','export'];
 /* label used by the Facturación event picker & delegate lists: the dc_finance row */
 function finLabel(f){return (f.name||'?')+' '+(f.year||'')+(f.city?' · '+f.city:'');}
 
@@ -986,8 +986,8 @@ function navBar(active){
   return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Events</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
-         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Facturación">💶 Money</a>'+
-         '<a href="facturacion.html" id="nav-fact" style="white-space:nowrap;display:none" class="'+(active==='fact'?'on':'')+'" title="Invoicing engine — billing only">🧾 Facturación</a>'+
+         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Invoicing">💶 Money</a>'+
+         '<a href="facturacion.html" id="nav-fact" style="white-space:nowrap;display:none" class="'+(active==='fact'?'on':'')+'" title="Invoicing engine — billing only">🧾 Invoicing</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+
