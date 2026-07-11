@@ -29,7 +29,7 @@ function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<'
     const h=document.head;
     const l=document.createElement('link');l.rel='manifest';l.href='manifest.webmanifest';h.appendChild(l);
     const tc=document.createElement('meta');tc.name='theme-color';tc.content='#FF4A00';h.appendChild(tc);
-    const ai=document.createElement('link');ai.rel='apple-touch-icon';ai.href='icons/icon-180.png';h.appendChild(ai);
+    const ai=document.createElement('link');ai.rel='apple-touch-icon';ai.href='icons/icon-180.png?v=2';h.appendChild(ai);
     const st=document.createElement('style');st.id='dcSharedCss';st.textContent=
       '.navburger{display:none}'+
       '.navlinks{display:contents}'+
