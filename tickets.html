@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Requests</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;--blue:#185FA5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:980px}
+  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  button{font:inherit;cursor:pointer}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal)}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  select,input,textarea{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  .toolbar label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  .tk{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .tk .head{display:flex;gap:10px;align-items:center;padding:11px 14px;cursor:pointer;flex-wrap:wrap}
+  .tk .head:hover{background:#faf9f6}
+  .tk .title{font-weight:700;color:var(--charcoal);flex:1;min-width:180px}
+  .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block;white-space:nowrap}
+  .chip.line{background:#fff !important;border:1px solid var(--line);color:var(--muted)}
+  .meta{font-size:12px;color:var(--muted);white-space:nowrap}
+  .body{border-top:1px solid #f0eee9;padding:13px 16px;background:#fcfbf9}
+  .desc{font-size:13.5px;color:var(--ink);white-space:pre-wrap;margin:0 0 10px}
+  .cmt{border-left:3px solid var(--line);padding:6px 10px;margin:7px 0;font-size:13px;background:#fff;border-radius:0 8px 8px 0}
+  .cmt .w{font-size:11.5px;color:var(--muted);margin-bottom:2px}
+  .cmt.sys{border-left-color:#c9c6bd;color:var(--muted);font-style:italic;background:none}
+  .cbox{display:flex;gap:8px;margin-top:10px}
+  .cbox input{flex:1}
+  .admin{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+  .admin label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  .empty{color:var(--muted);font-style:italic;padding:16px 4px}
+  .cnt{font-size:12px;color:var(--muted);margin:0 0 8px}
+  @media(max-width:680px){
+    .tk .head{padding:13px 12px}
+    .cbox{flex-direction:column}
+    .cbox .btn{min-height:44px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>💡 Requests</h1>
+  <p class="sub">The team request box for the Dispatch Center itself — bugs, clunky bits, change requests and ideas. Everyone can open one and comment; Belén &amp; Carlos set status and priority. Check the list before opening a new one — maybe it's already here.</p>
+  <div id="warnbox"></div>
+  <div class="toolbar">
+    <button class="btn primary" id="newBtn" style="padding:9px 16px">💡 New request</button>
+    <label>Status<select id="f_status"><option value="open">Open (new + planned + in progress)</option><option value="all">All</option><option value="new">New</option><option value="planned">Planned</option><option value="inprogress">In progress</option><option value="done">Done</option><option value="declined">Declined</option></select></label>
+    <label>Type<select id="f_type"><option value="all">All</option></select></label>
+    <label>Area<select id="f_area"><option value="all">All</option></select></label>
+  </div>
+  <p class="cnt" id="cnt"></p>
+  <div id="list"></div>
+</div>
+<script src="store.js?v=46"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('tickets');
+let openId=null; // which ticket is expanded
+const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtCreated(c){ // 'YYYY-MM-DD HH:MM' → '10 Jul'
+  if(!c)return '';const d=ymd(c.slice(0,10));return d.getDate()+' '+MONn[d.getMonth()]+(d.getFullYear()!==new Date().getFullYear()?' '+d.getFullYear():'');
+}
+function prioRank(t){ // untriaged first (admins see what needs a look), then high → normal → low
+  if(t.status==='new'&&!t.priority)return 0;
+  return t.priority&&TICKET_PRIORITY[t.priority]?TICKET_PRIORITY[t.priority].rank:2.5;
+}
+function sysNote(t,who,text){ (t.thread=t.thread||[]).push({who:who.id,when:toISO(new Date()),sys:text}); }
+function render(){
+  const me=DB.currentUser;
+  const warn=document.getElementById('warnbox');
+  if(!DB.tickReady()){warn.innerHTML='<div class="warn">The requests module is not switched on yet — Belén needs to run <b>dispatch_tickets.sql</b> in Supabase. Nothing else is affected.</div>';document.getElementById('list').innerHTML='';return;}
+  warn.innerHTML='';
+  const fs=document.getElementById('f_status').value,ft=document.getElementById('f_type').value,fa=document.getElementById('f_area').value;
+  /* fill the type/area filters (keep current selection) */
+  const tSel=document.getElementById('f_type');
+  if(tSel.options.length===1)tSel.innerHTML='<option value="all">All</option>'+Object.keys(TICKET_TYPES).map(k=>'<option value="'+k+'">'+TICKET_TYPES[k].short+'</option>').join('');
+  const areas=[...new Set(DB.tickets.map(t=>t.area).filter(Boolean))].sort();
+  const aSel=document.getElementById('f_area'),aCur=aSel.value;
+  aSel.innerHTML='<option value="all">All</option>'+areas.map(a=>'<option '+(a===aCur?'selected':'')+'>'+esc(a)+'</option>').join('');
+  let list=DB.tickets.slice();
+  if(fs==='open')list=list.filter(t=>['new','planned','inprogress'].includes(t.status));
+  else if(fs!=='all')list=list.filter(t=>t.status===fs);
+  if(ft!=='all')list=list.filter(t=>t.type===ft);
+  if(fa!=='all')list=list.filter(t=>t.area===fa);
+  list.sort((a,b)=>prioRank(a)-prioRank(b)||(a.created||'').localeCompare(b.created||''));
+  document.getElementById('cnt').textContent=list.length+' request'+(list.length===1?'':'s')+(fs==='open'?' open':'')+' · '+DB.tickets.length+' total';
+  const L=document.getElementById('list');
+  if(!list.length){L.innerHTML='<p class="empty">Nothing here'+(DB.tickets.length?' with these filters.':' yet — be the first: hit “💡 New request”.')+'</p>';return;}
+  L.innerHTML=list.map(t=>{
+    const p=DB.person(t.personId)||{name:'?',id:0};
+    const ty=TICKET_TYPES[t.type]||TICKET_TYPES.idea, st=TICKET_STATUS[t.status]||TICKET_STATUS.new;
+    const pr=t.priority&&TICKET_PRIORITY[t.priority];
+    const nc=(t.thread||[]).filter(c=>!c.sys).length;
+    let h='<div class="tk" data-id="'+t.id+'"><div class="head" data-open="'+t.id+'">'
+      +'<span class="chip" style="background:'+ty.color+'">'+ty.short+'</span>'
+      +'<span class="title">'+esc(t.title)+'</span>'
+      +(pr?'<span class="chip" style="background:'+pr.color+'">'+pr.label+'</span>':(t.status==='new'?'<span class="chip line">untriaged</span>':''))
+      +'<span class="chip line">'+esc(t.area||'General')+'</span>'
+      +'<span class="meta">'+avatarHtml(p,20)+' '+esc(p.name.split(' ')[0])+' · '+fmtCreated(t.created)+(nc?' · 💬 '+nc:'')+'</span>'
+      +'<span class="chip" style="background:'+st.color+'">'+st.label+'</span>'
+      +'</div>';
+    if(openId==t.id)h+=renderBody(t,p);
+    return h+'</div>';
+  }).join('');
+  L.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>{openId=openId==el.dataset.open?null:+el.dataset.open;render();});
+  wireBody();
+}
+function renderBody(t,p){
+  const me=DB.currentUser, adm=DB.isAdmin(), mine=me&&t.personId==me.id;
+  let h='<div class="body">';
+  if(t.description)h+='<p class="desc">'+esc(t.description)+'</p>';
+  h+='<div style="font-size:11.5px;color:var(--muted)">opened by '+esc(p.name)+' · '+esc(t.created||'')+'</div>';
+  (t.thread||[]).forEach(c=>{
+    const w=DB.person(c.who);
+    if(c.sys)h+='<div class="cmt sys">'+esc((w?w.name.split(' ')[0]:'?')+' · '+c.when+' — ')+esc(c.sys)+'</div>';
+    else h+='<div class="cmt"><div class="w">'+esc(w?w.name:'?')+' · '+esc(c.when)+'</div>'+esc(c.text)+'</div>';
+  });
+  if(me)h+='<div class="cbox"><input id="cm_'+t.id+'" maxlength="500" placeholder="Add a comment — a +1, more detail, a workaround…"><button class="btn" data-cmt="'+t.id+'">Comment</button></div>';
+  if(adm){
+    h+='<div class="admin"><label>Status<select id="st_'+t.id+'">'+Object.keys(TICKET_STATUS).map(k=>'<option value="'+k+'" '+(k===t.status?'selected':'')+'>'+TICKET_STATUS[k].label+'</option>').join('')+'</select></label>'
+      +'<label>Priority<select id="pr_'+t.id+'"><option value="">—</option>'+Object.keys(TICKET_PRIORITY).map(k=>'<option value="'+k+'" '+(k===t.priority?'selected':'')+'>'+TICKET_PRIORITY[k].label+'</option>').join('')+'</select></label>'
+      +'<button class="btn primary" data-adm="'+t.id+'">Save triage</button></div>';
+  }else if(mine&&['new','planned','inprogress'].includes(t.status)){
+    h+='<div class="admin"><button class="btn" data-close="'+t.id+'">✓ Close my request (solved / no longer needed)</button></div>';
+  }
+  return h+'</div>';
+}
+function wireBody(){
+  const me=DB.currentUser;
+  document.querySelectorAll('.body').forEach(b=>b.onclick=e=>e.stopPropagation());
+  document.querySelectorAll('[data-cmt]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();
+    const t=DB.tickets.find(x=>x.id==btn.dataset.cmt);const inp=document.getElementById('cm_'+t.id);
+    const txt=(inp.value||'').trim();if(!txt)return;
+    (t.thread=t.thread||[]).push({who:me.id,when:toISO(new Date()),text:txt});
+    DB.save();render();});
+  document.querySelectorAll('[data-adm]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();
+    const t=DB.tickets.find(x=>x.id==btn.dataset.adm);
+    const ns=document.getElementById('st_'+t.id).value,np=document.getElementById('pr_'+t.id).value||null;
+    const bits=[];
+    if(ns!==t.status)bits.push('status → '+(TICKET_STATUS[ns]||{}).label);
+    if(np!==t.priority)bits.push('priority → '+(np?TICKET_PRIORITY[np].label:'—'));
+    if(!bits.length)return;
+    t.status=ns;t.priority=np;sysNote(t,me,bits.join(', '));
+    DB.save();render();});
+  document.querySelectorAll('[data-close]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();
+    const t=DB.tickets.find(x=>x.id==btn.dataset.close);
+    if(!confirm('Close this request?'))return;
+    t.status='done';sysNote(t,me,'closed by the author');
+    DB.save();render();});
+  document.querySelectorAll('.cbox input').forEach(inp=>inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){const btn=inp.parentElement.querySelector('[data-cmt]');if(btn)btn.click();}}));
+}
+document.getElementById('newBtn').onclick=()=>quickTicketUI();
+['f_status','f_type','f_area'].forEach(id=>document.getElementById(id).onchange=render);
+boot(render);
+window.addEventListener('dc-remote',render);
+</script>
+</body>
+</html>

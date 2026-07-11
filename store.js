@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 19;
+const STORE_VERSION = 20;
 /* the team's home is dispatch.renmad.com — anyone landing on the old GitHub Pages
    address is bounced there, keeping the exact page + parameters (?id=…). The one
    exception: unsent clock punches queued on this device stay on the OLD origin's
@@ -20,6 +20,37 @@ try{
    holiday note, report message etc. containing < > & " ' must render as text,
    never as markup (stops a "<img onerror=…>" in a title running for everyone). */
 function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+/* ---- shared head bits: PWA manifest/icons + the mobile stylesheet ----
+   Injected from here so every page gets them without touching 12 <head>s.
+   Desktop is untouched: everything phone-specific lives behind @media(max-width:680px).
+   No service worker ON PURPOSE — the ?v= cache-busting must never be bypassed. */
+(function(){
+  try{
+    const h=document.head;
+    const l=document.createElement('link');l.rel='manifest';l.href='manifest.webmanifest';h.appendChild(l);
+    const tc=document.createElement('meta');tc.name='theme-color';tc.content='#FF4A00';h.appendChild(tc);
+    const ai=document.createElement('link');ai.rel='apple-touch-icon';ai.href='icons/icon-180.png';h.appendChild(ai);
+    const st=document.createElement('style');st.id='dcSharedCss';st.textContent=
+      '.navburger{display:none}'+
+      '.navlinks{display:contents}'+
+      '#dcNav{flex-wrap:wrap}'+
+      '@media(max-width:680px){'+
+        'body{overflow-x:hidden}'+
+        '.app{padding:10px 10px 96px !important}'+
+        '.nav{position:relative}'+
+        '.navburger{display:block;border:1px solid #e3e1da;background:#fff;border-radius:8px;font:600 14px "Segoe UI",system-ui,sans-serif;padding:9px 14px;cursor:pointer;color:#2B2B2B}'+
+        '.navlinks{display:none;position:absolute;top:44px;left:0;right:0;z-index:80;background:#fff;border:1px solid #e3e1da;border-radius:12px;box-shadow:0 14px 44px rgba(0,0,0,.2);padding:6px;flex-direction:column}'+
+        '.nav.open .navlinks{display:flex}'+
+        '.navlinks a{display:block;padding:13px 14px !important;font-size:15px !important;border-bottom:1px solid #f2f0ea;border-radius:8px}'+
+        '.navlinks a:last-child{border-bottom:none}'+
+        '.nav .brandlet{font-size:11px !important}'+
+        '.btn{min-height:42px}'+
+        'input,select,textarea{font-size:16px !important}'+ /* stops the iPhone zoom-on-focus */
+        '.panel{overflow-x:auto}'+ /* wide admin tables scroll inside their own box */
+      '}';
+    h.appendChild(st);
+  }catch(e){}
+})();
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
@@ -502,6 +533,127 @@ function decorateNav(){
   }
   const pill='<span title="Things need your attention: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
   ['nav-hr','nav-home'].forEach(id=>{const el=document.getElementById(id);if(el&&n>0)el.innerHTML+=' '+pill;});
+  /* admins: new (untriaged) team requests, same red-pill pattern */
+  if(DB.isAdmin()&&DB.tickReady()){
+    const nt=DB.tickets.filter(t=>t.status==='new').length;
+    const el=document.getElementById('nav-tickets');
+    if(el&&nt>0)el.innerHTML+=' <span title="New team requests waiting for triage" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+nt+'</span>';
+  }
+}
+
+/* ================= team request box (💡 Requests) ================= */
+const TICKET_TYPES={bug:{label:'Bug — something is broken',short:'Bug',color:'#D32230'},
+  usability:{label:'Usability — works but it’s clunky',short:'Usability',color:'#C77800'},
+  change:{label:'Change request',short:'Change',color:'#185FA5'},
+  idea:{label:'Idea / addition',short:'Idea',color:'#3E8C28'}};
+const TICKET_STATUS={new:{label:'New',color:'#FF4A00'},planned:{label:'Planned',color:'#185FA5'},
+  inprogress:{label:'In progress',color:'#C77800'},done:{label:'Done',color:'#3E8C28'},declined:{label:'Declined',color:'#9AA0A8'}};
+const TICKET_PRIORITY={high:{label:'High',color:'#D32230',rank:1},normal:{label:'Normal',color:'#C77800',rank:2},low:{label:'Low',color:'#9AA0A8',rank:3}};
+const TICKET_AREAS=['Overview','Projects','Event page','Team','Money','Invoicing','Impact','HR','Tools','Requests','Mobile / phone use','General'];
+/* which page am I on? (pre-fills the "area" of a quick ticket) */
+function pageArea(){
+  const f=(location.pathname.split('/').pop()||'').toLowerCase();
+  const map={'home.html':'Overview','index.html':'Overview','gantt.html':'Projects','event.html':'Event page',
+    'people.html':'Team','person.html':'Team','dashboard.html':'Money','facturacion.html':'Invoicing',
+    'impact.html':'Impact','hr.html':'HR','tools.html':'Tools','tool.html':'Tools','tickets.html':'Requests'};
+  return map[f]||'General';
+}
+/* the quick "open a request" modal — under a minute: type, one line, optional detail */
+function quickTicketUI(){
+  const me=DB.currentUser;
+  const old=document.getElementById('qtOv');if(old)old.remove();
+  const ov=document.createElement('div');ov.id='qtOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:9995;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,system-ui,sans-serif;padding:12px';
+  if(!me||!DB.tickReady()){
+    ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:24px 26px;max-width:360px;font-size:13.5px;color:#3a3a3a">'
+      +(!me?'You need to be in the staff roster to open requests.':'The requests module is not switched on yet — Belén needs to run its update in the database. Try again later.')
+      +'<div style="margin-top:14px;text-align:right"><button id="qt_x" style="font:inherit;padding:8px 16px;border:1px solid #e3e1da;background:#fff;border-radius:8px;cursor:pointer">Close</button></div></div>';
+    document.body.appendChild(ov);document.getElementById('qt_x').onclick=()=>ov.remove();return;
+  }
+  const area=pageArea();
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 24px;width:430px;max-width:96vw;box-shadow:0 14px 50px rgba(0,0,0,.25)">'
+   +'<div style="font-size:17px;font-weight:700;color:#2B2B2B">💡 Open a request</div>'
+   +'<div style="font-size:12px;color:#7c7c78;margin:3px 0 14px">A bug, something clunky, a change or an idea about the Dispatch Center. The whole team can see it; Bel&eacute;n &amp; Carlos triage it.</div>'
+   +'<div style="display:flex;gap:8px;margin-bottom:9px">'
+   +'<select id="qt_type" style="flex:1;font:inherit;padding:9px;border:1px solid #e3e1da;border-radius:8px">'+Object.keys(TICKET_TYPES).map(k=>'<option value="'+k+'">'+TICKET_TYPES[k].label+'</option>').join('')+'</select>'
+   +'<select id="qt_area" style="width:150px;font:inherit;padding:9px;border:1px solid #e3e1da;border-radius:8px">'+TICKET_AREAS.map(a=>'<option '+(a===area?'selected':'')+'>'+a+'</option>').join('')+'</select></div>'
+   +'<input id="qt_title" maxlength="140" placeholder="One line — what is it about?" style="width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid #e3e1da;border-radius:8px;margin-bottom:9px">'
+   +'<textarea id="qt_desc" rows="3" placeholder="Details (optional) — what happened, what you expected, where…" style="width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid #e3e1da;border-radius:8px;margin-bottom:12px;resize:vertical"></textarea>'
+   +'<div style="display:flex;gap:8px;align-items:center"><button id="qt_send" style="font:inherit;flex:1;padding:11px;background:#FF4A00;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Send</button>'
+   +'<button id="qt_cancel" style="font:inherit;padding:11px 16px;border:1px solid #e3e1da;background:#fff;border-radius:8px;cursor:pointer">Cancel</button></div>'
+   +'<div style="font-size:11.5px;color:#7c7c78;margin-top:10px"><a href="tickets.html" style="color:#7c7c78">See all requests →</a> <span style="opacity:.8">(maybe it’s already reported — you can add a comment there instead)</span></div></div>';
+  document.body.appendChild(ov);
+  const close=()=>ov.remove();
+  document.getElementById('qt_cancel').onclick=close;
+  ov.onclick=e=>{if(e.target===ov)close();};
+  document.getElementById('qt_title').focus();
+  document.getElementById('qt_send').onclick=()=>{
+    const title=document.getElementById('qt_title').value.trim();
+    if(!title){document.getElementById('qt_title').style.borderColor='#D32230';document.getElementById('qt_title').focus();return;}
+    DB.tickets.push({id:DB.newId(),personId:me.id,area:document.getElementById('qt_area').value,
+      type:document.getElementById('qt_type').value,title,description:document.getElementById('qt_desc').value.trim(),
+      status:'new',priority:null,thread:[],created:toISO(new Date())+' '+nowHMS().slice(0,5)});
+    DB.save();
+    ov.firstChild.innerHTML='<div style="font-size:17px;font-weight:700;color:#3E8C28">✓ Sent — thank you!</div>'
+      +'<div style="font-size:13px;color:#3a3a3a;margin:8px 0 14px">It’s in the queue. You can follow it (and comment) on the <a href="tickets.html">Requests page</a>.</div>'
+      +'<div style="text-align:right"><button id="qt_done" style="font:inherit;padding:9px 18px;background:#FF4A00;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">Close</button></div>';
+    document.getElementById('qt_done').onclick=close;
+    try{window.dispatchEvent(new Event('dc-remote'));}catch(e){}
+  };
+}
+/* the small always-there "💡 Request" button (every page, bottom-left) */
+function injectTicketFab(){
+  if(document.getElementById('dcTicketFab'))return;
+  if(/tickets\.html/i.test(location.pathname))return; // that page has its own button
+  if(!DB.currentUser)return;
+  const b=document.createElement('button');b.id='dcTicketFab';
+  b.title='Something broken? Clunky? An idea? Open a request — takes under a minute';
+  b.textContent='💡 Request';
+  b.style.cssText='position:fixed;left:14px;bottom:14px;z-index:9990;background:#2B2B2B;color:#fff;border:none;border-radius:22px;padding:9px 15px;font:600 12.5px "Segoe UI",system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);opacity:.92';
+  b.onmouseenter=()=>b.style.opacity='1';b.onmouseleave=()=>b.style.opacity='.92';
+  b.onclick=()=>quickTicketUI();
+  document.body.appendChild(b);
+}
+
+/* ================= device visibility (Belén-only adoption picture) =================
+   One tiny row per person / device / day at app-open: date, phone|tablet|desktop and
+   whether it ran as the installed app (standalone). NOTHING else — no location, no IP,
+   no page tracking. Server-side RLS: ONLY Belén can read the table. */
+function deviceKind(){
+  try{
+    const coarse=matchMedia('(pointer:coarse)').matches;
+    const w=Math.min(screen.width||1024,screen.height||1024);
+    const ua=navigator.userAgent||'';
+    if(/iPad/i.test(ua)||(coarse&&w>=600&&w<=1100))return 'tablet';
+    if(/Mobi|iPhone|Android/i.test(ua)||(coarse&&w<600))return 'phone';
+    return 'desktop';
+  }catch(e){return 'desktop';}
+}
+function isStandalone(){
+  try{return matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;}catch(e){return false;}
+}
+async function recordLogin(){
+  const me=DB.currentUser;if(!me)return;
+  const day=toISO(new Date()),device=deviceKind(),standalone=isStandalone();
+  const stamp=me.id+'|'+day+'|'+device+'|'+(standalone?1:0);
+  try{if(localStorage.getItem('dcLoginStamp')===stamp)return;}catch(e){}
+  if(!USE_SUPABASE){ // local demo: keep in the local store so the panel can be tested
+    const arr=DB.data.logins=DB.data.logins||[];
+    const ex=arr.find(r=>r.personId==me.id&&r.day===day&&r.device===device);
+    if(ex){if(standalone)ex.standalone=true;}else arr.push({id:DB.newId(),personId:me.id,day,device,standalone});
+    localStorage.setItem('dispatchStore',JSON.stringify(DB.data));
+    try{localStorage.setItem('dcLoginStamp',stamp);}catch(e){}
+    return;
+  }
+  try{
+    const {error}=await sb.from('dc_logins').insert([{id:DB.newId(),personId:me.id,day,device,standalone}]);
+    if(error){
+      if(error.code==='23505'||/duplicate/i.test(error.message||'')){
+        if(standalone)await sb.from('dc_logins').update({standalone:true}).eq('personId',me.id).eq('day',day).eq('device',device);
+      }else return; // table not there yet (or RLS said no) — try again next visit
+    }
+    try{localStorage.setItem('dcLoginStamp',stamp);}catch(e){}
+  }catch(e){}
 }
 
 /* ---- seed ---- */
@@ -601,7 +753,7 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],tickets:[],logins:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -612,7 +764,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
   people:['id','name','role','access','email','finance','hr','billing','holidayDays','photo','phone'],
@@ -632,8 +784,12 @@ const COLS={
   invalloc:['id','invoice_id','eventId','amount','passes'],
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
   codigos:['id','codigo','descripcion'],
+  /* team request box: anyone opens tickets about the Dispatch Center itself
+     (bug / usability / change / idea); admins triage (status + priority);
+     the thread jsonb holds follow-up comments [{who,when,text|sys}] */
+  tickets:['id','personId','area','type','title','description','status','priority','thread','created'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -710,6 +866,11 @@ const DB={
         this.data.invoices=iv.data||[];this.data.invalloc=al.data||[];this.data.delegates=dg.data||[];this.data.codigos=cg.data||[];
         _billReady=true;
       }catch(e){console.warn('facturación module not ready:',e.message||e);}
+      /* team request box (tolerant — app runs fine before dispatch_tickets.sql) */
+      this.data.tickets=[];_tickReady=false;
+      try{const tk=await sb.from('dc_tickets').select('*').eq('deleted',false).order('id');
+        if(tk.error)throw tk.error;this.data.tickets=tk.data||[];_tickReady=true;
+      }catch(e){console.warn('requests module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -738,6 +899,7 @@ const DB={
         if((k==='timeclock'||k==='tcreports')&&!_tcReady)continue; // time clock tables not created yet
         if(k==='eventaway'&&!_eventReady)continue; // event-away table not created yet
         if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)continue; // facturación tables not created yet
+        if(k==='tickets'&&!_tickReady)continue; // requests table not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -821,6 +983,9 @@ const DB={
      or an admin. Mirrors dc_can_bill() in SQL. Separate from the finance flag — Jesús
      keeps editing the € figures exactly as today. */
   canBill(){return !!(this.currentUser&&(this.currentUser.billing||this.currentUser.access==='admin'));},
+  /* ---- team request box (tickets about the Dispatch Center itself) ---- */
+  get tickets(){return this.data.tickets||[];},
+  tickReady(){return !USE_SUPABASE||_tickReady;},
   invoice(id){return this.invoices.find(i=>i.id==id);},
   allocsFor(invoiceId){return this.invoiceAllocs.filter(a=>a.invoice_id==invoiceId);},
   invoicesFor(finId){const ids={};this.invoiceAllocs.forEach(a=>{if(a.eventId==finId)ids[a.invoice_id]=1;});return this.invoices.filter(i=>ids[i.id]);},
@@ -877,6 +1042,7 @@ function subscribeRealtime(){
       if(k==='tcreports'&&!_tcReady)return;
       if(k==='eventaway'&&!_eventReady)return;
       if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)return;
+      if(k==='tickets'&&!_tickReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -950,6 +1116,8 @@ async function boot(renderFn){
   try{const nf=document.getElementById('nav-fact');if(nf&&DB.canBill())nf.style.display='';}catch(e){} // Facturación tab: billing editor + admin only
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
+  try{injectTicketFab();}catch(e){} // the "💡 Request" button on every page
+  try{recordLogin();}catch(e){} // device-visibility row (1/person/device/day, Belén-only read)
   try{renderPunchBanner();flushPendingPunches();}catch(e){} // recover punches that failed to save last time
   try{if(_breakTimer)clearInterval(_breakTimer);breakReminderTick();_breakTimer=setInterval(breakReminderTick,60000);}catch(e){} // break nudge on any page
 }
@@ -1010,7 +1178,11 @@ async function dcToken(){
   catch(e){return '';}
 }
 function navBar(active){
-  return '<div class="nav"><a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
+  /* .navlinks is display:contents on desktop (renders exactly as before);
+     on phones the burger shows and the links drop down as a menu */
+  return '<div class="nav" id="dcNav"><button class="navburger" aria-label="Menu" onclick="document.getElementById(\'dcNav\').classList.toggle(\'open\')">☰ Menu</button>'+
+         '<div class="navlinks" onclick="document.getElementById(\'dcNav\').classList.remove(\'open\')">'+
+         '<a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
          '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Invoicing">💶 Money</a>'+
@@ -1018,7 +1190,8 @@ function navBar(active){
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+
-         '<span class="brandlet">RENMAD <b>Dispatch Center</b>'+
+         '<a href="tickets.html" id="nav-tickets" style="white-space:nowrap" class="'+(active==='tickets'?'on':'')+'" title="Team request box — bugs, usability, changes, ideas">💡 Requests</a>'+
+         '</div><span class="brandlet">RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }
 function changePasswordUI(){

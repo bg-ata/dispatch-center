@@ -89,6 +89,15 @@
   .ok2{color:var(--green);font-weight:700}.no2{color:var(--red);font-weight:700}.na{color:#c9c6bd}
   .padd{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
   .padd label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
+  /* phones: thumb-sized daily verbs (punch, approve/deny), tabs that fit, tables scroll in their box */
+  @media(max-width:680px){
+    .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .tabs button{padding:11px 13px;white-space:nowrap;font-size:14px}
+    #punchBtn{width:100% !important;padding:20px 12px !important;font-size:20px !important;border-radius:14px}
+    .btn.ok,.btn.no{padding:12px 16px;margin:2px 0}
+    .frm input,.frm select{width:100%}
+    td input.hrs{width:62px}
+  }
 </style>
 </head>
 <body>
@@ -100,7 +109,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=45"></script>
+<script src="store.js?v=46"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -600,20 +609,25 @@ function lastWeeks(n){
 }
 function renderMgr(){
   const box=document.getElementById('mgr');
-  const seeTotals=DB.isHRAdmin(); // hours & allocations oversight = Belén + HR (Jesús) only
+  /* allocations oversight is UNBUNDLED from HR powers: Belén + HR (rrhh) + the
+     finance flag (Jesús, accounting) can read/download; only HR can approve/edit */
+  const seeTotals=DB.isHRAdmin()||DB.canFinance();
   // the status of people (who's tracked their hours) is admin-only, per Belén
-  if(!(DB.isAdmin()||DB.isHRAdmin())){box.innerHTML='';return;}
-  const weeks=lastWeeks(8),curW=toISO(monday(new Date()));
-  const team=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  let h='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Whole company · admin only.</p><div class="mx"><table>'+
-    '<tr><th>Person</th>'+weeks.map(w=>'<th class="num">'+w.slice(5)+'</th>').join('')+'</tr>';
-  team.forEach(p=>{
-    h+='<tr><td>'+p.name+'</td>'+weeks.map(w=>{
-      if(w>=curW)return '<td class="c na">–</td>';
-      return '<td class="c '+(tsComplete(p.id,w)?'ok2">✓':'no2">✗')+'</td>';
-    }).join('')+'</tr>';
-  });
-  h+='</table></div></div>';
+  if(!(DB.isAdmin()||DB.isHRAdmin()||seeTotals)){box.innerHTML='';return;}
+  let h='';
+  if(DB.isAdmin()||DB.isHRAdmin()){
+    const weeks=lastWeeks(8),curW=toISO(monday(new Date()));
+    const team=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
+    h+='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Whole company · admin only.</p><div class="mx"><table>'+
+      '<tr><th>Person</th>'+weeks.map(w=>'<th class="num">'+w.slice(5)+'</th>').join('')+'</tr>';
+    team.forEach(p=>{
+      h+='<tr><td>'+p.name+'</td>'+weeks.map(w=>{
+        if(w>=curW)return '<td class="c na">–</td>';
+        return '<td class="c '+(tsComplete(p.id,w)?'ok2">✓':'no2">✗')+'</td>';
+      }).join('')+'</tr>';
+    });
+    h+='</table></div></div>';
+  }
   if(seeTotals){
     const totals={};let grand=0;
     DB.timesheets.forEach(t=>{Object.keys(t.hours||{}).forEach(pid=>{const v=+t.hours[pid]||0;totals[pid]=(totals[pid]||0)+v;grand+=v;});});
@@ -623,7 +637,7 @@ function renderMgr(){
     const fp=autoProject('festivos'),vp=autoProject('vacaciones');
     const allT=grand+festT+vacT;
     const row=(label,code,v)=>'<tr><td>'+label+'</td><td class="code">'+(code||'')+'</td><td class="num">'+fmtH(v)+'</td><td class="num">'+(allT?Math.round(100*v/allT)+' %':'—')+'</td></tr>';
-    h+='<div class="panel"><h3>Hours by project (since '+HR_START+')</h3><p class="hint">The allocation engine output — accounting codes included. Only Belén and HR see this block (project profitability will be built on top of it).</p><table>'+
+    h+='<div class="panel"><h3>Hours by project (since '+HR_START+')</h3><p class="hint">The allocation engine output — accounting codes included. Only Belén, HR and accounting (finance permission) see this block (project profitability will be built on top of it).</p><table>'+
       '<tr><th>Project</th><th>Code</th><th class="num">Hours</th><th class="num">Share</th></tr>';
     if(fp&&festT>0)h+=row(fp.label+' (auto)','',festT);
     if(vp&&vacT>0)h+=row(vp.label+' (auto)','',vacT);

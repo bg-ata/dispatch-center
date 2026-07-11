@@ -39,6 +39,14 @@
   .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f2f0ea;font-size:13px}
   .kv:last-child{border-bottom:none} .kv .k{color:var(--muted)} .kv .v{color:var(--charcoal);font-weight:600;text-align:right}
   .prof-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  /* phones: landing = a big clock in/out screen; the rest scrolls below the fold */
+  @media(max-width:680px){
+    h1{font-size:19px}
+    .btn{padding:10px 14px}
+    .btn.clockbig{width:100%;padding:26px 12px;font-size:28px;border-radius:14px}
+    #clockPanel{padding:18px 16px}
+    #clockPanel #liveWorked{font-size:34px}
+  }
 </style>
 </head>
 <body>
@@ -46,7 +54,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=45"></script>
+<script src="store.js?v=46"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};

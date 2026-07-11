@@ -50,6 +50,7 @@
   </div>
   <div class="panel"><table id="tbl"></table></div>
   <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to open their page — their events &amp; tasks on a timeline. Each person will eventually log in and see only their own.</p>
+  <div id="devPanel"></div>
 </div>
 <div id="modal"><div class="card">
   <h3 id="m_title">Edit person</h3>
@@ -67,7 +68,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=45"></script>
+<script src="store.js?v=46"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -137,7 +138,49 @@ document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx'
   {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Access:ACCESS_LABEL[p.access||'member']||p.access,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},
   {name:'Assignments',rows:DB.tasks.filter(t=>t.assignee).map(t=>{const e=DB.event(t.eventId);return{Person:DB.personName(t.assignee),Event:e?e.name:'',Lane:t.lane,Task:t.title,Deadline:t.deadline,Status:t.status};})}
 ]);
-boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();});
+/* ---- device visibility (Belén's eyes ONLY — server-enforced by RLS) ----
+   Who opens the Dispatch Center on phone vs computer, and who has installed
+   the app (opened it in standalone/PWA mode). One row per person/device/day;
+   nothing else is recorded — no location, no IP, no page tracking. */
+async function renderDevices(){
+  const box=document.getElementById('devPanel');if(!box)return;
+  const me=DB.currentUser;
+  if(!me||!isBelenP(me)){box.innerHTML='';return;}
+  let rows=null;
+  if(!USE_SUPABASE)rows=DB.data.logins||[];
+  else{
+    try{const r=await sb.from('dc_logins').select('*');if(r.error)throw r.error;rows=r.data||[];}
+    catch(e){box.innerHTML='<div class="panel" style="padding:14px 16px;margin-top:16px"><b>📱 Devices &amp; app adoption</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">Switches on when <b>dispatch_logins.sql</b> is run in Supabase.</div></div>';return;}
+  }
+  const by={}; // personId -> {phone:last,tablet:last,desktop:last,pwa:bool,pwaLast}
+  rows.forEach(r=>{const o=by[r.personId]=by[r.personId]||{};
+    if(!o[r.device]||o[r.device]<r.day)o[r.device]=r.day;
+    if(r.standalone){o.pwa=true;if(!o.pwaLast||o.pwaLast<r.day)o.pwaLast=r.day;}});
+  const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const nice=iso=>{if(!iso)return '';const t=toISO(new Date());if(iso===t)return 'today';
+    const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
+  const people=DB.people.filter(p=>!isTeamAccount(p));
+  const nPhone=people.filter(p=>by[p.id]&&by[p.id].phone).length;
+  const nPwa=people.filter(p=>by[p.id]&&by[p.id].pwa).length;
+  const nAny=people.filter(p=>by[p.id]).length;
+  let h='<div class="panel" style="padding:14px 16px;margin-top:16px;overflow-x:auto">'
+    +'<b>📱 Devices &amp; app adoption</b> <span class="rolepill" style="margin-left:6px">only you can see this</span>'
+    +'<div style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">One row per person, device and day — just phone/tablet/computer and whether it was the installed app. No location, no activity tracking.</div>'
+    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px">'
+    +'<span><b style="font-size:17px;color:var(--charcoal)">'+nAny+'</b>/'+people.length+' seen</span>'
+    +'<span><b style="font-size:17px;color:var(--charcoal)">'+nPhone+'</b> on a phone</span>'
+    +'<span><b style="font-size:17px;color:var(--orange)">'+nPwa+'</b> installed the app</span></div>'
+    +'<table><tr><th>Person</th><th>📱 Phone</th><th>Tablet</th><th>💻 Computer</th><th>App installed</th></tr>';
+  people.forEach(p=>{const o=by[p.id];
+    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(p.name)+'</td>'
+      +'<td>'+(o&&o.phone?nice(o.phone):'<span style="color:#c9c6bd">—</span>')+'</td>'
+      +'<td>'+(o&&o.tablet?nice(o.tablet):'<span style="color:#c9c6bd">—</span>')+'</td>'
+      +'<td>'+(o&&o.desktop?nice(o.desktop):'<span style="color:#c9c6bd">—</span>')+'</td>'
+      +'<td>'+(o&&o.pwa?'<span style="color:var(--orange);font-weight:700">✓ yes</span> <span style="color:var(--muted);font-size:12px">· last '+nice(o.pwaLast)+'</span>':'<span style="color:#c9c6bd">not yet</span>')+'</td></tr>';
+  });
+  box.innerHTML=h+'</table></div>';
+}
+boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();renderDevices();});
 window.addEventListener('dc-remote',render);
 </script>
 </body>
