@@ -16,8 +16,13 @@
   h1{margin:6px 0 2px;font-size:23px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .rolepill{font-size:11px;padding:2px 9px;border-radius:20px;background:#eceae3;color:#5f5e5a;font-weight:600}
   .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
-  .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:16px}
-  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .grid2{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;align-items:start}
+  /* phones: one column, timer first then the profile card (wrappers dissolve via display:contents) */
+  @media(max-width:860px){
+    .grid2{display:flex;flex-direction:column;gap:0}
+    .grid2>div{display:contents}
+    #clockPanel{order:1}#profPanel{order:2}#awayPanel{order:3}#alarmPanel{order:4}
+  }
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
   .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
   .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
@@ -71,8 +76,8 @@ function render(){
       (me.hr?'<span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</h1>'+
     '<p class="sub">Your day at a glance — clock in, see what needs you, and jump to your events.</p>'+
     '<div class="grid2">'+
-      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="awayPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
       '<div><div class="panel" id="profPanel"></div></div>'+
+      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="awayPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
     '</div>'+
     '<div class="panel" id="evPanel"></div>';
   renderClock();renderAway();renderAlarms();renderProfile();renderEvents();
@@ -124,17 +129,38 @@ function updateWeekBar(me){
   else if(p.remaining<=WEEK_NEAR_H)note.innerHTML='<span style="color:var(--red);font-weight:700">🔔 Under 30 minutes to go this week!</span>';
   else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
 }
-/* ---- "at an event" (away from the office) ---- */
+/* ---- "at an event" (away from the office) ----
+   Collapsed to a single line by default (screen space); tap to unfold the form + list. */
+let awayOpen=false;
 function renderAway(){
   const me=DB.currentUser,box=document.getElementById('awayPanel');if(!box)return;
-  if(!DB.eventReady()){box.innerHTML='<h3>📣 At an event?</h3><p class="hint">This turns on once the events update is run in Supabase. It lets you flag days you’re away at an event so the team knows you’re out of the office.</p>';return;}
   const today=toISO(new Date());
-  const mine=DB.eventaway.filter(e=>e.personId==me.id).sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||''));
+  const ready=DB.eventReady();
+  const mine=ready?DB.eventaway.filter(e=>e.personId==me.id).sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||'')):[];
+  const current=mine.find(e=>(e.dateFrom||'')<=today&&(e.dateTo||'')>=today);
+  const upcoming=mine.filter(e=>(e.dateFrom||'')>today).length;
+  const head='<div id="awHead" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:24px">'+
+    '<h3 style="margin:0">📣 At an event?</h3>'+
+    (current?'<span style="font-size:12px;color:#185FA5;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· now: '+esc(current.title||'Event')+'</span>'
+      :(upcoming?'<span style="font-size:12px;color:var(--muted)">· '+upcoming+' upcoming</span>':''))+
+    '<span style="margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap">'+(awayOpen?'▲ hide':'▼ flag days')+'</span></div>';
+  if(!awayOpen){
+    box.style.padding='11px 18px';
+    box.innerHTML=head;
+    document.getElementById('awHead').onclick=()=>{awayOpen=true;renderAway();};
+    return;
+  }
+  box.style.padding='';
+  if(!ready){
+    box.innerHTML=head+'<p class="hint" style="margin-top:8px">This turns on once the events update is run in Supabase. It lets you flag days you’re away at an event so the team knows you’re out of the office.</p>';
+    document.getElementById('awHead').onclick=()=>{awayOpen=false;renderAway();};
+    return;
+  }
   const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const d2=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
   const rng=e=>e.dateFrom===e.dateTo?d2(e.dateFrom):d2(e.dateFrom)+'–'+d2(e.dateTo);
-  box.innerHTML='<h3>📣 At an event?</h3>'+
-    '<p class="hint">Attending an event — ours or someone else’s? Flag the days here so the team sees you’re out of the office and less available. You still clock in and out as normal.</p>'+
+  box.innerHTML=head+
+    '<p class="hint" style="margin-top:8px">Attending an event — ours or someone else’s? Flag the days here so the team sees you’re out of the office and less available. You still clock in and out as normal.</p>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'+
       '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px;flex:1 1 180px">Event<input id="aw_title" placeholder="e.g. RENMAD Storage Madrid" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
       '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px">From<input type="date" id="aw_from" value="'+today+'" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
@@ -147,6 +173,7 @@ function renderAway(){
         '<span style="flex:1"><b style="color:var(--charcoal)">'+esc(e.title||'Event')+'</b> <span style="color:var(--muted)">· '+rng(e)+(cur?' <span style="color:#185FA5;font-weight:700">· now</span>':'')+'</span></span>'+
         '<button class="btn" data-awdel="'+e.id+'" style="font-size:11px;padding:2px 8px;color:#A32D2D;border-color:#f0c4c4">Remove</button></div>';}).join('')
       :'<p class="empty" style="font-size:12.5px;color:var(--muted)">No event days flagged.</p>');
+  document.getElementById('awHead').onclick=()=>{awayOpen=false;renderAway();};
   document.getElementById('aw_add').onclick=()=>{
     const title=document.getElementById('aw_title').value.trim();
     const from=document.getElementById('aw_from').value,to=document.getElementById('aw_to').value;
@@ -202,6 +229,7 @@ function renderProfile(){
     '<div class="kv"><span class="k">Work phone</span><span class="v"><input id="pf_phone" value="'+(me.phone||'').replace(/"/g,'&quot;')+'" placeholder="add your work phone" style="border:1px solid var(--line);border-radius:6px;padding:3px 7px;font:inherit;text-align:right;width:150px"> <button class="btn" id="pf_savephone" style="font-size:11px;padding:3px 8px">Save</button></span></div>'+
     balHtml+
     '<div class="prof-actions">'+
+    '<a class="btn" href="hr.html#holidays" style="font-weight:600">🌴 Request time off</a>'+
     '<a class="btn" href="person.html?id='+me.id+'">My full timeline</a>'+
     (typeof changePasswordUI==='function'&&USE_SUPABASE?'<button class="btn" id="cpw">Change password</button>':'')+
     '</div>';
