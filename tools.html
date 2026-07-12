@@ -9,8 +9,8 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 80px;max-width:1000px}
-  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
-  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav{display:flex;align-items:center;gap:3px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px}
   .nav a.on{background:var(--orange);color:#fff}
   .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
@@ -35,11 +35,19 @@
   <div class="grid" id="grid"></div>
   <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished.</p>
 </div>
-<script src="store.js?v=47"></script>
+<script src="store.js?v=48"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
 function render(){
   const g=document.getElementById('grid');g.innerHTML='';
+  /* the team request box lives here now (it left the top nav to keep it uncluttered) */
+  const rq=document.createElement('a');rq.className='tile';rq.href='tickets.html';
+  let rqBadge='';
+  try{if(DB.isAdmin()&&DB.tickReady()){const nt=DB.tickets.filter(t=>t.status==='new').length;
+    if(nt>0)rqBadge='<span class="badge" style="background:#D32230;color:#fff">'+nt+' new</span>';}}catch(e){}
+  rq.innerHTML='<span class="ic" style="background:#C77800">💡</span>'+
+    '<span><h3>Requests</h3><p>The team request box — bugs, usability, changes and ideas. Also one tap away via the 💡 button on any page.</p></span>'+rqBadge;
+  g.appendChild(rq);
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
     const pending=!t.url;

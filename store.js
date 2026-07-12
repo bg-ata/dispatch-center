@@ -533,10 +533,10 @@ function decorateNav(){
   }
   const pill='<span title="Things need your attention: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
   ['nav-hr','nav-home'].forEach(id=>{const el=document.getElementById(id);if(el&&n>0)el.innerHTML+=' '+pill;});
-  /* admins: new (untriaged) team requests, same red-pill pattern */
+  /* admins: new (untriaged) team requests — the Requests box lives under Tools now */
   if(DB.isAdmin()&&DB.tickReady()){
     const nt=DB.tickets.filter(t=>t.status==='new').length;
-    const el=document.getElementById('nav-tickets');
+    const el=document.getElementById('nav-tools');
     if(el&&nt>0)el.innerHTML+=' <span title="New team requests waiting for triage" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+nt+'</span>';
   }
 }
@@ -1113,7 +1113,7 @@ async function boot(renderFn){
   }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
-  try{const nf=document.getElementById('nav-fact');if(nf&&DB.canBill())nf.style.display='';}catch(e){} // Facturación tab: billing editor + admin only
+  try{const nc=document.getElementById('nav-crm');if(nc&&isBelenP(DB.currentUser))nc.style.display='';}catch(e){} // CRM tab: Belén only (invoicing now opens from inside Money)
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
   try{injectTicketFab();}catch(e){} // the "💡 Request" button on every page
@@ -1185,12 +1185,11 @@ function navBar(active){
          '<a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'">🧭 Overview</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
-         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'?'on':'')+'" title="Read-only money window — figures flow in from Invoicing">💶 Money</a>'+
-         '<a href="facturacion.html" id="nav-fact" style="white-space:nowrap;display:none" class="'+(active==='fact'?'on':'')+'" title="Invoicing engine — billing only">🧾 Invoicing</a>'+
+         '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'||active==='fact'?'on':'')+'" title="Everything money — Invoicing lives inside, top right">💶 Money</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
-         '<a href="tools.html" style="white-space:nowrap" class="'+(active==='tools'?'on':'')+'">🧰 Tools</a>'+
-         '<a href="tickets.html" id="nav-tickets" style="white-space:nowrap" class="'+(active==='tickets'?'on':'')+'" title="Team request box — bugs, usability, changes, ideas">💡 Requests</a>'+
+         '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
+         '<a href="crm.html" id="nav-crm" style="white-space:nowrap;display:none" class="'+(active==='crm'?'on':'')+'" title="Leads CRM — private, only Belén sees this tab">📇 CRM</a>'+
          '</div><span class="brandlet">RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }

@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — CRM</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#2B2B2B;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--green:#0CA30C;--amber:#B26A10;--blue:#2A78D6;--violet:#4A3AA7;--grey:#8A8781}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#3a3a3a;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:1080px;margin:0 auto}
+  .nav{display:flex;align-items:center;gap:3px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 10px}
+  /* header bar: tabs + backup/restore + save state */
+  .crmbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+  .tabs{display:flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px}
+  .tabs button{background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:13px;padding:6px 13px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:var(--orange);color:#fff}
+  .hbtn{background:#fff;border:1px solid var(--line);color:var(--muted);font:600 11.5px 'Segoe UI',sans-serif;border-radius:16px;padding:5px 12px;cursor:pointer}
+  #saveChip{font-size:11.5px;color:var(--muted);margin-left:auto}
+  #saveChip.err{color:#A32D2D;font-weight:700;cursor:pointer}
+  h2{font-size:19px;font-weight:800;color:var(--ink);margin:0 0 3px;letter-spacing:-.01em}
+  .lead{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:80ch}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 15px}
+  .tile .l{font-size:12px;color:var(--muted)}
+  .tile .n{font-size:25px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.15}
+  .tile .s{font-size:11px;color:#9aa2a6}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+  /* value map */
+  .mapwrap{display:flex;gap:8px;align-items:stretch}
+  .yax{writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;color:var(--muted);text-align:center;padding:6px 0}
+  .plot{position:relative;height:340px;border-left:1px solid var(--line);border-bottom:1px solid var(--line);flex:1}
+  .q{position:absolute;width:50%;height:50%}
+  .q.tl{left:0;top:0;background:rgba(178,106,16,.09)} .q.tr{right:0;top:0;background:rgba(12,163,12,.09)}
+  .q.bl{left:0;bottom:0;background:rgba(138,135,129,.07)} .q.br{right:0;bottom:0;background:rgba(42,120,214,.10)}
+  .vline{position:absolute;left:50%;top:0;bottom:0;border-left:1px dashed var(--line)}
+  .hline{position:absolute;top:50%;left:0;right:0;border-top:1px dashed var(--line)}
+  .qlab{position:absolute;font-size:12px;font-weight:700;color:var(--ink);max-width:45%;line-height:1.3}
+  .qlab small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+  .dot{position:absolute;border-radius:50%;box-shadow:0 0 0 2px #fff;transform:translate(-50%,50%);cursor:pointer}
+  .dot:hover{box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.15)}
+  .dlab{position:absolute;font-size:11px;color:var(--ink);transform:translateY(50%);pointer-events:none;white-space:nowrap}
+  .xax{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);padding:5px 2px 0}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:11px 2px 0;font-size:11.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:3px}
+  /* work-now list */
+  .work{margin-top:16px}
+  .work h3{font-size:14px;font-weight:700;margin:0 0 8px;color:var(--ink)}
+  .wrow{display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin-bottom:7px;cursor:pointer}
+  .wrow:hover{border-color:var(--orange)}
+  .wrow .nm{font-weight:700;color:var(--ink)}
+  .wrow .meta{color:var(--muted);font-size:12px}
+  .wrow .sub{font-size:12px;color:var(--muted);margin:0}
+  .wrow .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .eff{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border-radius:20px;padding:2px 8px}
+  .eff.invest{background:#e6f2e6;color:#0a7a0a} .eff.nurture{background:#fbeede;color:var(--amber)} .eff.hold{background:#e9f0fb;color:var(--blue)} .eff.ignore{background:#eeefef;color:var(--grey)}
+  /* contacts table */
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+  th{text-align:left;background:#eceae3;color:#5f5e5a;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;font-weight:700}
+  td{padding:9px 12px;border-top:1px solid var(--line);vertical-align:middle}
+  tr[data-open]{cursor:pointer} tr[data-open]:hover td{background:#faf9f7}
+  .tchip{font-size:10.5px;font-weight:700;color:#fff;border-radius:20px;padding:1px 8px;white-space:nowrap}
+  .bar{height:7px;border-radius:5px;background:#ece9e2;width:74px;overflow:hidden;display:inline-block;vertical-align:middle}
+  .bar i{display:block;height:100%}
+  .qtag{font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px;white-space:nowrap}
+  /* pipeline */
+  .board{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .col{background:#eceae3;border-radius:11px;padding:9px}
+  .col h4{margin:0 0 8px;font-size:12px;color:var(--ink);display:flex;justify-content:space-between}
+  .col h4 span{color:var(--muted);font-weight:600}
+  .deal{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 10px;margin-bottom:7px;cursor:pointer}
+  .deal:hover{border-color:var(--orange)}
+  .deal .t{font-weight:700;font-size:12.5px;color:var(--ink);line-height:1.25}
+  .deal .v{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
+  /* detail panel */
+  #ov{position:fixed;inset:0;background:rgba(20,25,28,.45);z-index:9990;display:none}
+  #ov.on{display:block}
+  .panel{position:fixed;top:0;right:0;bottom:0;width:520px;max-width:96vw;background:var(--bg);z-index:9991;transform:translateX(100%);transition:transform .22s ease;overflow-y:auto;box-shadow:-8px 0 40px rgba(0,0,0,.18)}
+  .panel.on{transform:none}
+  .ph{background:var(--charcoal);color:#fff;padding:18px 20px}
+  .ph .x{float:right;background:none;border:none;color:#aeb7bb;font-size:22px;cursor:pointer;line-height:1}
+  .ph h3{margin:0;font-size:19px}
+  .ph .role{color:#c3ccd0;font-size:13px;margin-top:2px}
+  .pb{padding:16px 20px}
+  .sec{background:#fff;border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px}
+  .sec h5{margin:0 0 9px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .kv{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+  .kv .k{color:var(--muted)}
+  .prt{display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f2f0ea}
+  .prt:last-child{border:none} .prt .pts{font-weight:700;color:var(--ink)}
+  .msgbox{background:#fbfaf8;border:1px dashed var(--line);border-radius:9px;padding:12px;white-space:pre-wrap;font-size:13px;line-height:1.5;color:#2b3438}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;cursor:pointer;color:var(--ink)}
+  .btn.p{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .lang{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .lang button{background:#fff;border:none;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
+  .lang button.on{background:var(--ink);color:#fff}
+  .why{font-size:12.5px;color:var(--muted);background:#f6f5f2;border-radius:8px;padding:9px 11px;margin-top:6px}
+  .tg{display:inline-flex;align-items:center;gap:5px;background:#efede6;border:1px solid var(--line);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:#3a464b;margin:0 5px 5px 0}
+  .tg b{cursor:pointer;color:#9aa2a6;font-weight:700} .tg b:hover{color:#c0392b}
+  .taginput{display:flex;gap:6px;margin-top:4px} .taginput input{flex:1;padding:6px 9px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px}
+  .note{border-left:2px solid var(--line);padding:3px 0 3px 10px;margin:7px 0;font-size:13px;color:#2b3438}
+  .note .d{font-size:11px;color:#9aa2a6}
+  .setupbanner{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:11px;padding:11px 15px;margin:0 0 14px;font-size:13px;line-height:1.5}
+  @media(max-width:760px){.tiles{grid-template-columns:1fr}.board{grid-template-columns:1fr;gap:14px}.mapwrap .yax{display:none}.crmbar{gap:6px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>📇 Leads CRM <span style="font-size:11px;font-weight:600;color:#8a4a12;background:#FFF3E8;border:1px solid #F3C49B;border-radius:16px;padding:3px 10px;vertical-align:3px">Private — only Belén</span></h1>
+  <p class="sub">Fit × engagement value map, work queue, contacts and the DCE pipeline — now living inside the Dispatch Center.</p>
+  <div class="crmbar" id="crmbar" style="display:none">
+    <div class="tabs" id="tabs"></div>
+    <button class="hbtn" onclick="exportCrm()" title="Download a backup of everything (contacts, tags, notes)">⬇ Backup</button>
+    <label class="hbtn" title="Restore from a backup file (replaces what is here)" style="display:inline-block">Restore<input type="file" accept=".json" onchange="importCrm(event)" style="display:none"></label>
+    <span id="saveChip"></span>
+  </div>
+  <div id="banners"></div>
+  <div id="app"></div>
+</div>
+
+<div id="ov"></div>
+<div class="panel" id="panel"></div>
+
+<script src="store.js?v=48"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('crm');
+
+/* ================================================================
+   THE BRAIN — transparent, rule-based scoring (ported from the ata-crm
+   sandbox; every point a contact scores traces back to a rule below).
+   ================================================================ */
+const CRM_VERSION = 4;
+const DEMO_EMAILS = ['m.torres@sungrow.com','agil@fcirce.es','e.ricci@iberdrola.es','t.k@tecnalia.com',
+  'lmendez@fluence.com','g.fontana@pv-magazine.com','carn@cartif.es','sofia.almeida@edp.pt','james@modoenergy.com',
+  'pedro.ramos@gmail.com','aisha.k@outlook.com','rafael@epc.com.br','nina.berg@gmail.com','someone@example.com','marc.dubois@engie.com'];
+const DEMO_DEAL_TITLES = ['Sungrow — RENMAD Storage sponsorship','CIRCE — DCE work package','Modo Energy — media/partner deal','Iberdrola — Invest sponsorship'];
+
+const TRACKS = {
+  sponsor:    {label:'Sponsor',        color:'#EB6834', sells:'event sponsorship'},
+  consortium: {label:'Consortium / EU',color:'#2A78D6', sells:'a dissemination (DCE) slot'},
+  media:      {label:'Media partner',  color:'#4A3AA7', sells:'a media partnership'},
+  audience:   {label:'Audience',       color:'#8A8781', sells:'nothing — they are the reach'},
+};
+const QUADRANTS = {
+  act:    {label:'Act now',            color:'#0CA30C', effort:'invest', do:'Route to sales — send the proposal.'},
+  court:  {label:'Court & propose',    color:'#B26A10', effort:'nurture', do:'Reach out first / keep top-of-mind for the next good-fit call.'},
+  fans:   {label:'Audience · superfans',color:'#2A78D6', effort:'hold',   do:'Monetise as reach. Do NOT sell.'},
+  passive:{label:'Passive reach',      color:'#8A8781', effort:'ignore', do:'Keep warm, near-zero cost.'},
+};
+const SECTORS = ['Storage & BESS','Renewable Hydrogen','Biomethane','Data Centres & AI','Solar PV','Wind','Grids','Minigrids & energy access','Investment & Finance'];
+const CORE_COUNTRIES = ['Spain','Italy','Portugal','Poland'];
+const ENGLISH_TARGET = ['United Kingdom','Ireland','United States','Canada','Australia'];
+/* stages of the DCE / sales pipeline (CRM_STAGES — "STAGES" is the dispatch gantt's) */
+const CRM_STAGES = [
+  {key:'identified', label:'Identified',   prob:0.10},
+  {key:'contacted',  label:'Contacted',    prob:0.20},
+  {key:'discussion', label:'In discussion',prob:0.40},
+  {key:'bid',        label:'In bid',       prob:0.65},
+  {key:'awarded',    label:'Awarded',      prob:1.00},
+];
+
+/* ---------- FIT: who they are + what they need (0–100) ---------- */
+const ORGTYPE_FIT = {vendor:30, developer:22, research:30, media:20, consultancy:15, individual:0, ngo:8};
+const SENIORITY_FIT = {clevel:20, head:15, manager:8, staff:2, unknown:4};
+const INTENT_FIT = {sponsor:20, project:20, partner:16, hosting:12, insights:0, webinar:0, unknown:4};
+function fitScore(c){
+  const parts=[];
+  const add=(label,pts)=>{ if(pts) parts.push({label,pts}); };
+  add('Organisation type — '+(c.orgType||'unknown'), ORGTYPE_FIT[c.orgType]||0);
+  add('Seniority — '+(c.seniority||'unknown'), SENIORITY_FIT[c.seniority]||0);
+  if(SECTORS.includes(c.sector)) add('Sector we cover — '+c.sector, 15);
+  if(CORE_COUNTRIES.includes(c.country)) add('Core market — '+c.country, 10);
+  else if(ENGLISH_TARGET.includes(c.country)) add('Growth market (English-speaking) — '+c.country, 8);
+  else if(c.country) add('Other market — '+c.country, 4);
+  add('Told us why they came — '+(c.intent||'unknown'), INTENT_FIT[c.intent]||0);
+  if(c.rel==='client') add('Past client / sponsor', 25);
+  else if(c.rel==='speaker') add('Past speaker', 15);
+  else if(c.rel==='relationship') add('Strong existing relationship (yellow flag)', 12);
+  else if(c.rel==='attendee') add('Past event attendee', 8);
+  if(c.euTier===1) add('Tier-1 target organisation', 8);
+  else if(c.euTier===2) add('Tier-2 target organisation', 4);
+  if(c.persona==='comms') add('Comms / dissemination buyer persona', 12);
+  else if(c.persona==='coordinator') add('Project coordinator persona', 8);
+  else if(c.persona==='PM') add('Project-manager persona', 5);
+  let score=parts.reduce((a,p)=>a+p.pts,0);
+  score=Math.max(0,Math.min(100,score));
+  return {score, parts};
+}
+
+/* ---------- ENGAGEMENT: what they do with us (0–100, recent counts more) ---------- */
+const SIGNAL_W = {
+  meeting:35, reply:26, call:24, brochure_download:24, event_attend:30, proposal_click:22,
+  webinar_attend:16, webinar_register:12, site_visit:9, brochure_view:7, newsletter_open:6,
+};
+const SIGNAL_LABEL = {
+  meeting:'Meeting held', reply:'Replied to us', call:'Spoke on a call', brochure_download:'Downloaded the brochure',
+  event_attend:'Attended an event', proposal_click:'Opened a proposal', site_visit:'Visited the site',
+  webinar_attend:'Watched a webinar', webinar_register:'Registered for a webinar',
+  brochure_view:'Viewed the brochure', newsletter_open:'Opened the newsletter',
+};
+function sigWeeks(s){
+  if(s.date) return Math.max(0,(Date.now()-new Date(s.date).getTime())/(7*86400000));
+  return s.weeks||0;
+}
+function decay(weeksAgo){ return Math.max(0.3, 1 - (weeksAgo||0)/52); }
+function engScore(c){
+  const parts=[];
+  (c.signals||[]).forEach(s=>{
+    const w=sigWeeks(s), base=SIGNAL_W[s.type]||0, pts=Math.round(base*decay(w));
+    if(pts) parts.push({label:SIGNAL_LABEL[s.type]||s.type, pts, weeks:Math.round(w)});
+  });
+  parts.sort((a,b)=>a.weeks-b.weeks);
+  let score=Math.min(100, parts.reduce((a,p)=>a+p.pts,0));
+  return {score, parts};
+}
+const ACT_TYPES={
+  note:    {label:'Note'},
+  call:    {label:'Call — spoke', sig:'call'},
+  call_no: {label:'Called — no answer'},
+  reply:   {label:'They replied', sig:'reply'},
+  meeting: {label:'Meeting', sig:'meeting'},
+  email:   {label:'Email sent'},
+  proposal:{label:'Proposal sent'},
+};
+
+/* ---------- derived: track, quadrant, value ---------- */
+function track(c){
+  if(c.trackOverride) return c.trackOverride;
+  if(c.intent==='project') return 'consortium';
+  if(c.orgType==='vendor'||c.orgType==='developer') return c.intent==='project'?'consortium':'sponsor';
+  if(c.orgType==='research'||c.orgType==='ngo') return 'consortium';
+  if(c.orgType==='media') return 'media';
+  if(c.orgType==='consultancy') return c.intent==='sponsor'?'sponsor':'audience';
+  return 'audience';
+}
+function quadrant(fit,eng){
+  const hf=fit>=50, he=eng>=50;
+  return hf&&he?'act' : hf&&!he?'court' : !hf&&he?'fans' : 'passive';
+}
+const ORG_TIER_VALUE = {1:60000, 2:40000, 3:25000};
+function potentialValue(c){
+  const t=track(c);
+  if(t==='sponsor') return ORG_TIER_VALUE[c.tier||2]||40000;
+  if(t==='consortium') return 60000;
+  if(t==='media') return 8000;
+  return 0;
+}
+function expectedValue(c){ const f=fitScore(c).score; return Math.round(potentialValue(c)*f/100); }
+
+/* ---------- the PLAY ---------- */
+function topSignal(c){ const p=engScore(c).parts; return p.length?p[0]:null; }
+function suggestedPlay(c){
+  const fit=fitScore(c).score, eng=engScore(c).score, q=quadrant(fit,eng), t=track(c);
+  const Q=QUADRANTS[q];
+  let action, hook='';
+  const ev = c.eventFit || eventForSector(c.sector);
+  if(t==='audience'){
+    action = q==='fans'
+      ? 'Keep nurturing — they love the free content. No sales touch; they are the reach you sell to sponsors.'
+      : 'Leave in the audience nurture stream. Near-zero effort.';
+  } else if(q==='act'){
+    const ts=topSignal(c);
+    action = 'Warm and a strong fit — send the proposal this week'+(ts?' (reference: '+ts.label.toLowerCase()+')':'')+'.';
+    hook = t==='consortium' ? 'Follow up on the dissemination work package.' : 'Propose '+(ev?ev+' ':'')+'sponsorship.';
+  } else if(q==='court'){
+    action = t==='consortium'
+      ? 'High fit, quiet. Light-touch nurture: invite to speak, stay their obvious DCE choice for the next good-fit call.'
+      : 'High fit, hasn’t engaged. Proactive outreach: propose '+(ev?ev+' ':'')+'sponsorship before they go looking.';
+    hook = 'Minimum to edge them toward a flip — be top-of-mind, don’t hard-sell.';
+  } else {
+    action = 'Low priority — keep warm through general nurture until fit or interest rises.';
+  }
+  return {action, hook, effort:Q.effort, quadrant:q, track:t, fit, eng};
+}
+function eventForSector(sector){
+  const map={'Storage & BESS':'RENMAD Storage','Renewable Hydrogen':'RENMAD Hydrogen','Biomethane':'RENMAD Biomethane',
+    'Data Centres & AI':'RENMAD Data Centers','Investment & Finance':'RENMAD Invest','Grids':'RENMAD Storage',
+    'Solar PV':'RENMAD','Wind':'RENMAD','Minigrids & energy access':'RENMAD'};
+  return map[sector]||'RENMAD';
+}
+
+/* ---------- the DRAFT: first-draft message, in Belén's voice (tú, warm, no fluff) ---------- */
+function draftMessage(c, lang){
+  lang = lang||'es';
+  const p=suggestedPlay(c), t=p.track, first=(c.name||'').split(' ')[0];
+  const ev=c.eventFit||eventForSector(c.sector);
+  const ES={
+    sponsor_act:`Hola ${first},\n\nGracias por tu interés — me encantaría contarte cómo ${c.org} puede llegar a nuestra comunidad de +86.000 profesionales del sector a través de ${ev}. Por lo que veo encajaríais muy bien.\n\n¿Te viene bien una llamada de 20 minutos esta semana?\n\nUn saludo,\nBelén`,
+    sponsor_court:`Hola ${first},\n\nTe escribo porque creo que ${ev} encaja de lleno con lo que estáis haciendo en ${c.org}. Es donde el sector hace negocio, y sería una plataforma potente para vuestra presencia en el mercado.\n\n¿Te apetece que te mande la información y lo vemos sin compromiso?\n\nUn saludo,\nBelén`,
+    consortium_act:`Hola ${first},\n\nSeguimos con mucho interés el trabajo de ${c.org}. En ATA Insights somos el socio de diseminación y comunicación (DCE) de consorcios como el vuestro: llevamos vuestros resultados a la audiencia que vuestro paquete de trabajo necesita alcanzar.\n\n¿Hablamos 20 minutos sobre el paquete de comunicación?\n\nUn saludo,\nBelén`,
+    consortium_court:`Hola ${first},\n\nUn placer saludarte. Trabajamos como socio de diseminación (DCE) en proyectos Horizon, y me gustaría teneros en el radar para la próxima convocatoria que encaje. Si estáis preparando algo, encantada de sumar la comunicación desde el principio.\n\n¿Te vendría bien que te invite a participar en uno de nuestros webinars del sector?\n\nUn saludo,\nBelén`,
+    media_court:`Hola ${first},\n\nMe encantaría explorar una colaboración de medios entre ${c.org} y ATA Insights — cruce de audiencias, contenido y difusión de eventos. Creo que hay un encaje natural.\n\n¿Lo vemos en una llamada corta?\n\nUn saludo,\nBelén`,
+    nurture:`Hola ${first},\n\nGracias por seguir a ATA Insights. Te seguiremos enviando lo mejor del sector — y si en algún momento quieres explorar cómo trabajamos con marcas y proyectos, aquí estoy.\n\nUn saludo,\nBelén`,
+  };
+  const EN={
+    sponsor_act:`Hi ${first},\n\nThanks for your interest — I'd love to show you how ${c.org} can reach our community of 86,000+ sector professionals through ${ev}. From what I can see it's a strong fit.\n\nWould a 20-minute call this week work?\n\nBest,\nBelén`,
+    sponsor_court:`Hi ${first},\n\nI'm reaching out because ${ev} looks like a natural fit for what ${c.org} is doing — it's where the sector does business, and a strong platform for your market presence.\n\nHappy to send the details and talk it through, no pressure. Interested?\n\nBest,\nBelén`,
+    consortium_act:`Hi ${first},\n\nWe follow ${c.org}'s work closely. At ATA Insights we're the dissemination & communication (DCE) partner for consortia like yours — we get your results in front of the audience your work package needs to reach.\n\nCould we talk for 20 minutes about the comms work package?\n\nBest,\nBelén`,
+    consortium_court:`Hi ${first},\n\nGood to connect. We work as a dissemination (DCE) partner on Horizon projects, and I'd love to be on your radar for the next call that fits. If you're preparing a bid, happy to bring the communication in from the start.\n\nWould an invitation to speak at one of our sector webinars be of interest?\n\nBest,\nBelén`,
+    media_court:`Hi ${first},\n\nI'd love to explore a media partnership between ${c.org} and ATA Insights — audience cross-over, content and event promotion. I think there's a natural fit.\n\nShall we jump on a quick call?\n\nBest,\nBelén`,
+    nurture:`Hi ${first},\n\nThanks for following ATA Insights. We'll keep sending you the best of the sector — and whenever you'd like to explore how we work with brands and projects, I'm here.\n\nBest,\nBelén`,
+  };
+  const set = lang==='en'?EN:ES;
+  let key='nurture';
+  if(t==='audience') key='nurture';
+  else if(t==='media') key='media_court';
+  else if(p.quadrant==='act') key = t==='consortium'?'consortium_act':'sponsor_act';
+  else if(p.quadrant==='court') key = t==='consortium'?'consortium_court':'sponsor_court';
+  return set[key]||set.nurture;
+}
+
+/* ================= data store =================
+   Cloud mode: ONE jsonb row in the dispatch Supabase (dc_crm, id=1), readable
+   and writable ONLY by Belén (RLS on her login email — enforced server-side,
+   the tab being hidden is just politeness). Every edit debounce-pushes the
+   whole blob; a localStorage copy is kept as a same-device safety net.
+   Local mode (dev rig, no Supabase URL): plain localStorage, like the sandbox. */
+const CRM = {
+  data:null, cloudOk:false, loadErr:'', firstRun:false, _t:null,
+  async init(){
+    if(!USE_SUPABASE){ this._loadLocal(); return; }
+    try{
+      const r=await sb.from('dc_crm').select('data').eq('id',1).maybeSingle();
+      if(r.error) throw r.error;
+      if(r.data&&r.data.data&&Array.isArray(r.data.data.contacts)){ this.data=r.data.data; }
+      else{ this.data=seed(); this.firstRun=true; }
+      this.cloudOk=true;
+      if(this.data.v!==CRM_VERSION) this.data.v=CRM_VERSION; // migrate, never wipe
+      this._cleanupDemo();
+      if(this.firstRun) this._push();
+    }catch(e){
+      this.cloudOk=false; this.loadErr=(e&&(e.message||e.code))||'unknown error';
+      this._loadLocal(); // the page still works; changes stay on this device until the table exists
+    }
+  },
+  _loadLocal(){
+    try{ this.data=JSON.parse(localStorage.getItem('ataCrm')); }catch(e){ this.data=null; }
+    if(!this.data){ this.data=seed(); this.save(); }
+    else if(this.data.v!==CRM_VERSION){ this.data.v=CRM_VERSION; this.save(); }
+    this._cleanupDemo();
+  },
+  _cleanupDemo(){
+    if(!this.data||!Array.isArray(this.data.contacts))return;
+    const before=this.data.contacts.length+this.data.deals.length;
+    this.data.contacts=this.data.contacts.filter(c=>!DEMO_EMAILS.includes((c.email||'').toLowerCase()));
+    const ids=new Set(this.data.contacts.map(c=>c.id));
+    this.data.deals=this.data.deals.filter(d=>ids.has(d.contactId)&&!DEMO_DEAL_TITLES.includes(d.title));
+    if(before!==this.data.contacts.length+this.data.deals.length) this.save();
+  },
+  save(){
+    try{ localStorage.setItem('ataCrm', JSON.stringify(this.data)); }catch(e){}
+    if(USE_SUPABASE&&this.cloudOk){
+      saveChip('saving'); clearTimeout(this._t);
+      this._t=setTimeout(()=>{ this._t=null; this._push(); },700);
+    }
+  },
+  async _push(){
+    try{
+      const {error}=await sb.from('dc_crm').upsert({id:1, data:this.data, updated:new Date().toISOString()});
+      if(error) throw error;
+      saveChip('saved');
+    }catch(e){ saveChip('err'); }
+  },
+  get contacts(){ return this.data.contacts; },
+  get deals(){ return this.data.deals; },
+  contact(id){ return this.data.contacts.find(c=>c.id===id); },
+  view(c){
+    const f=fitScore(c), e=engScore(c), q=quadrant(f.score,e.score);
+    return {c, fit:f.score, fitParts:f.parts, eng:e.score, engParts:e.parts, quad:q,
+            track:track(c), value:potentialValue(c), expected:expectedValue(c), play:suggestedPlay(c)};
+  },
+  allViews(){ return this.contacts.map(c=>this.view(c)).sort((a,b)=>b.expected-a.expected); },
+  allTags(){ const s=new Set(); this.contacts.forEach(c=>(c.tags||[]).forEach(t=>s.add(t))); return [...s].sort(); },
+  addTag(id,tag){ tag=(tag||'').trim(); if(!tag) return; const c=this.contact(id); c.tags=c.tags||[]; if(!c.tags.includes(tag)) c.tags.push(tag); this.save(); },
+  removeTag(id,tag){ const c=this.contact(id); c.tags=(c.tags||[]).filter(t=>t!==tag); this.save(); },
+  addActivity(id,type,text){
+    const c=this.contact(id); if(!c) return;
+    const date=new Date().toISOString().slice(0,10);
+    text=(text||'').trim();
+    if(!text && type==='note') return;
+    c.notes=c.notes||[]; c.notes.unshift({date,type,text});
+    const sig=ACT_TYPES[type]&&ACT_TYPES[type].sig;
+    if(sig){ c.signals=c.signals||[]; c.signals.push({type:sig,date}); }
+    if(['call','call_no','email','proposal','meeting'].includes(type)){
+      const today=new Date().toISOString().slice(0,10);
+      if(!c.nextTouch || c.nextTouch<=today){
+        const d=new Date(); d.setDate(d.getDate()+14);
+        c.nextTouch=d.toISOString().slice(0,10); c.nextTouchAuto=true;
+      }
+    }
+    this.save();
+  },
+  addNote(id,text){ this.addActivity(id,'note',text); },
+  setNextTouch(id,dateISO){ const c=this.contact(id); c.nextTouch=dateISO||null; c.nextTouchAuto=false; this.save(); },
+  addContact(d){
+    const id=this.data.nextC||1000; this.data.nextC=id+1;
+    const c=Object.assign({id,signals:[],notes:[],tags:[],source:'manual',intent:'project',rel:'none'},d);
+    this.data.contacts.push(c); this.save(); return c;
+  },
+  updateContact(id,d){ const c=this.contact(id); if(!c) return; Object.assign(c,d); this.save(); },
+  deleteContact(id){
+    this.data.contacts=this.data.contacts.filter(c=>c.id!==id);
+    this.data.deals=this.data.deals.filter(d=>d.contactId!==id);
+    this.save();
+  },
+  lastTouch(c){ const n=(c.notes||[]).find(x=>x.type&&x.type!=='note'); return n?n.date:((c.notes||[])[0]?(c.notes||[])[0].date:null); },
+  due(){ const t=new Date().toISOString().slice(0,10);
+    return this.allViews().filter(v=>v.c.nextTouch && v.c.nextTouch<=t); },
+  counts(){
+    const vs=this.allViews(), by={act:0,court:0,fans:0,passive:0};
+    vs.forEach(v=>by[v.quad]++);
+    const audience = vs.filter(v=>v.track==='audience').length;
+    const pipeline = vs.filter(v=>v.track!=='audience' && v.fit>=50).length;
+    const openVal = this.deals.filter(d=>d.stage!=='awarded'&&d.stage!=='lost')
+      .reduce((a,d)=>{ const st=CRM_STAGES.find(s=>s.key===d.stage); return a+(d.value||0)*(st?st.prob:0); },0);
+    return {by, audience, pipeline, openVal:Math.round(openVal)};
+  },
+};
+/* don't let a navigation swallow a CRM edit still waiting in the 700 ms window */
+window.addEventListener('beforeunload',e=>{ if(CRM._t){ e.preventDefault(); e.returnValue=''; } });
+
+/* seed: the 16 verified EU-project leads (first-run only; the full CRM arrives via Restore) */
+function seed(){
+  const L=(id,name,org,orgType,sen,role,country,sector,email,proj,persona)=>({
+    id,name,org,orgType,seniority:sen,role,country,sector,intent:'project',rel:'none',email,
+    signals:[], source:'EU sourcing', proj, persona,
+    tags:['EU project', proj, persona==='comms'?'Comms / DCE lead':'Project manager', country],
+    notes:[]
+  });
+  const contacts=[
+    L(1,'Mertxe Uzkudun','IDEKO','research','head','Marketing & Communication Responsible','Spain','','muzkudun@ideko.es','ShieldBot','comms'),
+    L(2,'Irati Zabala','IDEKO','research','staff','Marketing & Communication Technician','Spain','','izabala@ideko.es','ShieldBot','comms'),
+    L(3,'Raúl Santos','U. Porto','research','manager','Communication Manager','Portugal','','rsantos@reit.up.pt','INNO-TREC','comms'),
+    L(4,'Cláudia Sousa','U. Porto','research','staff','Communication Professional','Portugal','','sousac@up.pt','INNO-TREC','comms'),
+    L(5,'Gorka De Miguel','CEIT','research','manager','Project Manager','Spain','','gdemiguel@ceit.es','MITHOS','PM'),
+    L(6,'Ricardo Carvajal','CEMOSA','consultancy','manager','Project Manager','Spain','','ricardo.carvajal@cemosa.es','MOVEO','PM'),
+    L(7,'Daniel Jiménez','CEMOSA','consultancy','manager','Project Manager','Spain','','daniel.jimenez@cemosa.es','MOVEO','PM'),
+    L(8,'Manuel Muniesa','Hidrógeno Aragón','research','manager','Project Manager','Spain','Renewable Hydrogen','mmuniesa@hidrogenoaragon.org','C2FUe-LS','PM'),
+    L(9,'Teresa Villuendas','Hidrógeno Aragón','research','manager','Project Manager','Spain','Renewable Hydrogen','tvilluendas@hidrogenoaragon.org','C2FUe-LS','PM'),
+    L(10,'Francisco Vallejo','IDEKO','research','manager','Project Manager','Spain','','fjvallejo@ideko.es','ShieldBot','PM'),
+    L(11,'João Ptp','INEGI','research','manager','Project Manager','Portugal','','jptp@inegi.up.pt','HyperMorpH','PM'),
+    L(12,'Riccardo Enei','ISINNOVA','research','manager','Project Manager','Italy','Biomethane','renei@isinnova.org','BIOMAPE','PM'),
+    L(13,'Giorgia Galvini','ISINNOVA','research','manager','EU Project Manager','Italy','Biomethane','ggalvini@isinnova.org','BIOMAPE','PM'),
+    L(14,'Sara García','MOSAIC Factor','consultancy','manager','Innovation Project Manager','Spain','','sara.garcia@mosaicfactor.com','TWIN-LOOP','PM'),
+    L(15,'Elena Martínez','MOSAIC Factor','consultancy','head','Senior Project Manager','Spain','','elena.martinez@mosaicfactor.com','TWIN-LOOP','PM'),
+    L(16,'Lluís Núñez','MOSAIC Factor','consultancy','manager','Project Manager','Spain','','lluis.nunez@mosaicfactor.com','TWIN-LOOP','PM'),
+  ];
+  const D=(id,contactId,proj,value)=>({id,contactId,title:proj+' — dissemination (DCE)',value,stage:'identified'});
+  const deals=[
+    D(1,1,'ShieldBot',45000), D(2,3,'INNO-TREC',45000), D(3,5,'MITHOS',45000),
+    D(4,6,'MOVEO',45000), D(5,8,'C2FUe-LS',55000), D(6,11,'HyperMorpH',45000),
+    D(7,13,'BIOMAPE',45000), D(8,15,'TWIN-LOOP',40000),
+  ];
+  return {v:CRM_VERSION, contacts, deals, nextC:17, nextD:9};
+}
+
+/* ================= UI ================= */
+let TAB='map', FILTER='all', TAGFILTER=null, SEARCH='', LANG='es', OPEN=null, PAGEN=0, EDITING=false;
+const CRM_TABS=[['map','Value map'],['queue','Work queue'],['contacts','Contacts'],['pipeline','Pipeline']];
+const fmt=n=>n>=1000?'€ '+(n/1000).toFixed(n%1000?1:0)+'k':(n?'€ '+n:'—');
+
+function saveChip(state){
+  const el=document.getElementById('saveChip'); if(!el) return;
+  el.className='';
+  if(!USE_SUPABASE){ el.textContent='local test mode'; return; }
+  if(!CRM.cloudOk){ el.textContent='⚠ saving to this device only'; return; }
+  if(state==='saving'){ el.textContent='☁ saving…'; el.onclick=null; }
+  else if(state==='err'){ el.className='err'; el.textContent='⚠ could not save — click to retry'; el.onclick=()=>CRM._push(); }
+  else{ el.textContent='☁ saved '+new Date().toTimeString().slice(0,5); el.onclick=null; }
+}
+function banners(){
+  const b=document.getElementById('banners'); let h='';
+  if(USE_SUPABASE&&!CRM.cloudOk)
+    h+='<div class="setupbanner"><b>One database step missing:</b> the CRM table (dc_crm) isn’t in the dispatch Supabase yet — run <b>_sql/dispatch_crm.sql</b> in the SQL editor (Claude pastes it in chat). Until then your changes stay on THIS device only. ('+esc(CRM.loadErr)+')</div>';
+  if(CRM.data&&CRM.data.contacts.length<50)
+    h+='<div class="setupbanner">📦 <b>Bring your full CRM over:</b> on your PC open the old local CRM (localhost:8150) → <b>⬇ Backup</b> → come back here → <b>Restore</b>. That carries all 900+ contacts, tags, notes and deals in one go.</div>';
+  b.innerHTML=h;
+}
+function renderTabs(){
+  document.getElementById('tabs').innerHTML=CRM_TABS.map(([k,l])=>'<button class="'+(k===TAB?'on':'')+'" data-t="'+k+'">'+l+'</button>').join('');
+  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render();});
+}
+function render(){ renderTabs(); banners(); ({map:renderMap,queue:renderQueue,contacts:renderContacts,pipeline:renderPipeline}[TAB])(); }
+
+/* ---------- Work queue ---------- */
+function queueItems(){
+  const today=new Date().toISOString().slice(0,10);
+  const vs=CRM.allViews().filter(v=>v.track!=='audience');
+  const seen=new Set(); const out=[];
+  const push=(v,why,color)=>{ if(seen.has(v.c.id))return; seen.add(v.c.id); out.push({v,why,color}); };
+  vs.filter(v=>v.c.nextTouch&&v.c.nextTouch<=today).sort((a,b)=>a.c.nextTouch.localeCompare(b.c.nextTouch))
+    .forEach(v=>push(v,'Follow-up due '+v.c.nextTouch,'#b5341f'));
+  vs.filter(v=>(v.c.tags||[]).includes('Active discussion')&&!(v.c.notes||[]).some(n=>n.type&&n.type!=='note'))
+    .forEach(v=>push(v,'Active discussion — keep it moving','#0a7a0a'));
+  vs.filter(v=>v.quad==='court'&&!(v.c.notes||[]).length&&!v.c.nextTouch)
+    .slice(0,25).forEach(v=>push(v,'High-fit, never contacted — court them','#b26a10'));
+  return out.slice(0,40);
+}
+function renderQueue(){
+  const app=document.getElementById('app');
+  const items=queueItems();
+  app.innerHTML='<h2>Work queue</h2><p class="lead">Your follow-up machine: one ordered list instead of hunting one by one. Work it top to bottom — open a contact, use the draft, log what happened (that sets the next follow-up automatically), and it drops off the queue.</p>'+
+    '<div class="card" style="background:#fff8f4;border-color:#ffd9c4;margin-bottom:14px;font-size:13px;line-height:1.6">'+
+      '<b style="color:var(--ink)">Where to start (in this order):</b><br>'+
+      '① The <b style="color:#0a7a0a">green</b> ones — your live "active discussion" conversations.<br>'+
+      '② Anything <b style="color:#b5341f">red</b> — a follow-up you set that\'s now due.<br>'+
+      '③ The <b style="color:#b26a10">amber</b> ones — highest-value relationships you haven\'t opened yet. Two or three a day is plenty.'+
+    '</div>'+
+    (items.length?items.map((it,i)=>{
+      const v=it.v,t=TRACKS[v.track];
+      return '<div class="wrow" data-open="'+v.c.id+'">'+
+        '<span style="flex:0 0 26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px">'+(i+1)+'</span>'+
+        '<span style="width:9px;height:9px;border-radius:50%;background:'+t.color+';flex:0 0 auto"></span>'+
+        '<div style="flex:1;min-width:0"><span class="nm">'+esc(v.c.name)+'</span> <span class="meta">· '+esc(v.c.org)+'</span>'+
+        '<div class="sub" style="color:'+it.color+';font-weight:600">'+esc(it.why)+'</div></div>'+
+        '<div class="val">'+(v.value?fmt(v.expected):'')+'<div style="font-size:10px;color:#9aa2a6;font-weight:400">fit '+v.fit+' · eng '+v.eng+'</div></div></div>';
+    }).join(''):'<div class="card" style="text-align:center;color:var(--muted)">Queue clear — nothing due, nothing waiting. 🎉</div>');
+  wireOpens();
+}
+
+/* ---------- value map ---------- */
+function renderMap(){
+  const vs=CRM.allViews(), c=CRM.counts();
+  const app=document.getElementById('app');
+  const maxExp=Math.max(1,...vs.map(v=>v.expected));
+  const size=v=>{ if(v.track==='audience') return 12; return 13+Math.round(22*Math.sqrt(v.expected/maxExp)); };
+  const op=v=>v.track==='audience'?.55:1;
+  const labelled=vs.filter(v=>v.track!=='audience').slice(0,6).map(v=>v.c.id);
+  const plotted=new Set();
+  vs.forEach(v=>{ if(v.eng>0||(v.c.tags||[]).includes('Active discussion')) plotted.add(v.c.id); });
+  vs.slice(0,60).forEach(v=>plotted.add(v.c.id));
+  const restCount={act:0,court:0,fans:0,passive:0};
+  const plotVs=vs.filter(v=>{ if(plotted.has(v.c.id)) return true; restCount[v.quad]++; return false; });
+  const bubblePos={court:[26,60],act:[74,60],fans:[74,26],passive:[26,26]};
+  const bubbles=Object.keys(restCount).filter(q=>restCount[q]>0).map(q=>{
+    const [x,y]=bubblePos[q];
+    return '<div title="'+restCount[q]+' more contacts in '+QUADRANTS[q].label+' — see the Contacts tab" style="position:absolute;left:'+x+'%;bottom:'+y+'%;transform:translate(-50%,50%);background:rgba(95,107,112,.13);border:1px dashed #b9c0c4;border-radius:50%;width:54px;height:54px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#5f6b70;font-weight:700">+'+restCount[q]+'</div>';
+  }).join('');
+  const dots=bubbles+plotVs.map(v=>{
+    const col=TRACKS[v.track].color, s=size(v);
+    let h='<div class="dot" data-open="'+v.c.id+'" title="'+esc(v.c.name+' — '+v.c.org)+'" style="left:'+v.eng+'%;bottom:'+v.fit+'%;width:'+s+'px;height:'+s+'px;background:'+col+';opacity:'+op(v)+'"></div>';
+    if(labelled.includes(v.c.id)) h+='<div class="dlab" style="left:'+(v.eng)+'%;bottom:'+v.fit+'%;margin-left:'+(s/2+4)+'px">'+esc(v.c.name.split(' ')[0])+'</div>';
+    return h;
+  }).join('');
+  app.innerHTML=
+    '<h2>Value map</h2><p class="lead">Every contact placed by <b>fit</b> (who they are + their needs) against <b>engagement</b> (what they do with us). Four quadrants, four different jobs — so your attention goes where it converts. Click any dot.</p>'+
+    dueStrip()+
+    '<div class="tiles">'+
+      tile('Audience (free-info)', c.audience, 'reach — not leads')+
+      tile('Qualified pipeline', c.pipeline, 'fit a buyer profile')+
+      tile('Open pipeline value', fmt(c.openVal), 'weighted by stage')+
+    '</div>'+
+    '<div class="card"><div class="mapwrap"><div class="yax">FIT — who they are + their needs&nbsp;&nbsp;↑</div>'+
+      '<div style="flex:1"><div class="plot">'+
+        '<div class="q tl"></div><div class="q tr"></div><div class="q bl"></div><div class="q br"></div>'+
+        '<div class="vline"></div><div class="hline"></div>'+
+        '<div class="qlab" style="top:8px;left:10px">Court &amp; propose<small>high fit, cool — the no-brochure buyers</small></div>'+
+        '<div class="qlab" style="top:8px;right:10px;text-align:right">Act now<small>fit &amp; warm — send the proposal</small></div>'+
+        '<div class="qlab" style="bottom:30px;left:10px">Passive<small>dormant — keep warm</small></div>'+
+        '<div class="qlab" style="bottom:30px;right:10px;text-align:right">Audience · superfans<small>won\'t buy — monetise as reach</small></div>'+
+        dots+
+      '</div><div class="xax"><span>low</span><span>ENGAGEMENT — what they do with us&nbsp;&nbsp;→</span><span>high</span></div></div>'+
+    '</div>'+
+    '<div class="legend">'+Object.keys(TRACKS).map(k=>'<span><i style="background:'+TRACKS[k].color+'"></i>'+TRACKS[k].label+'</span>').join('')+'<span style="color:#9aa2a6">bigger dot = higher expected value</span></div>'+
+    '</div>'+
+    '<div class="work"><h3>Work now — ranked by expected value (fit × deal size)</h3>'+
+      vs.filter(v=>v.track!=='audience'&&v.play.effort!=='ignore').slice(0,5).map(workRow).join('')+
+    '</div>';
+  wireOpens();
+}
+function tile(l,n,s){ return '<div class="tile"><div class="l">'+l+'</div><div class="n">'+n+'</div><div class="s">'+s+'</div></div>'; }
+function dueStrip(){
+  const due=CRM.due(); if(!due.length) return '';
+  const shown=due.slice(0,8);
+  return '<div style="background:#fff5f2;border:1px solid #ffd0bf;border-radius:11px;padding:11px 15px;margin-bottom:14px;font-size:13px">'+
+    '<b style="color:#b5341f">⏰ Follow-ups due ('+due.length+'):</b> '+
+    shown.map(v=>'<a href="#" data-open="'+v.c.id+'" style="color:var(--ink);font-weight:600;text-decoration:none;border-bottom:1px dashed #d99">'+esc(v.c.name)+'</a> <span style="color:var(--muted)">('+esc(v.c.org)+' · '+v.c.nextTouch+')</span>').join(' &nbsp;·&nbsp; ')+
+    (due.length>shown.length?' &nbsp;·&nbsp; <span style="color:var(--muted)">+'+(due.length-shown.length)+' more</span>':'')+
+  '</div>';
+}
+function workRow(v){
+  const t=TRACKS[v.track];
+  return '<div class="wrow" data-open="'+v.c.id+'"><span style="width:9px;height:9px;border-radius:50%;background:'+t.color+';flex:0 0 auto"></span>'+
+    '<div style="flex:1;min-width:0"><span class="nm">'+esc(v.c.name)+'</span> <span class="meta">· '+esc(v.c.org)+' · '+t.label+'</span>'+
+    '<div class="sub">'+v.play.action+'</div></div>'+
+    '<div><span class="eff '+v.play.effort+'">'+v.play.effort+'</span></div>'+
+    '<div class="val">'+(v.value?fmt(v.expected):'reach')+'<div style="font-size:10px;color:#9aa2a6;font-weight:400">fit '+v.fit+' · eng '+v.eng+'</div></div></div>';
+}
+
+/* ---------- contacts ---------- */
+function renderContacts(){
+  const app=document.getElementById('app');
+  let vs=CRM.allViews();
+  if(FILTER!=='all') vs=vs.filter(v=>FILTER==='pipeline'?(v.track!=='audience'&&v.fit>=50):v.quad===FILTER);
+  if(TAGFILTER) vs=vs.filter(v=>(v.c.tags||[]).includes(TAGFILTER));
+  if(SEARCH){ const q=SEARCH.toLowerCase();
+    vs=vs.filter(v=>((v.c.name||'')+' '+(v.c.org||'')+' '+(v.c.email||'')+' '+(v.c.tags||[]).join(' ')).toLowerCase().includes(q)); }
+  const total=vs.length, PAGE=100, pages=Math.max(1,Math.ceil(total/PAGE));
+  if(PAGEN>=pages)PAGEN=pages-1; if(PAGEN<0)PAGEN=0;
+  vs=vs.slice(PAGEN*PAGE,(PAGEN+1)*PAGE);
+  const pager= pages>1 ? '<div style="display:flex;gap:8px;align-items:center;justify-content:center;margin:14px 0 4px">'+
+      '<button class="btn" id="pgPrev" '+(PAGEN===0?'disabled style="opacity:.4"':'')+'>&#8249; Prev</button>'+
+      '<span style="font-size:13px;color:var(--muted)">Page <b style="color:var(--ink)">'+(PAGEN+1)+'</b> of '+pages+' · '+total+' contacts</span>'+
+      '<button class="btn" id="pgNext" '+(PAGEN>=pages-1?'disabled style="opacity:.4"':'')+'>Next &#8250;</button></div>' : '';
+  const chips=[['all','All'],['act','Act now'],['court','Court'],['fans','Audience'],['pipeline','Qualified only']];
+  const tags=CRM.allTags();
+  const TAG_COUNTRIES=['Spain','Italy','Portugal','Poland','France','Germany','Belgium','Netherlands','Greece','Austria','United Kingdom','Ireland','Denmark','Sweden','Finland','Norway','Switzerland','Czechia','Romania','Slovenia','Croatia','Hungary','Turkey'];
+  const groups={ 'Work status':[], 'Tier':[], 'Outreach plan':[], 'Country':[], 'EU project':[], 'My tags':[] };
+  tags.forEach(t=>{
+    if(['Active discussion','Relationship','EU targeting','EU project','Comms / DCE lead','Project manager'].includes(t)) groups['Work status'].push(t);
+    else if(/^Tier \d/.test(t)) groups['Tier'].push(t);
+    else if(/^Plan [A-Z]/.test(t)) groups['Outreach plan'].push(t);
+    else if(TAG_COUNTRIES.includes(t)) groups['Country'].push(t);
+    else if(/^[A-Z0-9][A-Za-z0-9-]*$/.test(t)&&t===t.toUpperCase()||['ShieldBot','HyperMorpH'].includes(t)) groups['EU project'].push(t);
+    else groups['My tags'].push(t);
+  });
+  const tagSel='<select id="tagSel" style="padding:8px 10px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px;max-width:240px">'+
+    '<option value="">All tags</option>'+
+    Object.keys(groups).filter(g=>groups[g].length).map(g=>'<optgroup label="'+g+'">'+groups[g].map(t=>'<option value="'+esc(t)+'"'+(TAGFILTER===t?' selected':'')+'>'+esc(t)+'</option>').join('')+'</optgroup>').join('')+
+    '</select>';
+  app.innerHTML='<h2>Contacts</h2><p class="lead">Sorted by expected value. Click a row to see the why, edit their details, tag them, log a call and copy the drafted next message.</p>'+
+    dueStrip()+
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'+
+      '<input id="srch" value="'+esc(SEARCH)+'" placeholder="Search name, organisation, email or tag…" style="flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px">'+
+      tagSel+
+      '<button class="btn p" id="newC" style="background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600">+ New contact</button></div>'+
+    '<div class="filters">'+chips.map(([k,l])=>'<span class="chip '+(k===FILTER?'on':'')+'" data-f="'+k+'">'+l+'</span>').join('')+'</div>'+
+    '<table><tr><th>Contact</th><th>Type</th><th>Fit</th><th>Engagement</th><th>Quadrant</th><th>Last / next touch</th><th style="text-align:right">Exp. value</th></tr>'+
+    vs.map(v=>{
+      const t=TRACKS[v.track], q=QUADRANTS[v.quad];
+      const lt=CRM.lastTouch(v.c);
+      return '<tr data-open="'+v.c.id+'"><td><b>'+esc(v.c.name)+'</b><div style="color:var(--muted);font-size:12px">'+esc(v.c.org)+' · '+esc(v.c.country||'—')+'</div></td>'+
+        '<td><span class="tchip" style="background:'+t.color+'">'+t.label+'</span></td>'+
+        '<td>'+barCell(v.fit,t.color)+'</td>'+
+        '<td>'+barCell(v.eng,'#5f6b70')+'</td>'+
+        '<td><span class="qtag" style="background:'+q.color+'22;color:'+q.color+'">'+q.label+'</span></td>'+
+        '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(lt?lt:'—')+' / '+(v.c.nextTouch?'<b style="color:var(--ink)">'+v.c.nextTouch+'</b>':'—')+'</td>'+
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">'+(v.value?fmt(v.expected):'<span style="color:#9aa2a6">reach</span>')+'</td></tr>';
+    }).join('')+'</table>'+pager;
+  document.querySelectorAll('[data-f]').forEach(c=>c.onclick=()=>{FILTER=c.dataset.f;PAGEN=0;renderContacts();});
+  const ts=document.getElementById('tagSel');
+  ts.onchange=()=>{ TAGFILTER=ts.value||null; PAGEN=0; renderContacts(); };
+  const si=document.getElementById('srch');
+  si.oninput=()=>{ SEARCH=si.value; PAGEN=0; const pos=si.selectionStart; renderContacts(); const s2=document.getElementById('srch'); s2.focus(); s2.setSelectionRange(pos,pos); };
+  const pp=document.getElementById('pgPrev'); if(pp)pp.onclick=()=>{PAGEN--;renderContacts();window.scrollTo(0,0);};
+  const pn=document.getElementById('pgNext'); if(pn)pn.onclick=()=>{PAGEN++;renderContacts();window.scrollTo(0,0);};
+  document.getElementById('newC').onclick=()=>{ const c=CRM.addContact({name:'New contact',org:'',email:''}); EDITING=true; openContact(c.id); };
+  wireOpens();
+}
+function barCell(v,col){ return '<span class="bar"><i style="width:'+v+'%;background:'+col+'"></i></span> <span style="font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px">'+v+'</span>'; }
+
+/* ---------- pipeline ---------- */
+function renderPipeline(){
+  const app=document.getElementById('app');
+  app.innerHTML='<h2>Pipeline</h2><p class="lead">Open opportunities by stage — the DCE / sales motion. Weighted value uses each stage\'s probability.</p>'+
+    '<div class="board">'+CRM_STAGES.map(st=>{
+      const ds=CRM.deals.filter(d=>d.stage===st.key);
+      const sum=ds.reduce((a,d)=>a+(d.value||0),0);
+      return '<div class="col"><h4>'+st.label+' <span>'+fmt(sum)+'</span></h4>'+
+        ds.map(d=>{ const c=CRM.contact(d.contactId); return '<div class="deal" data-open="'+d.contactId+'"><div class="t">'+esc(d.title)+'</div><div class="v">'+fmt(d.value)+' · '+esc(c?c.org:'')+'</div></div>'; }).join('')+
+        (ds.length?'':'<div style="font-size:12px;color:#9aa2a6;padding:4px">—</div>')+
+      '</div>';
+    }).join('')+'</div>';
+  wireOpens();
+}
+
+/* ---------- detail panel ---------- */
+function wireOpens(){ document.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openContact(+el.dataset.open)); }
+function openContact(id){ OPEN=id; renderPanel(); document.getElementById('ov').classList.add('on'); document.getElementById('panel').classList.add('on'); }
+function closePanel(){ document.getElementById('ov').classList.remove('on'); document.getElementById('panel').classList.remove('on'); OPEN=null; EDITING=false; }
+document.getElementById('ov').onclick=closePanel;
+
+function renderPanel(){
+  if(EDITING){ renderEditPanel(); return; }
+  const v=CRM.view(CRM.contact(OPEN)), c=v.c, t=TRACKS[v.track], q=QUADRANTS[v.quad];
+  const prow=p=>'<div class="prt"><span>'+p.label+(p.weeks!=null?' <span style="color:#9aa2a6">· '+p.weeks+'w ago</span>':'')+'</span><span class="pts">+'+p.pts+'</span></div>';
+  document.getElementById('panel').innerHTML=
+    '<div class="ph"><button class="x" onclick="closePanel()">&times;</button>'+
+      '<h3>'+esc(c.name)+'</h3><div class="role">'+esc((c.role?c.role+' · ':'')+c.org)+'</div>'+
+      '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;align-items:center">'+
+        '<span class="tchip" style="background:'+t.color+'">'+t.label+'</span>'+
+        '<span class="qtag" style="background:#fff;color:'+q.color+'">'+q.label+'</span>'+
+        '<span class="eff '+v.play.effort+'">'+v.play.effort+'</span>'+
+        '<span style="margin-left:auto;display:flex;gap:6px">'+
+          '<button onclick="startEdit()" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;font:600 11.5px \'Segoe UI\',sans-serif;border-radius:8px;padding:5px 12px;cursor:pointer">✎ Edit</button>'+
+          '<button onclick="delContact()" style="background:none;border:1px solid rgba(255,120,120,.5);color:#ff9d9d;font:600 11.5px \'Segoe UI\',sans-serif;border-radius:8px;padding:5px 12px;cursor:pointer">Delete</button>'+
+        '</span>'+
+      '</div></div>'+
+    '<div class="pb">'+
+      '<div class="sec"><h5>Suggested next move</h5>'+
+        '<div style="font-size:14px;color:var(--ink);font-weight:600;margin-bottom:4px">'+v.play.action+'</div>'+
+        (v.play.hook?'<div class="why">'+v.play.hook+'</div>':'')+
+        '<div style="display:flex;gap:14px;margin-top:11px;font-size:13px">'+
+          '<div><span style="color:var(--muted)">Potential value</span><br><b>'+(v.value?fmt(v.value):'reach only')+'</b></div>'+
+          '<div><span style="color:var(--muted)">Expected (fit-weighted)</span><br><b>'+(v.value?fmt(v.expected):'—')+'</b></div>'+
+        '</div></div>'+
+      '<div class="sec"><h5>Tags</h5>'+
+        '<div id="tagbox">'+(c.tags||[]).map((t,i)=>'<span class="tg">'+esc(t)+' <b data-rm="'+i+'" title="Remove tag">&times;</b></span>').join('')+'</div>'+
+        '<div class="taginput"><input id="tagIn" placeholder="Add a tag (e.g. warm, replied, met at event)" onkeydown="if(event.key===\'Enter\')addTagUI()"><button class="btn" onclick="addTagUI()">Add</button></div></div>'+
+      '<div class="sec"><h5>Next touch</h5>'+
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
+          '<input type="date" id="ntIn" value="'+(c.nextTouch||'')+'" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px">'+
+          '<button class="btn" onclick="bumpNT(7)">+1w</button><button class="btn" onclick="bumpNT(14)">+2w</button><button class="btn" onclick="bumpNT(30)">+1m</button>'+
+          '<button class="btn" onclick="saveNT()">Set</button>'+(c.nextTouch?'<button class="btn" onclick="clearNT()" style="color:#A32D2D">Clear</button>':'')+
+        '</div>'+
+        (c.nextTouch?'<div style="font-size:12px;color:var(--muted);margin-top:7px">Follow up on <b style="color:var(--ink)">'+c.nextTouch+'</b>'+(c.nextTouchAuto?' <span style="color:#9aa2a6">(auto-set after your last touch — adjust freely)</span>':'')+'</div>':'<div style="font-size:12px;color:#9aa2a6;margin-top:7px">No follow-up set — Court contacts go cold without one.</div>')+
+      '</div>'+
+      '<div class="sec"><h5>Activity — log as you talk; "they replied / call / meeting" moves them on the map</h5>'+
+        '<div class="taginput"><select id="actType" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px">'+
+          Object.keys(ACT_TYPES).map(k=>'<option value="'+k+'"'+(k==='note'?' selected':'')+'>'+ACT_TYPES[k].label+(ACT_TYPES[k].sig?' ↗':'')+'</option>').join('')+
+        '</select><input id="noteIn" placeholder="e.g. Interested in the H2 webinar — send invite" onkeydown="if(event.key===\'Enter\')addNoteUI()"><button class="btn p" onclick="addNoteUI()">Log</button></div>'+
+        '<div id="notebox" style="margin-top:8px">'+((c.notes||[]).length?c.notes.map(n=>{
+          const at=ACT_TYPES[n.type||'note']||ACT_TYPES.note;
+          return '<div class="note"><span class="d">'+n.date+' · '+at.label+(at.sig?' <span style="color:#0a7a0a">↗ scored</span>':'')+'</span><br>'+esc(n.text)+'</div>';
+        }).join(''):'<div style="color:#9aa2a6;font-size:12.5px">No activity logged yet.</div>')+'</div></div>'+
+      '<div class="sec"><h5>Draft message '+
+        '<span class="lang" style="float:right;margin-top:-4px"><button class="'+(LANG==='es'?'on':'')+'" onclick="setLang(\'es\')">ES</button><button class="'+(LANG==='en'?'on':'')+'" onclick="setLang(\'en\')">EN</button></span></h5>'+
+        '<div class="msgbox" id="msg">'+draftMessage(c,LANG).replace(/</g,'&lt;')+'</div>'+
+        '<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn p" onclick="copyMsg()">Copy</button>'+
+          '<span style="font-size:11.5px;color:var(--muted)">First draft — edit before sending. AI-tailored version plugs in with the email layer.</span></div>'+
+      '</div>'+
+      '<div class="sec"><h5>Why this fit — '+v.fit+'/100</h5>'+v.fitParts.map(prow).join('')+
+        '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">These are editable rules, not a black box. Wrong call? '+
+        '<a href="#" onclick="cycleTrack();return false" style="color:var(--orange)">Override type</a> (now: '+t.label+').</div></div>'+
+      '<div class="sec"><h5>Engagement — '+v.eng+'/100 · what they react to</h5>'+
+        (v.engParts.length?v.engParts.map(prow).join(''):'<div style="color:#9aa2a6;font-size:13px">No activity yet.</div>')+
+        '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Fuller picture (opens, replies, what lands) arrives when the email layer is connected.</div></div>'+
+      '<div class="sec"><h5>Profile</h5>'+
+        kv('Email',esc(c.email))+
+        kv('Phone',c.phone?esc(c.phone):'<span style="color:#c9c6bd">— add it when you get it</span>')+
+        kv('LinkedIn',c.linkedin?'<a href="'+esc(c.linkedin)+'" target="_blank" rel="noopener" style="color:var(--blue)">profile ↗</a>':'<span style="color:#c9c6bd">—</span>')+
+        kv('Country',esc(c.country||'—'))+kv('Sector',esc(c.sector||'—'))+kv('Seniority',esc(c.seniority||'—'))+kv('Relationship',esc(c.rel||'none'))+kv('Came here to',esc(c.intent||'—'))+
+      '</div>'+
+    '</div>';
+  wirePanelTags();
+}
+/* ---------- edit mode ---------- */
+function fld(label,id,val,ph){ return '<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">'+label+
+  '<input id="'+id+'" value="'+esc(val||'')+'" placeholder="'+(ph||'')+'" style="font:13.5px \'Segoe UI\',sans-serif;padding:8px 10px;border:1px solid var(--line);border-radius:8px;text-transform:none;letter-spacing:0"></label>'; }
+function selFld(label,id,val,opts){ return '<label style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">'+label+
+  '<select id="'+id+'" style="font:13.5px \'Segoe UI\',sans-serif;padding:8px 10px;border:1px solid var(--line);border-radius:8px;text-transform:none;letter-spacing:0">'+
+  opts.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o||'—'];return '<option value="'+esc(v)+'"'+(String(val||'')===String(v)?' selected':'')+'>'+esc(l||'—')+'</option>';}).join('')+'</select></label>'; }
+function renderEditPanel(){
+  const c=CRM.contact(OPEN);
+  document.getElementById('panel').innerHTML=
+    '<div class="ph"><button class="x" onclick="cancelEdit()">&times;</button><h3>Edit contact</h3><div class="role">'+esc(c.name||'')+'</div></div>'+
+    '<div class="pb"><div class="sec">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        fld('Name','ed_name',c.name)+fld('Organisation','ed_org',c.org)+
+        fld('Role / title','ed_role',c.role)+fld('Email','ed_email',c.email)+
+        fld('Phone','ed_phone',c.phone,'+34 …')+fld('LinkedIn URL','ed_li',c.linkedin,'https://www.linkedin.com/in/…')+
+        fld('Country','ed_country',c.country)+selFld('Sector','ed_sector',c.sector,['',...SECTORS])+
+        selFld('Persona','ed_persona',c.persona,[['','—'],['comms','Comms / dissemination'],['PM','Project manager'],['coordinator','Coordinator']])+
+        selFld('Seniority','ed_sen',c.seniority,[['unknown','Unknown'],['staff','Staff'],['manager','Manager'],['head','Head / director'],['clevel','C-level']])+
+        selFld('Org type','ed_ot',c.orgType,[['research','Research / university'],['consultancy','Consultancy'],['vendor','Vendor / manufacturer'],['developer','Developer / utility'],['media','Media'],['ngo','NGO'],['individual','Individual']])+
+        selFld('EU tier','ed_tier',c.euTier,[['','—'],['1','Tier 1'],['2','Tier 2'],['3','Tier 3']])+
+        selFld('Relationship','ed_rel',c.rel,[['none','None'],['relationship','Strong relationship'],['attendee','Past attendee'],['speaker','Past speaker'],['client','Past client / sponsor']])+
+        selFld('Track override','ed_track',c.trackOverride,[['','Auto'],['sponsor','Sponsor'],['consortium','Consortium / EU'],['media','Media partner'],['audience','Audience']])+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-top:14px"><button class="btn p" style="background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600;flex:1" onclick="saveEdit()">Save</button>'+
+      '<button class="btn" onclick="cancelEdit()">Cancel</button></div>'+
+    '</div></div>';
+}
+function startEdit(){ EDITING=true; renderPanel(); }
+function cancelEdit(){ EDITING=false; renderPanel(); }
+function saveEdit(){
+  const g=id=>document.getElementById(id).value.trim();
+  CRM.updateContact(OPEN,{ name:g('ed_name')||'(no name)', org:g('ed_org'), role:g('ed_role'), email:g('ed_email').toLowerCase(),
+    phone:g('ed_phone'), linkedin:g('ed_li'), country:g('ed_country'), sector:g('ed_sector'),
+    persona:g('ed_persona'), seniority:g('ed_sen'), orgType:g('ed_ot'),
+    euTier:g('ed_tier')?+g('ed_tier'):null, rel:g('ed_rel'), trackOverride:g('ed_track')||null });
+  EDITING=false; renderPanel(); render();
+}
+function delContact(){
+  const c=CRM.contact(OPEN);
+  if(!confirm('Delete '+c.name+' ('+(c.org||'no org')+') and their deals? This cannot be undone (except from a backup).'))return;
+  CRM.deleteContact(OPEN); closePanel(); render();
+}
+function kv(k,val){ return '<div class="kv"><span class="k">'+k+'</span><span>'+val+'</span></div>'; }
+function setLang(l){ LANG=l; document.getElementById('msg').textContent=draftMessage(CRM.contact(OPEN),l); document.querySelectorAll('.lang button').forEach(b=>b.classList.toggle('on',b.textContent.toLowerCase()===l)); }
+function copyMsg(){ navigator.clipboard.writeText(draftMessage(CRM.contact(OPEN),LANG)); }
+function cycleTrack(){ const order=['sponsor','consortium','media','audience']; const c=CRM.contact(OPEN); const cur=track(c); c.trackOverride=order[(order.indexOf(cur)+1)%order.length]; CRM.save(); renderPanel(); render(); }
+function addTagUI(){ const el=document.getElementById('tagIn'); CRM.addTag(OPEN, el.value); renderPanel(); render(); }
+function addNoteUI(){
+  const type=document.getElementById('actType').value, txt=document.getElementById('noteIn').value;
+  CRM.addActivity(OPEN, type, txt);
+  renderPanel(); render();
+}
+function bumpNT(days){ const d=new Date(); d.setDate(d.getDate()+days); document.getElementById('ntIn').value=d.toISOString().slice(0,10); }
+function saveNT(){ CRM.setNextTouch(OPEN, document.getElementById('ntIn').value); renderPanel(); render(); }
+function clearNT(){ CRM.setNextTouch(OPEN, null); renderPanel(); render(); }
+function wirePanelTags(){ document.querySelectorAll('#tagbox [data-rm]').forEach(b=>b.onclick=()=>{
+  const c=CRM.contact(OPEN); CRM.removeTag(OPEN, (c.tags||[])[+b.dataset.rm]); renderPanel(); render(); }); }
+/* backup / restore — the same files as the old local sandbox, fully compatible */
+function exportCrm(){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(CRM.data,null,1)],{type:'application/json'}));
+  a.download='ata-crm-backup-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+}
+function importCrm(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+      const d=JSON.parse(r.result);
+      if(!Array.isArray(d.contacts)) throw new Error('bad file');
+      d.v=CRM_VERSION; CRM.data=d; CRM.save(); closePanel(); render();
+      alert('Restored '+d.contacts.length+' contacts from the backup.');
+    }catch(err){ alert('That is not a valid CRM backup file.'); } };
+  r.readAsText(f); e.target.value='';
+}
+
+/* ---------- boot: dispatch login first, then the Belén gate, then the CRM ---------- */
+boot(async ()=>{
+  const me=DB.currentUser;
+  if(USE_SUPABASE && !isBelenP(me)){
+    document.getElementById('app').innerHTML=
+      '<div class="card" style="max-width:520px;text-align:center;padding:34px">'+
+      '<div style="font-size:34px;margin-bottom:8px">📇</div>'+
+      '<div style="font-weight:700;color:var(--charcoal);font-size:16px;margin-bottom:6px">This is Belén\'s private CRM</div>'+
+      '<div style="color:var(--muted);font-size:13px">Leads and relationships for ATA Insights live here — limited to Belén. The database enforces this too, not just this page.</div></div>';
+    return;
+  }
+  document.getElementById('crmbar').style.display='';
+  await CRM.init();
+  saveChip('saved');
+  render();
+});
+</script>
+</body>
+</html>

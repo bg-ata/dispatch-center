@@ -9,8 +9,8 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 80px;max-width:1240px}
-  .nav{display:flex;align-items:center;gap:6px;margin-bottom:8px}
-  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:13px;padding:5px 11px;border-radius:8px}
+  .nav{display:flex;align-items:center;gap:3px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px}
   .nav a.on{background:var(--orange);color:#fff}
   .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
@@ -108,7 +108,7 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>💶 Money</h1>
+  <h1 style="display:flex;align-items:center;gap:10px">💶 Money<a id="factBtn" href="facturacion.html" style="display:none;margin-left:auto;font-size:13px;font-weight:600;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 13px;text-decoration:none;color:var(--charcoal)" title="The invoicing engine — billing only">🧾 Invoicing →</a></h1>
   <p class="sub">Everything money, in one place — the read-only window. Invoiced figures flow in live from the Invoicing lines (🧾); targets &amp; SPEX are maintained by the accountant. Every change is recorded.</p>
   <div class="tabs" id="tabs"></div>
   <div id="warnbox"></div>
@@ -146,7 +146,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=47"></script>
+<script src="store.js?v=48"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -1134,7 +1134,7 @@ function wireImport(){
   drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])handle(e.dataTransfer.files[0]);};
 }
 
-boot(render);
+boot(()=>{try{const f=document.getElementById('factBtn');if(f&&DB.canBill())f.style.display='';}catch(e){} render();});
 window.addEventListener('hashchange',render);
 window.addEventListener('dc-remote',()=>{if(activeTab()==='year')renderYear();});
 </script>
