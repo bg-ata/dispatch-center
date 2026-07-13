@@ -109,6 +109,35 @@
   .note{border-left:2px solid var(--line);padding:3px 0 3px 10px;margin:7px 0;font-size:13px;color:#2b3438}
   .note .d{font-size:11px;color:#9aa2a6}
   .setupbanner{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:11px;padding:11px 15px;margin:0 0 14px;font-size:13px;line-height:1.5}
+  /* ===== Projects tab ===== */
+  .tl{display:inline-block;font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap;letter-spacing:.02em}
+  .tl.GREEN{background:#e2f4e2;color:#0a7a0a} .tl.YELLOW{background:#fbf1d6;color:#9a7100}
+  .tl.ORANGE{background:#fde4d3;color:#b5541a} .tl.RED{background:#fbe1de;color:#b02a1f}
+  .tldot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .stat{display:inline-block;font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 8px;white-space:nowrap;text-transform:capitalize}
+  .stat.new{background:#eef1f4;color:#4a6b86} .stat.reviewing{background:#e9f0fb;color:var(--blue)}
+  .stat.pursuing{background:#e2f4e2;color:#0a7a0a} .stat.parked{background:#f0eee7;color:var(--grey)} .stat.dead{background:#f2e6e4;color:#9a4b40}
+  .slotb{font-size:10px;font-weight:800;border-radius:6px;padding:1px 7px;white-space:nowrap}
+  .slotb.open{background:#e2f4e2;color:#0a7a0a} .slotb.ours{background:var(--orange);color:#fff} .slotb.taken{background:#efe7f3;color:var(--violet)}
+  .pathpill{font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 7px} .pathpill.direct{background:#e2f4e2;color:#0a7a0a} .pathpill.\31hop{background:#fbf1d6;color:#9a7100} .pathpill.cold{background:#eef0f1;color:#8a9096}
+  .subtabs{display:inline-flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px}
+  .subtabs button{background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:12.5px;padding:5px 12px;border-radius:7px;cursor:pointer}
+  .subtabs button.on{background:var(--ink);color:#fff}
+  .pminib{height:6px;border-radius:4px;background:#ece9e2;width:52px;overflow:hidden;display:inline-block;vertical-align:middle}
+  .pminib i{display:block;height:100%;background:var(--orange)}
+  .scatter{width:100%;height:auto;display:block;background:#fff;border:1px solid var(--line);border-radius:12px}
+  .scatter .dotp{cursor:pointer;transition:opacity .1s} .scatter .dotp:hover{stroke:#1C2529;stroke-width:1.5}
+  .cg{width:100%;height:auto;display:block}
+  .cg .node{cursor:pointer} .cg .node:hover circle{stroke:#1C2529;stroke-width:2}
+  .cgpop{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:10px;font-size:12.5px}
+  .moneybar{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid #f2f0ea}
+  .moneybar:last-child{border:none}
+  .moneybar .bx{flex:1;height:9px;border-radius:5px;background:#ece9e2;overflow:hidden}
+  .moneybar .bx i{display:block;height:100%;background:var(--orange)}
+  .lightlead{display:flex;gap:12px;flex-wrap:wrap;margin:2px 0 14px}
+  .lightlead .lc{flex:1;min-width:120px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 13px}
+  .lightlead .lc .n{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+  .lightlead .lc .l{font-size:11px;color:var(--muted)}
   @media(max-width:760px){.tiles{grid-template-columns:1fr}.board{grid-template-columns:1fr;gap:14px}.mapwrap .yax{display:none}.crmbar{gap:6px}}
 </style>
 </head>
@@ -465,7 +494,7 @@ function seed(){
 
 /* ================= UI ================= */
 let TAB='map', FILTER='all', TAGFILTER=null, SEARCH='', LANG='es', OPEN=null, PAGEN=0, EDITING=false;
-const CRM_TABS=[['map','Value map'],['queue','Work queue'],['contacts','Contacts'],['pipeline','Pipeline']];
+const CRM_TABS=[['map','Value map'],['queue','Work queue'],['contacts','Contacts'],['pipeline','Pipeline'],['projects','Projects']];
 const fmt=n=>n>=1000?'€ '+(n/1000).toFixed(n%1000?1:0)+'k':(n?'€ '+n:'—');
 
 function saveChip(state){
@@ -489,7 +518,7 @@ function renderTabs(){
   document.getElementById('tabs').innerHTML=CRM_TABS.map(([k,l])=>'<button class="'+(k===TAB?'on':'')+'" data-t="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render();});
 }
-function render(){ renderTabs(); banners(); ({map:renderMap,queue:renderQueue,contacts:renderContacts,pipeline:renderPipeline}[TAB])(); }
+function render(){ renderTabs(); banners(); ({map:renderMap,queue:renderQueue,contacts:renderContacts,pipeline:renderPipeline,projects:renderProjects}[TAB])(); }
 
 /* ---------- Work queue ---------- */
 function queueItems(){
@@ -676,7 +705,7 @@ function renderPipeline(){
 /* ---------- detail panel ---------- */
 function wireOpens(){ document.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openContact(+el.dataset.open)); }
 function openContact(id){ OPEN=id; renderPanel(); document.getElementById('ov').classList.add('on'); document.getElementById('panel').classList.add('on'); }
-function closePanel(){ document.getElementById('ov').classList.remove('on'); document.getElementById('panel').classList.remove('on'); OPEN=null; EDITING=false; }
+function closePanel(){ document.getElementById('ov').classList.remove('on'); document.getElementById('panel').classList.remove('on'); OPEN=null; EDITING=false; POPEN=null; PNODE=null; }
 document.getElementById('ov').onclick=closePanel;
 
 function renderPanel(){
@@ -816,6 +845,352 @@ function importCrm(e){
       alert('Restored '+d.contacts.length+' contacts from the backup.');
     }catch(err){ alert('That is not a valid CRM backup file.'); } };
   r.readAsText(f); e.target.value='';
+}
+
+/* ================================================================
+   PROJECTS — the Consortium Gravity engine. One row per relevant EU
+   project (dc_crm_projects), fed by the gravity.py pipeline. data.computed
+   is pipeline-owned; data.user (status/notes) is Belén's — the UI only ever
+   writes data.user, mirroring how the pipeline only ever writes data.computed.
+   ================================================================ */
+const LIGHT_C={GREEN:'#0CA30C',YELLOW:'#E0A800',ORANGE:'#E8730C',RED:'#C0392B'};
+const LIGHT_LABEL={GREEN:'GREEN',YELLOW:'YELLOW',ORANGE:'ORANGE',RED:'RED'};
+const LIGHT_DOT={GREEN:'🟢',YELLOW:'🟡',ORANGE:'🟠',RED:'🔴'};
+const PSTATUS=['new','reviewing','pursuing','parked','dead'];
+const PSECTORS=[
+  ['Renewable Hydrogen',/hydrogen|electrolys|fuel cell|\bH2\b|ammonia/i],
+  ['Storage & BESS',/storage|batter|BESS|li-ion|lithium|redox|flywheel|supercapacit/i],
+  ['Biomethane & gases',/biomethane|biogas|anaerobic|renewable gas|methanation/i],
+  ['Data Centres & AI',/data cent(er|re)|\bAI\b|computing|digital twin/i],
+  ['Solar PV',/photovoltaic|solar|\bPV\b|perovskite/i],
+  ['Wind',/wind (energy|farm|turbine|power)|offshore wind|floating wind/i],
+  ['Grids & flexibility',/grid|flexib|HVDC|microgrid|smart meter|interconnect|balancing/i],
+  ['Minigrids & access',/mini-?grid|energy access|rural electrif|off-grid/i],
+];
+function projSector(c){
+  const t=(c.acronym+' '+c.title+' '+(c.summary||'')+' '+c.topic).toLowerCase();
+  for(const [name,rx] of PSECTORS) if(rx.test(t)) return name;
+  return 'Other energy';
+}
+
+const PROJ={
+  rows:[], byId:{}, ready:false, cloudOk:false, loadErr:'', tableMissing:false, _t:null,
+  async init(){
+    if(!USE_SUPABASE){ await this._loadLocal(); return; }
+    try{
+      const r=await sb.from('dc_crm_projects').select('id,data,updated');
+      if(r.error) throw r.error;
+      this.rows=(r.data||[]).map(x=>({id:x.id, computed:(x.data||{}).computed||{}, user:(x.data||{}).user||null}));
+      this.cloudOk=true;
+    }catch(e){
+      this.loadErr=(e&&(e.message||e.code))||'unknown error';
+      if((e&&e.code)==='PGRST205'||(e&&e.code)==='42P01'||/dc_crm_projects/.test(this.loadErr)) this.tableMissing=true;
+    }
+    this._index(); this.ready=true;
+  },
+  async _loadLocal(){
+    try{ const res=await fetch('gravity_seed.json',{cache:'no-store'});
+      if(res.ok){ const j=await res.json(); this.rows=j.map(x=>({id:x.id, computed:(x.data||{}).computed||{}, user:(x.data||{}).user||null})); } }
+    catch(e){ this.loadErr=String(e); }
+    try{ const u=JSON.parse(localStorage.getItem('projUser')||'{}');
+      this.rows.forEach(r=>{ if(u[r.id]) r.user=Object.assign(r.user||{}, u[r.id]); }); }catch(e){}
+    this.cloudOk=false; this._index(); this.ready=true;
+  },
+  _index(){ this.byId={}; this.rows.forEach(r=>{ if(!r.user) r.user={status:'new',notes:[],overrides:{}}; this.byId[r.id]=r; }); },
+  get(id){ return this.byId[id]; },
+  setStatus(id,st){ const r=this.get(id); if(!r) return; r.user.status=st; this._saveUser(id); },
+  addNote(id,text){ text=(text||'').trim(); if(!text) return; const r=this.get(id); if(!r) return;
+    r.user.notes=r.user.notes||[]; r.user.notes.unshift({date:new Date().toISOString().slice(0,10),text}); this._saveUser(id); },
+  _saveUser(id){
+    const r=this.get(id); if(!r) return;
+    if(!USE_SUPABASE){
+      try{ const u=JSON.parse(localStorage.getItem('projUser')||'{}'); u[id]={status:r.user.status,notes:r.user.notes,overrides:r.user.overrides||{}};
+        localStorage.setItem('projUser',JSON.stringify(u)); }catch(e){} projSaveChip('saved'); return;
+    }
+    projSaveChip('saving'); clearTimeout(this._t);
+    this._t=setTimeout(async()=>{ this._t=null;
+      try{ const {error}=await sb.from('dc_crm_projects').update({data:{computed:r.computed,user:r.user},updated:new Date().toISOString()}).eq('id',id);
+        if(error) throw error; projSaveChip('saved'); }catch(e){ projSaveChip('err'); }
+    },500);
+  },
+  counts(){ const by={GREEN:0,YELLOW:0,ORANGE:0,RED:0}; this.rows.forEach(r=>by[r.computed.comms.light]++); return by; },
+};
+function projSaveChip(state){
+  const el=document.getElementById('saveChip'); if(!el) return; el.className='';
+  if(!USE_SUPABASE){ el.textContent='local test mode'; return; }
+  if(state==='saving'){ el.textContent='☁ saving…'; el.onclick=null; }
+  else if(state==='err'){ el.className='err'; el.textContent='⚠ could not save — click to retry'; el.onclick=()=>PROJ._saveUser(POPEN); }
+  else el.textContent='☁ saved '+new Date().toTimeString().slice(0,5);
+}
+
+let PTAB='list', PSEARCH='', POPEN=null, PNODE=null;
+let PFILTER={light:'',status:'',slot:'',path:'',year:'',sector:''};
+
+function projFiltered(){
+  let rows=PROJ.rows.slice();
+  // default view hides RED (no comms money) and slot-taken; a light/slot filter reveals them
+  if(!PFILTER.light && !PFILTER.slot) rows=rows.filter(r=>r.computed.inDefaultRank);
+  if(PFILTER.light) rows=rows.filter(r=>r.computed.comms.light===PFILTER.light);
+  if(PFILTER.slot) rows=rows.filter(r=>r.computed.comms.slot===PFILTER.slot);
+  if(PFILTER.status) rows=rows.filter(r=>((r.user&&r.user.status)||'new')===PFILTER.status);
+  if(PFILTER.path) rows=rows.filter(r=>r.computed.bestPath.type===PFILTER.path);
+  if(PFILTER.sector) rows=rows.filter(r=>projSector(r.computed)===PFILTER.sector);
+  if(PFILTER.year) rows=rows.filter(r=>(r.computed.startDate||'').slice(0,4)===PFILTER.year);
+  if(PSEARCH){ const q=PSEARCH.toLowerCase();
+    rows=rows.filter(r=>((r.computed.acronym+' '+r.computed.title+' '+(r.computed.coordinator||{}).name)||'').toLowerCase().includes(q)); }
+  rows.sort((a,b)=>b.computed.score-a.computed.score);
+  return rows;
+}
+
+function renderProjects(){
+  const app=document.getElementById('app');
+  if(!PROJ.ready){ app.innerHTML='<div class="card" style="text-align:center;color:var(--muted)">Loading projects…</div>';
+    if(!PROJ._kick){ PROJ._kick=true; PROJ.init().then(()=>{ if(TAB==='projects') renderProjects(); }); } return; }
+  if(PROJ.tableMissing){
+    app.innerHTML='<h2>Projects</h2>'+
+      '<div class="setupbanner"><b>One database step first:</b> the projects table (dc_crm_projects) isn’t in Supabase yet — run '+
+      '<b>_sql/dispatch_crm_projects.sql</b> in the SQL editor, then run the gravity pipeline to publish. Nothing else is affected.</div>';
+    return; }
+  if(!PROJ.rows.length){
+    app.innerHTML='<h2>Projects</h2><div class="card" style="text-align:center;color:var(--muted)">No projects yet — run the gravity pipeline to populate this tab.</div>'; return; }
+  const by=PROJ.counts();
+  app.innerHTML='<h2>Projects — follow the money</h2>'+
+    '<p class="lead">Every relevant EU project, mined from CORDIS and ranked by <b>comms money × how warm our way in is</b>. Green + top-right = real dissemination budget and a warm contact — work those first. Red = no comms money (hidden by default). Click any project.</p>'+
+    '<div class="lightlead">'+
+      lightCard('GREEN',by.GREEN,'&gt; €500k comms')+lightCard('YELLOW',by.YELLOW,'€200–500k')+
+      lightCard('ORANGE',by.ORANGE,'&lt; €200k')+lightCard('RED',by.RED,'no comms money')+
+    '</div>'+
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'+
+      '<div class="subtabs"><button class="'+(PTAB==='list'?'on':'')+'" data-pt="list">List</button>'+
+        '<button class="'+(PTAB==='graph'?'on':'')+'" data-pt="graph">Money × access map</button></div>'+
+      '<input id="psrch" value="'+esc(PSEARCH)+'" placeholder="Search acronym, title, coordinator…" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px">'+
+    '</div>'+
+    projFilterBar()+
+    '<div id="pbody"></div>';
+  document.querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{PTAB=b.dataset.pt;renderProjects();});
+  const si=document.getElementById('psrch');
+  si.oninput=()=>{ PSEARCH=si.value; renderPBody(); };
+  wireProjFilters();
+  renderPBody();
+}
+function lightCard(k,n,sub){ return '<div class="lc"><div class="n" style="color:'+LIGHT_C[k]+'">'+n+'</div><div class="l">'+LIGHT_DOT[k]+' '+sub+'</div></div>'; }
+
+function projFilterBar(){
+  const yrs=[...new Set(PROJ.rows.map(r=>(r.computed.startDate||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const sel=(id,label,opts,cur)=>'<select data-pf="'+id+'" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px">'+
+    '<option value="">'+label+'</option>'+opts.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc(l)+'</option>';}).join('')+'</select>';
+  return '<div class="filters" style="gap:7px">'+
+    sel('light','Any light',[['GREEN','🟢 Green'],['YELLOW','🟡 Yellow'],['ORANGE','🟠 Orange'],['RED','🔴 Red (no money)']],PFILTER.light)+
+    sel('status','Any status',PSTATUS.map(s=>[s,s[0].toUpperCase()+s.slice(1)]),PFILTER.status)+
+    sel('sector','Any sector',PSECTORS.map(s=>s[0]).concat(['Other energy']),PFILTER.sector)+
+    sel('path','Any path',[['direct','Direct'],['1hop','1-hop'],['cold','Cold']],PFILTER.path)+
+    sel('slot','Any slot',[['open','Slot open'],['ours','Ours ✓'],['taken','Slot taken']],PFILTER.slot)+
+    sel('year','Any year',yrs,PFILTER.year)+
+    '</div>';
+}
+function wireProjFilters(){ document.querySelectorAll('[data-pf]').forEach(s=>s.onchange=()=>{ PFILTER[s.dataset.pf]=s.value; renderPBody(); }); }
+
+function renderPBody(){
+  const rows=projFiltered();
+  const el=document.getElementById('pbody'); if(!el) return;
+  el.innerHTML = PTAB==='graph' ? projScatter(rows) : projTable(rows);
+  if(PTAB==='list') el.querySelectorAll('[data-popen]').forEach(t=>t.onclick=()=>openProject(t.dataset.popen));
+  if(PTAB==='graph') el.querySelectorAll('[data-popen]').forEach(t=>t.onclick=()=>openProject(t.getAttribute('data-popen')));
+}
+
+function projTable(rows){
+  if(!rows.length) return '<div class="card" style="text-align:center;color:var(--muted)">No projects match these filters.</div>';
+  return '<div style="font-size:12px;color:var(--muted);margin:2px 2px 8px">'+rows.length+' projects</div>'+
+   '<table><tr><th>#</th><th>Light</th><th>Project</th><th>Sector</th><th style="text-align:right">EC €</th><th style="text-align:right">Comms €</th><th>Slot</th><th>Best path</th><th>Status</th><th>Start</th></tr>'+
+   rows.map((r,i)=>{ const c=r.computed, bp=c.bestPath, st=(r.user&&r.user.status)||'new';
+     return '<tr data-popen="'+esc(r.id)+'">'+
+       '<td style="color:var(--muted)">'+(i+1)+'</td>'+
+       '<td><span class="tl '+c.comms.light+'">'+LIGHT_DOT[c.comms.light]+' '+Math.round(c.score)+'</span></td>'+
+       '<td><b>'+esc(c.acronym)+'</b><div style="color:var(--muted);font-size:11.5px;max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.title)+'</div></td>'+
+       '<td style="font-size:11.5px;color:var(--muted)">'+esc(projSector(c))+'</td>'+
+       '<td style="text-align:right;font-variant-numeric:tabular-nums">'+pmoney(c.ecMax)+'</td>'+
+       '<td style="text-align:right;font-variant-numeric:tabular-nums">'+pmoney(c.comms.commsBudget)+'</td>'+
+       '<td><span class="slotb '+c.comms.slot+'">'+(c.comms.slot==='ours'?'ours ✓':c.comms.slot)+'</span></td>'+
+       '<td><span class="pathpill '+bp.type+'">'+bp.type+'</span> '+(bp.strength?'<span class="pminib"><i style="width:'+Math.min(100,bp.strength)+'%"></i></span>':'')+'</td>'+
+       '<td><span class="stat '+st+'">'+st+'</span></td>'+
+       '<td style="font-size:11.5px;color:var(--muted);white-space:nowrap">'+esc((c.startDate||'').slice(0,7))+'</td></tr>';
+   }).join('')+'</table>';
+}
+function pmoney(n){ if(!n) return '—'; return n>=1e6?'€'+(n/1e6).toFixed(1)+'M':'€'+Math.round(n/1000)+'k'; }
+
+/* ---------- scatter: x = link strength, y = comms money, size = EC, colour = light ---------- */
+function projScatter(rows){
+  rows=rows.slice(0,600);
+  const W=760,H=430,L=52,R=18,T=18,B=44, pw=W-L-R, ph=H-T-B;
+  const YMAX=1600000;
+  const yv=v=>Math.min(YMAX,v)/YMAX;
+  const xf=s=>L+(Math.max(0,Math.min(100,s))/100)*pw;
+  const yf=v=>T+ph-yv(v)*ph;
+  const maxEC=Math.max(1,...rows.map(r=>r.computed.ecMax));
+  const rad=ec=>4+9*Math.sqrt(ec/maxEC);
+  const hj=id=>{ let h=0; const s=String(id); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))&255; return (h/255-0.5)*3.2; };
+  // horizontal traffic-light bands
+  const band=(v0,v1,col)=>'<rect x="'+L+'" y="'+yf(v1)+'" width="'+pw+'" height="'+(yf(v0)-yf(v1))+'" fill="'+col+'"/>';
+  let svg='<svg class="scatter" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
+  svg+=band(0,200000,'rgba(232,115,12,.06)')+band(200000,500000,'rgba(224,168,0,.08)')+band(500000,YMAX,'rgba(12,163,12,.07)');
+  // gridlines + y labels at 200k,500k,1M
+  [[200000,'€200k'],[500000,'€500k'],[1000000,'€1M']].forEach(([v,lab])=>{
+    svg+='<line x1="'+L+'" y1="'+yf(v)+'" x2="'+(W-R)+'" y2="'+yf(v)+'" stroke="#e3e1da" stroke-dasharray="3 3"/>';
+    svg+='<text x="'+(L-6)+'" y="'+(yf(v)+3)+'" text-anchor="end" font-size="10" fill="#9aa2a6">'+lab+'</text>';
+  });
+  // axes
+  svg+='<line x1="'+L+'" y1="'+(T+ph)+'" x2="'+(W-R)+'" y2="'+(T+ph)+'" stroke="#c9c6bd"/>';
+  svg+='<line x1="'+L+'" y1="'+T+'" x2="'+L+'" y2="'+(T+ph)+'" stroke="#c9c6bd"/>';
+  svg+='<text x="'+(L+pw/2)+'" y="'+(H-8)+'" text-anchor="middle" font-size="11" fill="#7c7c78">how warm our way in is  →</text>';
+  svg+='<text transform="translate(13,'+(T+ph/2)+') rotate(-90)" text-anchor="middle" font-size="11" fill="#7c7c78">comms money  ↑</text>';
+  svg+='<text x="'+(W-R)+'" y="'+(T+12)+'" text-anchor="end" font-size="10.5" font-weight="700" fill="#0a7a0a">money + access → work first</text>';
+  // dots (low money first so juicy ones sit on top)
+  rows.slice().sort((a,b)=>a.computed.comms.commsBudget-b.computed.comms.commsBudget).forEach(r=>{
+    const c=r.computed, x=xf(c.bestPath.strength)+hj(r.id), y=yf(c.comms.commsBudget);
+    svg+='<circle class="dotp" data-popen="'+esc(r.id)+'" cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+rad(c.ecMax).toFixed(1)+'" '+
+      'fill="'+LIGHT_C[c.comms.light]+'" fill-opacity="0.72" stroke="#fff" stroke-width="1"><title>'+
+      esc(c.acronym+' — '+pmoney(c.comms.commsBudget)+' comms · '+pmoney(c.ecMax)+' EC · link '+Math.round(c.bestPath.strength)+' · '+c.comms.slot)+'</title></circle>';
+  });
+  svg+='</svg>';
+  return svg+'<div style="font-size:11.5px;color:var(--muted);margin:8px 2px">Dot size = total EC budget · colour = traffic light · click a dot to open the project. '+rows.length+' shown.</div>';
+}
+
+/* ---------- project detail panel (reuses the slide-in #panel) ---------- */
+function openProject(id){ POPEN=id; PNODE=null; renderProjectPanel(); document.getElementById('ov').classList.add('on'); document.getElementById('panel').classList.add('on'); }
+function renderProjectPanel(){
+  const r=PROJ.get(POPEN); if(!r){ closePanel(); return; }
+  const c=r.computed, comms=c.comms, st=(r.user&&r.user.status)||'new';
+  const coord=c.coordinator||{};
+  const parts=(c.consortium||[]).slice().sort((a,b)=>b.ec-a.ec);
+  const top5=parts.slice(0,5); const maxec=Math.max(1,...parts.map(p=>p.ec));
+  const prow=p=>'<div class="prt"><span>'+esc(p.label)+'</span><span class="pts">+'+(Math.round(p.pts*10)/10)+'</span></div>';
+  document.getElementById('panel').innerHTML=
+    '<div class="ph"><button class="x" onclick="closePanel()">&times;</button>'+
+      '<h3>'+esc(c.acronym)+' <span class="tl '+comms.light+'" style="vertical-align:3px">'+LIGHT_DOT[comms.light]+' '+Math.round(c.score)+'</span></h3>'+
+      '<div class="role">'+esc(c.title)+'</div>'+
+      '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;font-size:12px;color:#c3ccd0">'+
+        '<span class="slotb '+comms.slot+'">'+(comms.slot==='ours'?'ours ✓':comms.slot+' slot')+'</span>'+
+        '<span>'+esc(projSector(c))+'</span><span>· '+esc((c.startDate||'').slice(0,7)+' → '+(c.endDate||'').slice(0,7))+'</span>'+
+        '<a href="'+esc(c.url)+'" target="_blank" rel="noopener" style="margin-left:auto;color:#9fd0ff;text-decoration:none">CORDIS ↗</a>'+
+      '</div></div>'+
+    '<div class="pb">'+
+      '<div class="sec"><h5>Summary</h5><div style="font-size:13px;line-height:1.5;color:#2b3438">'+esc(c.summary||'')+'</div></div>'+
+      '<div class="sec"><h5>Comms money — why this light</h5>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'+
+          '<span class="tldot" style="background:'+LIGHT_C[comms.light]+';width:14px;height:14px"></span>'+
+          '<b style="font-size:16px;color:var(--ink)">'+pmoney(comms.commsBudget)+'</b>'+
+          '<span style="font-size:12px;color:var(--muted)">'+(comms.slot==='open'?'estimated':'committed')+' comms budget</span></div>'+
+        '<div class="why">'+esc(comms.why)+'</div></div>'+
+      '<div class="sec"><h5>Money breakdown</h5>'+
+        kv('Total cost',pmoney(c.totalCost))+kv('EC contribution',pmoney(c.ecMax))+kv('Comms estimate',pmoney(comms.commsBudget))+
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:11px 0 5px">Top partners by EC share</div>'+
+        top5.map(p=>'<div class="moneybar"><span style="flex:0 0 46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+
+          (p.role==='coordinator'?'★ ':'')+esc(p.shortName||p.name)+'</span><span class="bx"><i style="width:'+Math.round(p.ec/maxec*100)+'%"></i></span>'+
+          '<span style="flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--muted)">'+pmoney(p.ec)+'</span></div>').join('')+
+      '</div>'+
+      '<div class="sec"><h5>Consortium — green ring = a door we have</h5>'+
+        consortiumGraph(c)+
+        '<div id="cgpop"></div>'+
+        '<div style="font-size:11px;color:var(--muted);margin-top:8px">Node size = EC share · ★ coordinator · click a node to see who we know there.</div>'+
+      '</div>'+
+      '<div class="sec"><h5>Our way in</h5>'+bestPathBlock(c)+'</div>'+
+      '<div class="sec"><h5>Project score — '+Math.round(c.score)+'/100</h5>'+(c.scoreParts||[]).map(prow).join('')+
+        '<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Heat '+Math.round(c.heat)+'/100 · coordinator track record '+(coord.trackRecord||0)+' projects.</div></div>'+
+      '<div class="sec"><h5>My status &amp; notes</h5>'+
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px"><select id="pstatus" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px">'+
+          PSTATUS.map(s=>'<option value="'+s+'"'+(s===st?' selected':'')+'>'+s[0].toUpperCase()+s.slice(1)+'</option>').join('')+'</select>'+
+          '<button class="btn p" onclick="projMakeDeal()" style="background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600;margin-left:auto">→ Create deal in Pipeline</button></div>'+
+        '<div class="taginput"><input id="pnote" placeholder="Add a dated note…" onkeydown="if(event.key===\'Enter\')projAddNote()"><button class="btn" onclick="projAddNote()">Log</button></div>'+
+        '<div style="margin-top:8px">'+((r.user&&r.user.notes||[]).length?r.user.notes.map(n=>'<div class="note"><span class="d">'+esc(n.date)+'</span><br>'+esc(n.text)+'</div>').join(''):'<div style="color:#9aa2a6;font-size:12.5px">No notes yet.</div>')+'</div>'+
+      '</div>'+
+    '</div>';
+  const ss=document.getElementById('pstatus'); if(ss) ss.onchange=()=>{ PROJ.setStatus(POPEN,ss.value); if(TAB==='projects') renderPBody(); };
+  document.querySelectorAll('#panel [data-cgnode]').forEach(g=>g.onclick=()=>projNodePop(+g.dataset.cgnode));
+}
+function bestPathBlock(c){
+  const bp=c.bestPath;
+  if(bp.type==='direct'){
+    const ppl=(bp.people||[]);
+    return '<div style="font-size:13px;color:var(--ink);font-weight:600;margin-bottom:6px">DIRECT — we already have a person in this consortium (link '+Math.round(bp.strength)+').</div>'+
+      '<div style="font-size:12.5px">'+ppl.slice(0,4).map(p=>'• <b>'+esc(p.name)+'</b> <span style="color:var(--muted)">'+esc(p.role||'')+(p.lastTouch?' · last touch '+esc(p.lastTouch):'')+'</span>').join('<br>')+'</div>'+
+      '<div class="why" style="margin-top:8px">First move: reach '+esc((ppl[0]||{}).name||'the contact')+' at '+esc(bp.org||'')+' directly and offer the DCE / dissemination work package.</div>';
+  }
+  if(bp.type==='1hop'){
+    return '<div style="font-size:13px;color:var(--ink);font-weight:600;margin-bottom:6px">1-HOP — no direct contact, but a partner we know sits in this consortium (link '+Math.round(bp.strength)+').</div>'+
+      '<div class="why">Ask our contact at <b>'+esc(bp.bridgeOrg||'')+'</b>'+((bp.bridgePerson&&bp.bridgePerson.name)?' ('+esc(bp.bridgePerson.name)+')':'')+' for a warm introduction into the consortium.</div>';
+  }
+  return '<div style="font-size:13px;color:var(--muted)">COLD — no existing contact in this consortium. Best cold approach: the coordinator, <b>'+esc((c.coordinator||{}).name||'')+'</b>. Apollo for the comms/PM lead.</div>';
+}
+
+/* ---------- consortium hub-and-spoke SVG ---------- */
+function consortiumGraph(c){
+  const parts=(c.consortium||[]); const n=parts.length; if(!n) return '';
+  const W=480,H=380,cx=W/2,cy=H/2, ring=Math.min(150,120+n*1.5);
+  const maxec=Math.max(1,...parts.map(p=>p.ec));
+  let svg='<svg class="cg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">';
+  // spokes first
+  parts.forEach((p,i)=>{ const a=-Math.PI/2+i/n*2*Math.PI; const x=cx+Math.cos(a)*ring, y=cy+Math.sin(a)*ring;
+    const warm=p.path&&p.path.type==='direct'; svg+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+(warm?'#0CA30C':'#e3e1da')+'" stroke-width="'+(warm?2:1)+'"/>'; });
+  // centre = project
+  svg+='<circle cx="'+cx+'" cy="'+cy+'" r="26" fill="'+LIGHT_C[c.comms.light]+'" fill-opacity="0.2" stroke="'+LIGHT_C[c.comms.light]+'" stroke-width="2"/>';
+  svg+='<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" font-size="11" font-weight="800" fill="#1C2529">'+esc((c.acronym||'').slice(0,10))+'</text>';
+  // nodes
+  parts.forEach((p,i)=>{ const a=-Math.PI/2+i/n*2*Math.PI; const x=cx+Math.cos(a)*ring, y=cy+Math.sin(a)*ring;
+    const rr=7+11*Math.sqrt(p.ec/maxec); const warm=p.path&&(p.path.type==='direct'||p.path.type==='1hop');
+    // green ring = a DIRECT door (we actually know someone here); thickness = link strength.
+    // 1-hop orgs stay plain — the bridge story shows when you click them.
+    const ringw=p.path&&p.path.type==='direct'?Math.max(2.5,Math.min(7,(p.path.strength||0)/14)):0;
+    const fill=p.role==='coordinator'?'#1C2529':'#8a9096';
+    svg+='<g class="node" data-cgnode="'+i+'"><circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+rr.toFixed(1)+'" fill="'+fill+'" '+
+      (ringw?'stroke="#0CA30C" stroke-width="'+ringw.toFixed(1)+'"':'stroke="#fff" stroke-width="1"')+'>'+
+      '<title>'+esc((p.role==='coordinator'?'★ ':'')+p.name+' · '+p.country+' · '+pmoney(p.ec)+(warm?' · we have a path here':''))+'</title></circle>'+
+      (p.role==='coordinator'?'<text x="'+x.toFixed(1)+'" y="'+(y-rr-3).toFixed(1)+'" text-anchor="middle" font-size="10" fill="#1C2529">★</text>':'')+
+      '</g>'; });
+  svg+='</svg>';
+  return svg;
+}
+function projNodePop(i){
+  const r=PROJ.get(POPEN); if(!r) return; const p=(r.computed.consortium||[])[i]; if(!p) return;
+  PNODE=i; const el=document.getElementById('cgpop'); if(!el) return;
+  const pt=p.path||{type:'cold'};
+  let inner='<b>'+esc(p.name)+'</b> <span style="color:var(--muted)">· '+esc(p.country)+' · '+esc(p.role)+' · '+pmoney(p.ec)+'</span>';
+  if(pt.type==='direct'&&pt.people&&pt.people.length){
+    inner+='<div style="margin-top:6px;font-size:12.5px">'+pt.people.slice(0,4).map(pe=>'• <b>'+esc(pe.name)+'</b> <span style="color:var(--muted)">'+esc(pe.role||'')+(pe.lastTouch?' · '+esc(pe.lastTouch):'')+'</span> <span class="pathpill direct">link '+Math.round(pe.strength)+'</span>').join('<br>')+'</div>'+
+      '<div class="why" style="margin-top:7px">First move: warm intro to '+esc(pt.people[0].name)+' — offer the dissemination work package.</div>';
+  } else if(pt.type==='1hop'){
+    inner+='<div class="why" style="margin-top:7px">1-hop — ask our contact at '+esc(pt.bridgeOrg||'a partner we know')+' for an introduction.</div>';
+  } else {
+    inner+='<div style="margin-top:6px;font-size:12.5px;color:var(--muted)">No contact here yet — cold. Apollo for the comms/PM lead.</div>';
+  }
+  el.innerHTML='<div class="cgpop">'+inner+'</div>';
+}
+function projAddNote(){ const el=document.getElementById('pnote'); PROJ.addNote(POPEN,el.value); renderProjectPanel(); }
+function projMakeDeal(){
+  const r=PROJ.get(POPEN); if(!r) return; const c=r.computed;
+  // strongest-path CRM contact; if only a targeting person exists, create the contact
+  let contactId=null, pers=null;
+  const bp=c.bestPath;
+  if(bp&&bp.type==='direct'&&bp.people&&bp.people.length){
+    pers=bp.people.slice().sort((a,b)=>b.strength-a.strength)[0];
+    if(pers.crmId!=null && CRM.contact(pers.crmId)) contactId=pers.crmId;
+  }
+  if(contactId==null && pers){
+    const nc=CRM.addContact({name:pers.name||'(consortium contact)', org:bp.org||'', email:pers.email||'',
+      intent:'project', persona:'comms', tags:['EU project',c.acronym,'From Projects']});
+    contactId=nc.id;
+  }
+  if(contactId==null){ // cold — seed the coordinator as a contact
+    const nc=CRM.addContact({name:(c.coordinator||{}).name||c.acronym+' coordinator', org:(c.coordinator||{}).name||'',
+      country:(c.coordinator||{}).country||'', intent:'project', persona:'coordinator', tags:['EU project',c.acronym,'From Projects']});
+    contactId=nc.id;
+  }
+  const deals=CRM.data.deals; const nd=CRM.data.nextD||(Math.max(0,...deals.map(d=>d.id))+1);
+  if(deals.some(d=>d.title===c.acronym+' — dissemination (DCE)')){ alert('A deal for '+c.acronym+' already exists in the Pipeline.'); return; }
+  deals.push({id:nd, contactId, title:c.acronym+' — dissemination (DCE)', value:45000, stage:'identified'});
+  CRM.data.nextD=nd+1; CRM.save();
+  PROJ.setStatus(POPEN,'pursuing');
+  alert('Added “'+c.acronym+' — dissemination (DCE)” (€45,000, Identified) to your Pipeline, linked to '+ (CRM.contact(contactId)||{}).name +'.');
+  renderProjectPanel();
 }
 
 /* ---------- boot: dispatch login first, then the Belén gate, then the CRM ---------- */
