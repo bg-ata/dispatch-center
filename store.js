@@ -2,7 +2,7 @@
    Cloud mode: per-entity tables in Supabase (dc_events / dc_people / dc_substages /
    dc_tasks) with row-level security, audit trail, soft deletes and realtime sync.
    Local mode (no Supabase URL): browser localStorage with seeded demo data. */
-const STORE_VERSION = 20;
+const STORE_VERSION = 21;
 /* the team's home is dispatch.renmad.com — anyone landing on the old GitHub Pages
    address is bounced there, keeping the exact page + parameters (?id=…). The one
    exception: unsent clock punches queued on this device stay on the OLD origin's
@@ -753,7 +753,8 @@ function buildSeed(){
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],tickets:[],logins:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  {const c=people.find(p=>p.name==='Cintia Hernández');if(c)c.salesLead=true;} // local demo mirrors dispatch_spx.sql
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -764,10 +765,10 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
-  people:['id','name','role','access','email','finance','hr','billing','holidayDays','photo','phone'],
+  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone'],
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -788,8 +789,15 @@ const COLS={
      (bug / usability / change / idea); admins triage (status + priority);
      the thread jsonb holds follow-up comments [{who,when,text|sys}] */
   tickets:['id','personId','area','type','title','description','status','priority','thread','created'],
+  /* SPX sales module. camelCase keys map 1:1 to the quoted columns in dispatch_spx.sql.
+     Server-managed (updated_at/by, deleted) never pushed; createdAt/createdBy are set on
+     insert (by the Proposal Builder or the app) and echoed unchanged on edits. */
+  spxProps:['id','createdAt','createdBy','responsable','responsableName','responsableEmail','company','companyId','source','origen','salesStatus','contents','valueEur','valueEdited','fechaEnvio','fechaSeguimiento','notas','contacts','fileName','sentLink','isGeneral','mode','active','superseded','supersededBy'],
+  spxLines:['id','parentId','eventId','eventKey','eventName','valueEur','valueEdited','contents'],
+  spxTargets:['id','eventId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus'],
+  companyMap:['id','canonicalName','marketingAliases','legalAliases','emailDomains','invoiceClientKey','confirmedBy','confirmedAt','status'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false,_spxReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -871,6 +879,19 @@ const DB={
       try{const tk=await sb.from('dc_tickets').select('*').eq('deleted',false).order('id');
         if(tk.error)throw tk.error;this.data.tickets=tk.data||[];_tickReady=true;
       }catch(e){console.warn('requests module not ready:',e.message||e);}
+      /* SPX sales module (proposals + lines + targets + company crosswalk): tolerant —
+         the app runs fine before dispatch_spx.sql is applied */
+      this.data.spxProps=[];this.data.spxLines=[];this.data.spxTargets=[];this.data.companyMap=[];_spxReady=false;
+      try{
+        const [sp,sl,stg,cm]=await Promise.all([
+          sb.from('dc_spx_proposals').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_spx_lines').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_spx_targets').select('*').eq('deleted',false).order('id'),
+          sb.from('dc_company_map').select('*').eq('deleted',false).order('id')]);
+        if(sp.error)throw sp.error;if(sl.error)throw sl.error;if(stg.error)throw stg.error;if(cm.error)throw cm.error;
+        this.data.spxProps=sp.data||[];this.data.spxLines=sl.data||[];this.data.spxTargets=stg.data||[];this.data.companyMap=cm.data||[];
+        _spxReady=true;
+      }catch(e){console.warn('SPX module not ready:',e.message||e);}
       if(!this.data.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -900,6 +921,7 @@ const DB={
         if(k==='eventaway'&&!_eventReady)continue; // event-away table not created yet
         if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)continue; // facturación tables not created yet
         if(k==='tickets'&&!_tickReady)continue; // requests table not created yet
+        if((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)continue; // SPX tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -986,6 +1008,21 @@ const DB={
   /* ---- team request box (tickets about the Dispatch Center itself) ---- */
   get tickets(){return this.data.tickets||[];},
   tickReady(){return !USE_SUPABASE||_tickReady;},
+  /* ---- SPX sales module (sponsorship proposals + health-check + reporting) ----
+     Board reads: whole roster. Writes gated to mirror the RLS in dispatch_spx.sql. */
+  get spxProps(){return this.data.spxProps||[];},
+  get spxLines(){return this.data.spxLines||[];},
+  get spxTargets(){return this.data.spxTargets||[];},
+  get companyMap(){return this.data.companyMap||[];},
+  spxReady(){return !USE_SUPABASE||_spxReady;},
+  spxLinesFor(parentId){return this.spxLines.filter(l=>l.parentId==parentId);},
+  spxTargetFor(finId){return this.spxTargets.find(t=>t.eventId==finId)||null;},
+  /* sales lead (Cintia) or admin (Belén): edits ANY proposal + targets + crosswalk. Mirrors dc_can_sales_lead(). */
+  canSalesLead(){return !!(this.currentUser&&(this.currentUser.salesLead||this.currentUser.access==='admin'));},
+  /* who may CREATE proposals — Sales/Lead roles, admins, the sales lead. Mirrors dc_is_sales(). */
+  isSales(){const u=this.currentUser;return !!(u&&(u.role==='Sales'||u.role==='Lead'||u.access==='admin'||u.salesLead));},
+  /* may this user edit THIS proposal? own (by responsable email) OR sales lead/admin. Mirrors the RLS UPDATE policy. */
+  canEditProp(p){if(this.canSalesLead())return true;const u=this.currentUser;return !!(u&&p&&(''+(p.responsableEmail||'')).toLowerCase()===(''+(u.email||'')).toLowerCase());},
   invoice(id){return this.invoices.find(i=>i.id==id);},
   allocsFor(invoiceId){return this.invoiceAllocs.filter(a=>a.invoice_id==invoiceId);},
   invoicesFor(finId){const ids={};this.invoiceAllocs.forEach(a=>{if(a.eventId==finId)ids[a.invoice_id]=1;});return this.invoices.filter(i=>ids[i.id]);},
@@ -1043,6 +1080,7 @@ function subscribeRealtime(){
       if(k==='eventaway'&&!_eventReady)return;
       if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)return;
       if(k==='tickets'&&!_tickReady)return;
+      if((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
     ch.subscribe();
@@ -1156,7 +1194,8 @@ const DISPATCH_TOOLS=[
   {id:'proposal', name:'Proposal Builder',  desc:'Sponsorship decks per event, salesperson, colour and client logo.', url:'https://proposal-builder-37epkukjuzdm86witcne7r.streamlit.app/', accent:'#E84830', ini:'PB', dcAuth:true},
   {id:'images',   name:'Image Generator',   desc:'Webinar & event images, logo walls and title slides.', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#4C3079', ini:'IG', dcAuth:true},
   {id:'webinar',  name:'Webinar Reports',   desc:'Two CSVs + stats in, branded PPTX report out (Reports tab).', url:'https://renmad-generator-xpaky2vg6fctshxczlhy3b.streamlit.app/', accent:'#29ACE3', ini:'WR', dcAuth:true},
-  {id:'dashboard',name:'Proposals Dashboard',desc:'Money on the table — overview, trends, salespeople, clients.', url:'https://proposal-dashboard.streamlit.app/', accent:'#2B2B2B', ini:'PD', dcAuth:true, mgrOnly:true},
+  // RETIRED 2026-07-13: the Proposals Dashboard is reborn as the 💼 SPX page's Reporting tab
+  // (backoffice.py stays in the proposal_builder repo, unlinked). Tile removed from Tools.
   {id:'bessboss', name:'BESS BOSS',         desc:'The renewables minigrid game — learn the grid, top the leaderboard.', url:'https://bg-ata.github.io/GridShero/', accent:'#FF4A00', ini:'BB', game:true},
 ];
 function toolById(id){return DISPATCH_TOOLS.find(t=>t.id===id)||null;}
@@ -1186,6 +1225,7 @@ function navBar(active){
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
          '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'">👥 Team</a>'+
          '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'||active==='fact'?'on':'')+'" title="Everything money — Invoicing lives inside, top right">💶 Money</a>'+
+         '<a href="spx.html" id="nav-spx" style="white-space:nowrap" class="'+(active==='spx'?'on':'')+'" title="Sponsorship sales — proposals, health-check, reporting">💼 SPX</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="hr.html" id="nav-hr" style="white-space:nowrap" class="'+(active==='hr'?'on':'')+'">🌴 HR</a>'+
          '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
