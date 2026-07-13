@@ -128,11 +128,11 @@ function normCompany(s){
 function domainOf(email){const m=(''+(email||'')).split('@');return m.length===2?m[1].toLowerCase().trim():'';}
 
 /* ---------- tab routing ---------- */
-const TABLIST=[['proposals','Proposals'],['health','Health-Check'],['report','Reporting']];
+const TABLIST=[['proposals','Proposals'],['before','Before'],['health','Health-Check'],['report','Reporting']];
 function activeTab(){const h=location.hash.replace('#','');return TABLIST.some(t=>t[0]===h)?h:'proposals';}
 let TAB=activeTab();
 let VIEW='general';                  // 'general' (parent rows) | 'event' (child rows)
-let flt={event:'',sales:'',status:'',source:'',origen:'',from:'',to:'',q:''};
+let flt={event:'',sales:'',status:'',origen:'',from:'',to:'',q:''};
 let HC=null;                         // dc_finance id selected for Health-Check
 
 /* ---------- charts ---------- */
@@ -148,6 +148,34 @@ function propEvents(p){return DB.spxLinesFor(p.id);}
 /* the authoritative value of a proposal = Σ its children, or its own value when it has none (General/single-with-value) */
 function propValue(p){const ls=DB.spxLinesFor(p.id);if(ls.length)return ls.reduce((s,l)=>s+(+l.valueEur||0),0);return +p.valueEur||0;}
 function distinctList(arr){return Array.from(new Set(arr.filter(x=>x!=null&&x!=='')));}
+
+/* ---------- SPX event dimension ----------
+   The events come from the PROPOSALS themselves (what's actually being sold),
+   NOT from the Money (dc_finance) list — so the board shows your live events,
+   not old empty ones. Each event = a stable key + name (+ an optional dc_finance
+   match, used only for targets / Invoiced-Paid when that money row exists). */
+function lineEvKey(l){return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
+function lineEvName(l){if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
+function evFinanceId(key,name){
+  const l=DB.spxLines.find(x=>!x.deleted&&lineEvKey(x)===key&&x.eventId!=null);
+  if(l)return l.eventId;
+  const nn=normCompany(name);if(!nn)return null;
+  const f=DB.finance.find(x=>!x.deleted&&normCompany(x.name)&&nn.indexOf(normCompany(x.name))>=0);
+  return f?f.id:null;
+}
+/* distinct events across the live proposals, with a Sent-count so we can tell
+   "current" (still has pipeline) from "Before" (all closed/lost). */
+function spxEvents(){
+  const map={};
+  liveProps().forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{const k=lineEvKey(l);if(k==='?')return;
+    if(!map[k])map[k]={key:k,name:lineEvName(l),sent:0,total:0};
+    map[k].total++;if(p.salesStatus==='Sent')map[k].sent++;}));
+  const out=Object.values(map);out.forEach(e=>{e.financeId=evFinanceId(e.key,e.name);});
+  return out.sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+}
+function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(e.sent>0)s[e.key]=1;});return s;}
+/* a proposal is "current" if it's General or touches an event still in pipeline; else it's "Before" */
+function propIsCurrent(p,cur){if(p.isGeneral)return true;const ls=DB.spxLinesFor(p.id);if(!ls.length)return true;return ls.some(l=>cur[lineEvKey(l)]);}
 
 /* accounting derivation via the confirmed crosswalk (sales never type this) */
 function canonicalFor(company){
@@ -178,12 +206,11 @@ function liveProps(){return DB.spxProps.filter(p=>p.active!==false&&!p.supersede
 function passFilters(p){
   if(flt.sales&&(p.responsable!==flt.sales&&p.responsableName!==flt.sales))return false;
   if(flt.status&&p.salesStatus!==flt.status)return false;
-  if(flt.source&&(p.source||'')!==flt.source)return false;
   if(flt.origen&&(p.origen||'')!==flt.origen)return false;
   if(flt.from&&(p.fechaEnvio||p.createdAt||'')<flt.from)return false;
   if(flt.to&&(p.fechaEnvio||p.createdAt||'').slice(0,10)>flt.to)return false;
-  if(flt.event){const has=DB.spxLinesFor(p.id).some(l=>''+l.eventId===flt.event);if(!has)return false;}
-  if(flt.q){const q=flt.q.toLowerCase();const hay=[p.company,p.responsableName,p.contents,p.notas,p.source].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+  if(flt.event){const has=DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===flt.event);if(!has)return false;}
+  if(flt.q){const q=flt.q.toLowerCase();const hay=[p.company,p.responsableName,p.contents,p.notas,p.origen].join(' ').toLowerCase();if(!hay.includes(q))return false;}
   return true;
 }
 
@@ -200,61 +227,62 @@ function banners(){
 function render(){
   renderTabs();banners();
   const el=document.getElementById('app');
-  if(TAB==='proposals')renderProposals(el);
+  if(TAB==='proposals')renderProposals(el,'current');
+  else if(TAB==='before')renderProposals(el,'before');
   else if(TAB==='health')renderHealth(el);
   else renderReporting(el);
 }
 
 /* ================= PROPOSALS TAB ================= */
-function renderProposals(app){
-  const props=liveProps().filter(passFilters);
-  // header totals (use general-level parent value)
+function renderProposals(app,scope){
+  scope=scope||'current';
+  const cur=currentEventKeys();
+  const props=liveProps().filter(passFilters).filter(p=>scope==='before'?!propIsCurrent(p,cur):propIsCurrent(p,cur));
   const val=p=>propValue(p);
   const sum=st=>props.filter(p=>p.salesStatus===st).reduce((s,p)=>s+val(p),0);
   const firmado=sum('Confirmed'),enviado=sum('Sent'),perdido=sum('Lost'),proceso=firmado+enviado;
-  // target/stretch over the events represented (sponsorship)
-  const evIds=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(l=>l.eventId)));
-  let tgt=0,str=0;evIds.forEach(id=>{const t=DB.spxTargetFor(id);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}});
+  // target/stretch: only where the event has a Money (dc_finance) row + a target set
+  const evObjs=spxEvents();
+  const shownKeys=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
+  let tgt=0,str=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0||e.financeId==null)return;const t=DB.spxTargetFor(e.financeId);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}});
   const pctT=tgt?firmado/tgt:null,pctS=str?firmado/str:null;
 
   const salespeople=distinctList(DB.spxProps.map(p=>p.responsableName||p.responsable));
-  const sources=distinctList(DB.spxProps.map(p=>p.source));
   const origens=distinctList(DB.spxProps.map(p=>p.origen));
-  const events=DB.finance.slice().sort((a,b)=>(a.year-b.year)||(''+a.name).localeCompare(''+b.name));
+  const scopeEvents=evObjs.filter(e=>scope==='before'?e.sent===0:e.sent>0);
 
   let h='';
+  if(scope==='before')h+='<p class="lead">Events where selling is finished — nothing left in the pipeline. Kept for the record; the events you\'re selling now are on the <b>Proposals</b> tab.</p>';
   h+='<div class="tiles">'
     +tile('Enviado',money(enviado),props.filter(p=>p.salesStatus==='Sent').length+' props')
     +tile('Firmado',money(firmado),props.filter(p=>p.salesStatus==='Confirmed').length+' props')
     +tile('Perdido',money(perdido),props.filter(p=>p.salesStatus==='Lost').length+' props')
     +tile('Firmado + en proceso',money(proceso),'')
-    +tile('Target (sponsorship)',tgt?money(tgt):'—',evIds.length+' event'+(evIds.length===1?'':'s'))
+    +tile('Target (sponsorship)',tgt?money(tgt):'—','where set in Money')
     +tile('% a target',pctT==null?'—':pct(pctT),'')
     +tile('% a stretch',pctS==null?'—':pct(pctS),'')
     +'</div>';
 
-  // add-by-hand (sales / lead / admin)
-  if(DB.isSales())
+  if(DB.isSales()&&scope!=='before')
     h+='<div style="margin:0 0 10px"><button class="btn p" onclick="openCreate()">+ New proposal</button> <span class="ro-note">Add a proposal by hand — or they arrive automatically from the Proposal Builder.</span></div>';
 
   // filters
   h+='<div class="filters">';
   h+='<span class="seg"><button class="'+(VIEW==='general'?'on':'')+'" onclick="setView(\'general\')">General level</button>'
     +'<button class="'+(VIEW==='event'?'on':'')+'" onclick="setView(\'event\')">By event</button></span>';
-  h+=sel('f_event','Event',events.map(f=>[f.id,finLabel(f)]),flt.event);
+  h+=sel('f_event','Event',scopeEvents.map(e=>[e.key,e.name]),flt.event);
   h+=sel('f_sales','Salesperson',salespeople.map(s=>[s,s]),flt.sales);
   h+=sel('f_status','Status',SALES_STATUSES.map(s=>[s,stLabel(s)]),flt.status);
-  h+=sel('f_source','Source',sources.map(s=>[s,s]),flt.source);
-  h+=sel('f_origen','Origen',origens.map(s=>[s,s]),flt.origen);
+  h+=sel('f_origen','Origen / source',origens.map(s=>[s,s]),flt.origen);
   h+='<input type="date" id="f_from" value="'+esc(flt.from)+'" title="from (fecha envío)">';
   h+='<input type="date" id="f_to" value="'+esc(flt.to)+'" title="to (fecha envío)">';
-  h+='<input type="text" id="f_q" placeholder="search…" value="'+esc(flt.q)+'" style="min-width:130px">';
-  if(flt.event||flt.sales||flt.status||flt.source||flt.origen||flt.from||flt.to||flt.q)
+  h+='<input type="text" id="f_q" placeholder="search company / contact…" value="'+esc(flt.q)+'" style="min-width:150px">';
+  if(flt.event||flt.sales||flt.status||flt.origen||flt.from||flt.to||flt.q)
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
   h+='</div>';
 
-  // needs-linking tray
-  h+=linkingTray();
+  // company crosswalk — compact bar (opens the list on demand)
+  if(scope!=='before')h+=linkingBar();
 
   // table
   if(VIEW==='general')h+=proposalsTableGeneral(props);
@@ -305,7 +333,7 @@ function proposalsTableByEvent(props){
   props.forEach(p=>{
     const ls=DB.spxLinesFor(p.id);
     if(!ls.length){rows.push({p,l:null});return;}
-    ls.forEach(l=>{if(flt.event&&''+l.eventId!==flt.event)return;rows.push({p,l});});
+    ls.forEach(l=>{if(flt.event&&lineEvKey(l)!==flt.event)return;rows.push({p,l});});
   });
   let h='<div class="tablewrap"><table><thead><tr>'
     +'<th>Event</th><th>Empresa</th><th>Responsable</th><th>Origen</th><th>Status</th>'
@@ -354,10 +382,10 @@ function contactCell(p){
 
 /* ----- proposals interactions ----- */
 function setView(v){VIEW=v;render();}
-function clearFilters(){flt={event:'',sales:'',status:'',source:'',origen:'',from:'',to:'',q:''};render();}
+function clearFilters(){flt={event:'',sales:'',status:'',origen:'',from:'',to:'',q:''};render();}
 function wireFilters(){
   const bind=(id,key)=>{const e=document.getElementById(id);if(e)e.onchange=()=>{flt[key]=e.value;render();};};
-  bind('f_event','event');bind('f_sales','sales');bind('f_status','status');bind('f_source','source');bind('f_origen','origen');bind('f_from','from');bind('f_to','to');
+  bind('f_event','event');bind('f_sales','sales');bind('f_status','status');bind('f_origen','origen');bind('f_from','from');bind('f_to','to');
   const q=document.getElementById('f_q');if(q)q.oninput=()=>{flt.q=q.value;clearTimeout(q._t);q._t=setTimeout(render,250);};
 }
 function wireProposalTable(){
@@ -413,18 +441,27 @@ function unlinkedCompanies(){
   liveProps().forEach(p=>{if(!p.company)return;const n=normCompany(p.company);if(seen[n])return;seen[n]=1;if(!canonicalFor(p.company))out.push(p);});
   return out;
 }
-function linkingTray(){
+/* compact one-line bar — the full list opens on demand (no more wall of chips) */
+function linkingBar(){
   if(!DB.spxReady())return '';
-  const ul=unlinkedCompanies();
-  if(!ul.length)return '';
+  const n=unlinkedCompanies().length;
+  if(!n)return '';
   const canLink=DB.canSalesLead()||DB.canFinance();
-  let h='<div class="infobanner"><b>Company crosswalk — '+ul.length+' to link.</b> '
-    +'These proposal companies (marketing names) aren\'t yet matched to a legal invoicing name, so their Invoiced/Paid status can\'t derive. '
-    +(canLink?'Confirm each match once — it\'s remembered forever.':'Ask Cintia or Belén to confirm the matches.')
+  return '<div class="infobanner" style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:12px">'
+    +'<span>🔗 <b>'+n+'</b> compan'+(n===1?'y is':'ies are')+' not yet linked to an invoicing (legal) name — needed before Invoiced/Paid can show.</span>'
+    +(canLink?'<button class="btn" onclick="openLinkingList()">Link companies</button>':'<span class="ro-note">Cintia or Belén can link them.</span>')
     +'</div>';
-  h+='<div class="filters" style="margin-bottom:14px">'+ul.map(p=>'<button class="chip" data-link="'+p.id+'"'+(canLink?'':' disabled')+'>🔗 '+esc(p.company)+'</button>').join('')+'</div>';
-  return h;
 }
+function linkListHtml(list){return list.map(p=>'<div class="kv lkrow" data-name="'+esc((p.company||'').toLowerCase())+'"><button class="lnk" onclick="openLink('+p.id+')">🔗 '+esc(p.company)+'</button></div>').join('')||'<div class="ro-note">All linked 🎉</div>';}
+function openLinkingList(){
+  const ul=unlinkedCompanies();
+  const body='<div class="sec"><h5>Companies to link ('+ul.length+')</h5>'
+    +'<input id="lk_search" placeholder="search company…" oninput="filterLinkList()" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;font:inherit">'
+    +'<div id="lk_list">'+linkListHtml(ul)+'</div>'
+    +'<p class="ro-note">Click a company to match it to its legal invoicing name — once, then it\'s remembered forever.</p></div>';
+  panelShell('Link companies','marketing → legal invoicing name',body);
+}
+function filterLinkList(){const q=(document.getElementById('lk_search').value||'').toLowerCase();document.querySelectorAll('#lk_list .lkrow').forEach(r=>{r.style.display=r.dataset.name.indexOf(q)>=0?'':'none';});}
 function openLink(propId){
   const p=DB.spxProps.find(x=>x.id==propId);if(!p)return;
   const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
@@ -480,38 +517,38 @@ function finStartDate(f){
   return null;
 }
 function finOngoing(f){const s=finStartDate(f);if(!s)return true;const end=new Date(s);end.setDate(end.getDate()+2);const t=new Date();t.setHours(0,0,0,0);return end>=t;}
+let _hcFid=null;
 function renderHealth(app){
-  const all=DB.finance.slice();
-  const byStartAsc=(a,b)=>{const sa=finStartDate(a),sb=finStartDate(b);return (sa?+sa:Infinity)-(sb?+sb:Infinity)||(''+a.name).localeCompare(''+b.name);};
-  const ongoing=all.filter(finOngoing).sort(byStartAsc);
-  const past=all.filter(f=>!finOngoing(f)).sort((a,b)=>{const sa=finStartDate(a),sb=finStartDate(b);return (sb?+sb:0)-(sa?+sa:0);});
-  if(HC==null)HC=(ongoing[0]&&ongoing[0].id)||(DB.spxTargets[0]&&DB.spxTargets[0].eventId)||(all[0]&&all[0].id)||null;
-  const opt=f=>'<option value="'+f.id+'"'+(''+HC===''+f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>';
-  let optsHtml=ongoing.map(opt).join('');
-  if(past.length)optsHtml+='<option disabled>──── past events ────</option>'
-    +past.map(f=>'<option value="'+f.id+'"'+(''+HC===''+f.id?' selected':'')+'>'+esc(finLabel(f))+' · (finished)</option>').join('');
+  const evsAll=spxEvents();
+  const cur=evsAll.filter(e=>e.sent>0).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const past=evsAll.filter(e=>e.sent===0).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  if(HC==null||!evsAll.some(e=>e.key===HC))HC=(cur[0]&&cur[0].key)||(past[0]&&past[0].key)||null;
+  const optE=e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+'</option>';
+  let optsHtml=cur.map(optE).join('');
+  if(past.length)optsHtml+='<option disabled>──── finished ────</option>'+past.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+' · (finished)</option>').join('');
   let h='<div class="filters"><label style="font-weight:700;color:var(--ink)">Event:</label>'
-    +'<select id="hc_ev">'+optsHtml+'</select> <span class="ro-note">Current projects first — finished events drop to the bottom.</span></div>';
-  const f=DB.finance.find(f=>f.id==HC);
-  if(!f){app.innerHTML=h+'<div class="card">Pick an event.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=+s.value;render();};return;}
-  const t=DB.spxTargetFor(HC)||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
+    +'<select id="hc_ev">'+(optsHtml||'<option>—</option>')+'</select> <span class="ro-note">Only events with proposals — same set as the board.</span></div>';
+  const ev=evsAll.find(e=>e.key===HC);
+  if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events with proposals yet — they appear here once proposals exist.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
+  const fid=ev.financeId; _hcFid=fid;   // dc_finance match (null ⇒ no targets/Invoiced-Paid until it's added to Money)
+  const t=(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
   const conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
   // pipeline (Sent sponsorship) for this event
   const sentLines=[];
-  liveProps().filter(p=>p.salesStatus==='Sent').forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{if(l.eventId==HC)sentLines.push(+l.valueEur||0);}));
+  liveProps().filter(p=>p.salesStatus==='Sent').forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===HC)sentLines.push(+l.valueEur||0);}));
   const pipeline=sentLines.reduce((a,b)=>a+b,0);
   const expected=pipeline*conv;
   // confirmed = sponsorship invoiced for this event (Invoiced/Paid), NOT sales-declared
-  const spInvoiced=invoicedSponsorship(HC);
+  const spInvoiced=fid!=null?invoicedSponsorship(fid):{total:0,paid:0};
   const projection=spInvoiced.total+expected;
   const spTarget=+t.sponsorshipTarget||0,spStretch=+t.sponsorshipStretch||0;
   const gapT=projection-spTarget,gapS=projection-spStretch;
   const addT=gapT>=0?0:(-gapT)/(conv||1),addS=gapS>=0?0:(-gapS)/(conv||1);
-  // pases (from ticket invoices) — informational
-  const pasesInv=invoicedPases(HC);
-  const editable=DB.canSalesLead();
+  const pasesInv=fid!=null?invoicedPases(fid):{total:0,paid:0};
+  const editable=DB.canSalesLead()&&fid!=null;
 
-  h+='<div class="card"><h2>'+esc(f.name)+' '+(f.year||'')+' — sales health-check</h2>'
+  h+='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
+    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">This event isn\'t in <b>Money</b> yet, so targets and Invoiced/Paid can\'t be tracked. Add it in Money (dc_finance) and it links automatically. The pipeline below still comes from the proposals.</div>':'')
     +'<p class="lead">Sponsorship projection = confirmed (from Facturación) + expected pipeline (proposals sent × conversion). '
     +'Confirmed counts <b>Invoiced/Paid only</b>, never sales-declared.</p>';
 
@@ -542,7 +579,7 @@ function renderHealth(app){
   h+='<p class="ro-note">Lectura rápida: si la diferencia es negativa, ese es el volumen de propuestas NUEVAS que hay que mover (teniendo en cuenta la conversión) para cerrar el hueco.</p>';
   h+='</div>';
   app.innerHTML=h;
-  const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=+s.value;render();};
+  const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};
   wireHC(t);
 }
 function hcRow(label,pases,spons,total,editable,pf,sf){
@@ -579,8 +616,9 @@ function wireHC(t){
   });
 }
 function ensureTarget(){
-  let row=DB.spxTargetFor(HC);
-  if(!row){row={id:DB.newId(),eventId:HC,sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};DB.spxTargets.push(row);}
+  if(_hcFid==null)return {convByStatus:{}};   // no Money row → nothing to persist targets against
+  let row=DB.spxTargetFor(_hcFid);
+  if(!row){row={id:DB.newId(),eventId:_hcFid,sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};DB.spxTargets.push(row);}
   return row;
 }
 
@@ -611,7 +649,7 @@ function renderReporting(app){
   props.filter(p=>p.salesStatus==='Sent').forEach(p=>{const d=(p.fechaEnvio||p.createdAt||'').slice(0,10);if(!d)return;const days=Math.floor((now-new Date(d))/864e5);aging[days<=14?'0-14':days<=30?'15-30':days<=60?'31-60':'60+']++;});
   // by event (€ out across child lines)
   const byEv={};
-  props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{const f=DB.finance.find(f=>f.id==l.eventId);const k=f?(f.name+' '+(f.year||'')):(l.eventName||l.eventKey||'(unlinked)');byEv[k]=byEv[k]||{val:0,ids:{}};byEv[k].val+=(+l.valueEur||0);byEv[k].ids[p.id]=1;}));
+  props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{const k=lineEvName(l);byEv[k]=byEv[k]||{val:0,ids:{}};byEv[k].val+=(+l.valueEur||0);byEv[k].ids[p.id]=1;}));
   const evK=Object.keys(byEv).sort((a,b)=>byEv[b].val-byEv[a].val);
 
   let h='<p class="lead">The weekly sales report, in-app — proposals out per salesperson, over time, by source (and its conversion), and pipeline aging. Reborn from the old Proposals Dashboard.</p>';
@@ -806,6 +844,7 @@ function saveChipInit(){
 window.setView=setView;window.clearFilters=clearFilters;window.closePanel=closePanel;
 window.openLink=openLink;window.confirmLink=confirmLink;window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
 window.openCreate=openCreate;window.addNcLine=addNcLine;window.toggleGeneral=toggleGeneral;window.saveNew=saveNew;window.deleteProposal=deleteProposal;window.deleteLine=deleteLine;
+window.openLinkingList=openLinkingList;window.filterLinkList=filterLinkList;
 // chip clicks in the linking tray
 document.addEventListener('click',e=>{const b=e.target.closest('[data-link]');if(b&&!b.disabled)openLink(+b.dataset.link);});
 </script>
