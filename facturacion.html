@@ -73,14 +73,18 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=50"></script>
+<script src="store.js?v=51"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={ev:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
 const todayISO=()=>toISO(new Date());
+/* European display format DD/MM/YYYY (inputs stay type=date; this is for tables/exports) */
+function ddmmyyyy(iso){if(!iso)return '';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 function actorName(){const u=DB.currentUser;return u?(u.name||u.email||''):'';}
 function finSorted(){return DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.semester-b.semester)||(a.name||'').localeCompare(b.name||''));}
 function finById(id){return DB.finance.find(f=>f.id==id);}
+/* clean event label — no location (Jesús: "Invest Italia 2026", not "· Milan"; keeps Excel exports clean) */
+function finLabelClean(f){return f?((f.name||'?')+' '+(f.year||'')).replace(/\s+/g,' ').trim():'';}
 function eurF(n){return finFmt(n);}
 function num2(v){return Math.round((+v||0)*100)/100;}
 function isAbono(i){return i.producto==='abono'||i.status==='abono';}
@@ -108,7 +112,7 @@ function render(){
     '</div>'+
     '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="cfgCod">⚙ Accounting codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an event-split sheet">⬇ Excel</button></h3>'+
     '<div class="flt">'+
-      '<select id="f_ev"><option value="all">— all events —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(flt.ev==f.id?'selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>'+
+      '<select id="f_ev"><option value="all">— all events —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(flt.ev==f.id?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('')+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
       '<select id="f_st"><option value="all">— status —</option>'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(flt.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'+
       '<input id="f_txt" placeholder="search: company, invoice nº, order, comment…" value="'+esc(flt.text)+'" style="width:250px">'+
@@ -127,24 +131,24 @@ function render(){
     exportXLSX('RENMAD_invoices_'+todayISO()+'.xlsx',[
       {name:'Invoices',rows:list.map(i=>({
         'Invoice nº':i.numero_factura||'',
-        'Date':i.fecha||'',
+        'Date':ddmmyyyy(i.fecha),
         'Company':i.razon_social||'',
         'Product':PRODUCTO_LABEL[i.producto]||i.producto||'',
         'Pass type':i.producto==='tickets'&&i.tipo_pase?(i.tipo_pase+((+i.pase_cantidad||0)>1?' ×'+i.pase_cantidad:'')):'',
-        'Net €':+i.importe_base||0,
+        'Subtotal €':+i.importe_base||0,
+        'Subtotal $ (USD)':(i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='')?+i.importe_usd:'',
         'VAT %':i.iva_pct!=null?+i.iva_pct:'',
         'VAT €':+i.iva_importe||0,
         'Total €':+i.total_factura||0,
         'Status':INV_STATUS[i.status]||i.status||'',
-        'Paid on':i.fecha_cobro||'',
-        'Collected €':(i.importe_cobrado!=null&&i.importe_cobrado!=='')?+i.importe_cobrado:'',
+        'Collected €':i.status==='pagado'?(+i.total_factura||0):'',
         'Sales rep':i.responsable_comercial?DB.personName(i.responsable_comercial):'',
         'Entered by':i.entered_by||'',
         'Comments':i.comentarios||''
       }))},
       {name:'Event split',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const f=finById(a.eventId);return{
         'Invoice nº':i.numero_factura||'',
-        'Event':f?finLabel(f):('#'+a.eventId),
+        'Event':f?finLabelClean(f):('#'+a.eventId),
         'Amount €':+a.amount||0,
         'Passes':+a.passes||0
       };}))}
@@ -169,21 +173,21 @@ function filtered(){
   }).sort((a,b)=>((a.fecha||'').localeCompare(b.fecha||''))||((a.numero_factura||'').localeCompare(b.numero_factura||'',undefined,{numeric:true})));
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Net</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Events (split)</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Events (split)</th><th>Entered by</th><th style="width:50px"></th></tr>';
   if(!rows.length)h+='<tr><td colspan="13" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
-    const chips=allocs.map(a=>{const f=finById(a.eventId);return '<span class="allocchip">'+esc(f?finLabel(f):('#'+a.eventId))+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
+    const chips=allocs.map(a=>{const f=finById(a.eventId);return '<span class="allocchip">'+esc(f?finLabelClean(f):('#'+a.eventId))+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
     const stSel='<select class="inl" data-st="'+i.id+'">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
       '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
-      '<td>'+(i.fecha||'')+'</td><td style="white-space:normal">'+esc(i.razon_social||'')+'</td>'+
+      '<td>'+ddmmyyyy(i.fecha)+'</td><td style="white-space:normal">'+esc(i.razon_social||'')+'</td>'+
       '<td>'+(PRODUCTO_LABEL[i.producto]||i.producto||'')+((+i.cantidad||0)>1?' ×'+i.cantidad:'')+(i.producto==='tickets'&&i.tipo_pase?' · '+i.tipo_pase+((+i.pase_cantidad||0)>1?'×'+i.pase_cantidad:''):'')+'</td>'+
-      '<td class="num">'+eurF(i.importe_base)+(i.en_usd?' <span class="hint" title="invoiced in USD ('+(i.importe_usd||'?')+' $, rate '+(i.usd_rate||'?')+')">$</span>':'')+'</td>'+
+      '<td class="num">'+eurF(i.importe_base)+(i.en_usd?' <span class="hint" title="Invoiced in USD">/ '+(i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'$ —')+'</span>':'')+'</td>'+
       '<td class="num">'+eurF(i.iva_importe)+' <span class="hint">'+(i.iva_pct!=null?i.iva_pct+'%':'')+'</span></td>'+
       '<td class="num"><b>'+eurF(i.total_factura)+'</b></td>'+
       '<td>'+stSel+'</td>'+
-      '<td>'+(i.fecha_cobro?esc(i.fecha_cobro):'')+(i.importe_cobrado!=null&&i.importe_cobrado!==''?' · '+eurF(i.importe_cobrado):'')+'</td>'+
+      '<td>'+(i.status==='pagado'?eurF(i.total_factura):(i.status==='cancelado'?'':'<span class="hint">—</span>'))+'</td>'+
       '<td>'+(i.responsable_comercial?esc(DB.personName(i.responsable_comercial)):'—')+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td>'+esc(i.entered_by||'')+'</td>'+
@@ -240,7 +244,7 @@ function openModal(inv){
     '<label>Date *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
     '<label>Due date<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
     '<label>Accounting code<input id="m_cod" list="codlist" value="'+esc(i.codigo_contable||'')+'"></label>'+
-    '<label>Entered by<input id="m_by" value="'+esc(i.entered_by||actorName())+'"></label>'+
+    '<label>Entered by <span class="hint" style="text-transform:none;font-weight:400">(automatic)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
     '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
     '<label>Product *<select id="m_prod"><option value="">—</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(i.producto===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select></label>'+
     '<label>Quantity<input id="m_cant" type="number" step="any" min="0" value="'+(i.cantidad!=null?i.cantidad:'')+'"></label>'+
@@ -249,21 +253,17 @@ function openModal(inv){
     '<label id="l_pedido" style="display:none">Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'" placeholder="tickets only"></label>'+
     '<label id="l_resp" style="display:none">Sales rep<select id="m_resp">'+pOpts(i.responsable_comercial)+'</select></label>'+
     '<div class="sect">Amounts</div>'+
-    '<label>Net amount € *<input id="m_base" type="number" step="any" value="'+(i.importe_base!=null?i.importe_base:'')+'"></label>'+
+    '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— enter both the EUR and the USD amount by hand (accounting sets them)</span></label>'+
+    '<label>Subtotal € *<input id="m_base" type="number" step="any" value="'+(i.importe_base!=null?i.importe_base:'')+'"></label>'+
+    '<label class="usdf" style="display:none">Subtotal $ (USD)<input id="m_usdi" type="number" step="any" value="'+(i.importe_usd!=null?i.importe_usd:'')+'"></label>'+
     '<label>VAT %<select id="m_iva"><option value="21" '+(i.iva_pct==21?'selected':'')+'>21%</option><option value="0" '+(i.iva_pct==0?'selected':'')+'>0%</option></select></label>'+
     '<label>VAT €<input id="m_ivai" readonly value="'+(i.iva_importe!=null?i.iva_importe:'')+'"></label>'+
     '<label>Invoice total €<input id="m_tot" readonly value="'+(i.total_factura!=null?i.total_factura:'')+'"></label>'+
     '<label>Discount % (info)<input id="m_dto" type="number" step="any" value="'+(i.descuento_pct!=null?i.descuento_pct:'')+'"></label>'+
-    '<label style="flex-direction:row;align-items:center;gap:6px;text-transform:none;align-self:end;white-space:normal"><input id="m_usd" type="checkbox" style="width:auto" '+(i.en_usd?'checked':'')+'> invoiced in USD</label>'+
     '<label id="l_motivo" style="display:none">Reason for 0% VAT<select id="m_motivo"><option value="">—</option>'+IVA_MOTIVOS.map(m=>'<option '+(i.iva_motivo===m?'selected':'')+'>'+m+'</option>').join('')+'</select></label>'+
-    '<label class="usdf" style="display:none">USD amount $<input id="m_usdi" type="number" step="any" value="'+(i.importe_usd!=null?i.importe_usd:'')+'"></label>'+
-    '<label class="usdf" style="display:none">Exchange rate<input id="m_rate" type="number" step="any" value="'+(i.usd_rate!=null?i.usd_rate:'')+'"></label>'+
-    '<label class="usdf" style="display:none">Rate date<input id="m_rated" type="date" value="'+(i.usd_rate_date||'')+'"></label>'+
     '<div class="sect">Payment</div>'+
     '<label>Status<select id="m_st">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
     '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono','na'].map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
-    '<label>Paid on<input id="m_fc" type="date" value="'+(i.fecha_cobro||'')+'"></label>'+
-    '<label>Collected € (partial ok)<input id="m_ic" type="number" step="any" value="'+(i.importe_cobrado!=null?i.importe_cobrado:'')+'"></label>'+
     '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
     '<label class="w4">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
     '</div>'+
@@ -279,7 +279,7 @@ function paseTotal(){
   return t?(TIPO_PASES[t]||0)*n:0;
 }
 function renderAllocs(){
-  const evOpts=sel=>'<option value="">— event —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabel(f))+'</option>').join('');
+  const evOpts=sel=>'<option value="">— event —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
   let h='<tr><th>Event (€ Dashboard row)</th><th style="width:130px">Amount €</th><th style="width:110px">Passes 🎟</th><th style="width:24px"></th></tr>';
   allocRows.forEach((a,ix)=>{h+='<tr><td><select data-af="eventId" data-ix="'+ix+'">'+evOpts(a.eventId)+'</select></td>'+
     '<td><input type="number" step="any" data-af="amount" data-ix="'+ix+'" value="'+(a.amount!=null?a.amount:'')+'"></td>'+
@@ -320,7 +320,9 @@ function wireModal(i){
     // tickets: suggest total passes (Single=1 … Quad=4 × packs) into a single allocation
     if($('m_prod').value==='tickets'&&allocRows.length===1&&!(+allocRows[0].passes)){allocRows[0].passes=paseTotal()||'';renderAllocs();}
   }));
-  $('m_st').addEventListener('change',()=>{if($('m_st').value==='cancelado')$('m_pago').value='na';if($('m_st').value==='pagado'&&!$('m_fc').value)$('m_fc').value=todayISO();});
+  $('m_st').addEventListener('change',()=>{if($('m_st').value==='cancelado')$('m_pago').value='na';});
+  /* paying by Card marks the invoice Paid automatically */
+  $('m_pago').addEventListener('change',()=>{if($('m_pago').value==='tarjeta'&&$('m_st').value!=='cancelado')$('m_st').value='pagado';});
   $('addAlloc').onclick=()=>{allocRows.push({id:null,eventId:'',amount:'',passes:''});renderAllocs();};
   $('m_cancel').onclick=closeModal;
   $('m_save').onclick=saveInvoice;
@@ -363,13 +365,13 @@ function saveInvoice(){
     razon_social:$('m_rs').value.trim(),importe_base:base,
     en_usd:$('m_usd').checked,
     importe_usd:$('m_usd').checked&&$('m_usdi').value!==''?+$('m_usdi').value:null,
-    usd_rate:$('m_usd').checked&&$('m_rate').value!==''?+$('m_rate').value:null,
-    usd_rate_date:$('m_usd').checked?($('m_rated').value||null):null,
+    usd_rate:null,
+    usd_rate_date:null,
     iva_pct:+$('m_iva').value,iva_motivo:$('m_iva').value==='0'?$('m_motivo').value:null,
     iva_importe:num2(base*(+$('m_iva').value)/100),total_factura:num2(base*(1+(+$('m_iva').value)/100)),
     descuento_pct:$('m_dto').value===''?null:+$('m_dto').value,
-    status:st,fecha_cobro:$('m_fc').value||null,
-    importe_cobrado:$('m_ic').value===''?null:+$('m_ic').value,
+    status:st,fecha_cobro:null,
+    importe_cobrado:null,
     metodo_pago:st==='cancelado'?'na':$('m_pago').value,
     comentarios:$('m_com').value.trim(),
     abono_de:(st==='abono'||prod==='abono')&&$('m_abde').value?+$('m_abde').value:null,

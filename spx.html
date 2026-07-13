@@ -105,7 +105,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=50"></script>
+<script src="store.js?v=51"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -154,8 +154,11 @@ function distinctList(arr){return Array.from(new Set(arr.filter(x=>x!=null&&x!==
    NOT from the Money (dc_finance) list — so the board shows your live events,
    not old empty ones. Each event = a stable key + name (+ an optional dc_finance
    match, used only for targets / Invoiced-Paid when that money row exists). */
-function lineEvKey(l){return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
-function lineEvName(l){if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
+function regEvents(){return (DB.spxEventReg||[]).filter(e=>!e.deleted);}
+function hasReg(){return regEvents().length>0;}
+function lineMapsReg(l,e){return (l.eventKey&&e.eventKey&&l.eventKey===e.eventKey)||(l.eventId!=null&&e.financeId!=null&&e.financeId==l.eventId);}
+function lineEvKey(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.eventKey;}return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
+function lineEvName(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.name;}if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
 function evFinanceId(key,name){
   const l=DB.spxLines.find(x=>!x.deleted&&lineEvKey(x)===key&&x.eventId!=null);
   if(l)return l.eventId;
@@ -163,17 +166,20 @@ function evFinanceId(key,name){
   const f=DB.finance.find(x=>!x.deleted&&normCompany(x.name)&&nn.indexOf(normCompany(x.name))>=0);
   return f?f.id:null;
 }
-/* distinct events across the live proposals, with a Sent-count so we can tell
-   "current" (still has pipeline) from "Before" (all closed/lost). */
+function evStats(key){let sent=0,total=0;liveProps().forEach(p=>{if(DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===key)){total++;if(p.salesStatus==='Sent')sent++;}});return {sent,total};}
+/* The SPX event list. Registry (dc_spx_events) drives it when present — active =
+   current, inactive = "Before". Else fall back to events found in the proposals. */
 function spxEvents(){
+  if(hasReg())return regEvents().slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0)).map(e=>{const s=evStats(e.eventKey);return {key:e.eventKey,name:e.name,financeId:e.financeId,active:e.active!==false,sent:s.sent,total:s.total,reg:e};});
   const map={};
   liveProps().forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{const k=lineEvKey(l);if(k==='?')return;
-    if(!map[k])map[k]={key:k,name:lineEvName(l),sent:0,total:0};
+    if(!map[k])map[k]={key:k,name:lineEvName(l),sent:0,total:0,active:true};
     map[k].total++;if(p.salesStatus==='Sent')map[k].sent++;}));
   const out=Object.values(map);out.forEach(e=>{e.financeId=evFinanceId(e.key,e.name);});
   return out.sort((a,b)=>(''+a.name).localeCompare(''+b.name));
 }
-function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(e.sent>0)s[e.key]=1;});return s;}
+function evCurrent(e){return hasReg()?!!e.active:e.sent>0;}
+function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(evCurrent(e))s[e.key]=1;});return s;}
 /* a proposal is "current" if it's General or touches an event still in pipeline; else it's "Before" */
 function propIsCurrent(p,cur){if(p.isGeneral)return true;const ls=DB.spxLinesFor(p.id);if(!ls.length)return true;return ls.some(l=>cur[lineEvKey(l)]);}
 
@@ -244,12 +250,12 @@ function renderProposals(app,scope){
   // target/stretch: only where the event has a Money (dc_finance) row + a target set
   const evObjs=spxEvents();
   const shownKeys=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
-  let tgt=0,str=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0||e.financeId==null)return;const t=DB.spxTargetFor(e.financeId);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}});
+  let tgt=0,str=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const t=hasReg()?(e.reg||{}):(e.financeId!=null?DB.spxTargetFor(e.financeId):null);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}});
   const pctT=tgt?firmado/tgt:null,pctS=str?firmado/str:null;
 
   const salespeople=distinctList(DB.spxProps.map(p=>p.responsableName||p.responsable));
   const origens=distinctList(DB.spxProps.map(p=>p.origen));
-  const scopeEvents=evObjs.filter(e=>scope==='before'?e.sent===0:e.sent>0);
+  const scopeEvents=evObjs.filter(e=>scope==='before'?!evCurrent(e):evCurrent(e));
 
   let h='';
   if(scope==='before')h+='<p class="lead">Events where selling is finished — nothing left in the pipeline. Kept for the record; the events you\'re selling now are on the <b>Proposals</b> tab.</p>';
@@ -263,8 +269,12 @@ function renderProposals(app,scope){
     +tile('% a stretch',pctS==null?'—':pct(pctS),'')
     +'</div>';
 
-  if(DB.isSales()&&scope!=='before')
-    h+='<div style="margin:0 0 10px"><button class="btn p" onclick="openCreate()">+ New proposal</button> <span class="ro-note">Add a proposal by hand — or they arrive automatically from the Proposal Builder.</span></div>';
+  if(scope!=='before'&&(DB.isSales()||DB.canSalesLead())){
+    h+='<div style="margin:0 0 10px">';
+    if(DB.isSales())h+='<button class="btn p" onclick="openCreate()">+ New proposal</button> ';
+    if(DB.canSalesLead())h+='<button class="btn" onclick="openManageEvents()">⚙ Manage events</button> ';
+    h+='<span class="ro-note">Add a proposal by hand (or they arrive from the Builder). Manage events sets which events are being sold.</span></div>';
+  }
 
   // filters
   h+='<div class="filters">';
@@ -517,21 +527,21 @@ function finStartDate(f){
   return null;
 }
 function finOngoing(f){const s=finStartDate(f);if(!s)return true;const end=new Date(s);end.setDate(end.getDate()+2);const t=new Date();t.setHours(0,0,0,0);return end>=t;}
-let _hcFid=null;
+let _hcFid=null,_hcReg=null;
 function renderHealth(app){
   const evsAll=spxEvents();
-  const cur=evsAll.filter(e=>e.sent>0).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
-  const past=evsAll.filter(e=>e.sent===0).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const cur=evsAll.filter(evCurrent).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const past=evsAll.filter(e=>!evCurrent(e)).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
   if(HC==null||!evsAll.some(e=>e.key===HC))HC=(cur[0]&&cur[0].key)||(past[0]&&past[0].key)||null;
   const optE=e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+'</option>';
   let optsHtml=cur.map(optE).join('');
   if(past.length)optsHtml+='<option disabled>──── finished ────</option>'+past.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+' · (finished)</option>').join('');
   let h='<div class="filters"><label style="font-weight:700;color:var(--ink)">Event:</label>'
-    +'<select id="hc_ev">'+(optsHtml||'<option>—</option>')+'</select> <span class="ro-note">Only events with proposals — same set as the board.</span></div>';
+    +'<select id="hc_ev">'+(optsHtml||'<option>—</option>')+'</select> <span class="ro-note">The events you\'re selling — same set as the board.</span></div>';
   const ev=evsAll.find(e=>e.key===HC);
-  if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events with proposals yet — they appear here once proposals exist.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
-  const fid=ev.financeId; _hcFid=fid;   // dc_finance match (null ⇒ no targets/Invoiced-Paid until it's added to Money)
-  const t=(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
+  if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events yet.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
+  const fid=ev.financeId; _hcFid=fid; _hcReg=(hasReg()&&ev.reg)?ev.reg:null;
+  const t=_hcReg||(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
   const conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
   // pipeline (Sent sponsorship) for this event
   const sentLines=[];
@@ -545,10 +555,10 @@ function renderHealth(app){
   const gapT=projection-spTarget,gapS=projection-spStretch;
   const addT=gapT>=0?0:(-gapT)/(conv||1),addS=gapS>=0?0:(-gapS)/(conv||1);
   const pasesInv=fid!=null?invoicedPases(fid):{total:0,paid:0};
-  const editable=DB.canSalesLead()&&fid!=null;
+  const editable=DB.canSalesLead()&&(_hcReg!=null||fid!=null);   // targets editable if the registry or a Money row holds them
 
   h+='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
-    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">This event isn\'t in <b>Money</b> yet, so targets and Invoiced/Paid can\'t be tracked. Add it in Money (dc_finance) and it links automatically. The pipeline below still comes from the proposals.</div>':'')
+    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so <b>Invoiced/Paid</b> can\'t derive (targets &amp; pipeline still work). Link it in <b>⚙ Manage events</b> once it\'s in Money.</div>':'')
     +'<p class="lead">Sponsorship projection = confirmed (from Facturación) + expected pipeline (proposals sent × conversion). '
     +'Confirmed counts <b>Invoiced/Paid only</b>, never sales-declared.</p>';
 
@@ -616,7 +626,8 @@ function wireHC(t){
   });
 }
 function ensureTarget(){
-  if(_hcFid==null)return {convByStatus:{}};   // no Money row → nothing to persist targets against
+  if(_hcReg)return _hcReg;                     // registry event row holds targets + conversion
+  if(_hcFid==null)return {convByStatus:{}};
   let row=DB.spxTargetFor(_hcFid);
   if(!row){row={id:DB.newId(),eventId:_hcFid,sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};DB.spxTargets.push(row);}
   return row;
@@ -754,8 +765,8 @@ function salespeopleOpts(){
 }
 function openCreate(){
   if(!DB.isSales()){alert('Only sales, the sales lead or an admin can add proposals.');return;}
-  const evs=DB.finance.slice().sort((a,b)=>(a.year-b.year)||(''+a.name).localeCompare(''+b.name));
-  window._ncEvOpts='<option value="">— pick event —</option>'+evs.map(f=>'<option value="'+f.id+'">'+esc(finLabel(f))+'</option>').join('');
+  const evs=spxEvents().filter(evCurrent);   // the events being sold now
+  window._ncEvOpts='<option value="">— pick event —</option>'+evs.map(e=>'<option value="'+esc(e.key)+'">'+esc(e.name)+'</option>').join('');
   const b='<div class="sec"><h5>New proposal</h5>'
     +'<div class="fld"><label>Empresa (marketing name) *</label><input id="nc_company"></div>'
     +'<div class="fld"><label>Responsable</label><select id="nc_resp">'+salespeopleOpts()+'</select></div>'
@@ -794,9 +805,9 @@ function saveNew(){
   const pid=DB.newId();let lines=[],value=0;
   if(general){value=+document.getElementById('nc_genval').value||0;}
   else{
-    document.querySelectorAll('.ncrow').forEach(r=>{const evId=r.querySelector('.nc_ev').value,val=+r.querySelector('.nc_val').value||0,ct=r.querySelector('.nc_ct').value.trim();
-      if(!evId&&!val&&!ct)return;const f=DB.finance.find(f=>f.id==evId);
-      lines.push({id:DB.newId(),parentId:pid,eventId:evId?+evId:null,eventKey:null,eventName:f?f.name:'',valueEur:val,valueEdited:false,contents:ct});value+=val;});
+    document.querySelectorAll('.ncrow').forEach(r=>{const evKey=r.querySelector('.nc_ev').value,val=+r.querySelector('.nc_val').value||0,ct=r.querySelector('.nc_ct').value.trim();
+      if(!evKey&&!val&&!ct)return;const e=spxEvents().find(x=>x.key===evKey);
+      lines.push({id:DB.newId(),parentId:pid,eventId:e?e.financeId:null,eventKey:evKey||null,eventName:e?e.name:'',valueEur:val,valueEdited:false,contents:ct});value+=val;});
     if(!lines.length){alert('Add at least one event line, or tick “General proposal”.');return;}
   }
   DB.spxProps.push({id:pid,createdAt:new Date().toISOString(),createdBy:(me&&me.email)||'',
@@ -828,6 +839,52 @@ function deleteLine(lineId){
   DB.save();if(p)openPanel(p.id);render();
 }
 
+/* ---------- manage the SPX event list (sales lead / Belén) ---------- */
+function openManageEvents(){
+  if(!DB.canSalesLead()){alert('Only the sales lead or Belén can manage events.');return;}
+  const notReady=(USE_SUPABASE&&!hasReg());
+  const reg=regEvents().slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0));
+  const finSelect=(e)=>'<select data-mev-fin="'+e.id+'" style="padding:5px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— not in Money —</option>'+
+    DB.finance.slice().sort((a,b)=>(b.year-a.year)||(''+a.name).localeCompare(''+b.name)).map(f=>'<option value="'+f.id+'"'+(e.financeId==f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>';
+  const rowHtml=e=>'<div class="sec" style="padding:10px 12px;margin-bottom:8px">'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input data-mev-name="'+e.id+'" value="'+esc(e.name)+'" style="flex:1;font-weight:700;padding:6px;border:1px solid var(--line);border-radius:7px">'
+    +'<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-mev-active="'+e.id+'"'+(e.active!==false?' checked':'')+'> current</label></div>'
+    +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px">'
+    +'<span>Money: '+finSelect(e)+'</span>'
+    +'<span>Target €<input type="number" data-mev-t="'+e.id+'" value="'+(e.sponsorshipTarget==null?'':e.sponsorshipTarget)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
+    +'<span>Stretch €<input type="number" data-mev-s="'+e.id+'" value="'+(e.sponsorshipStretch==null?'':e.sponsorshipStretch)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
+    +'<span class="ro-note">key '+esc(e.eventKey)+'</span></div></div>';
+  const body='<div class="sec"><h5>Events being sold</h5>'
+    +(notReady?'<div class="setupbanner">Run <b>_sql/dispatch_spx_events.sql</b> in Supabase first — then this list is saved for everyone.</div>':'')
+    +'<p class="ro-note">Untick <b>current</b> to move a finished event to the <b>Before</b> tab. Link an event to a Money row to track Invoiced/Paid.</p>'
+    +(reg.map(rowHtml).join('')||'<div class="ro-note">No events yet — add one below.</div>')
+    +'<div class="sec" style="background:#f6f5f2"><h5>Add an event</h5>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="mev_key" placeholder="key e.g. E059" style="width:110px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+      +'<input id="mev_newname" placeholder="name e.g. Invest 2028" style="flex:1;min-width:140px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+      +'<button class="btn" onclick="addMevRow()">Add</button></div></div>'
+    +'<button class="btn p" onclick="saveManageEvents()">Save</button> <button class="btn" onclick="closePanel()">Cancel</button></div>';
+  panelShell('Manage SPX events','which events are being sold now',body);
+}
+function addMevRow(){
+  const key=(document.getElementById('mev_key').value||'').trim(),name=(document.getElementById('mev_newname').value||'').trim();
+  if(!key||!name){alert('Enter a key and a name.');return;}
+  if(regEvents().some(e=>(''+e.eventKey).toLowerCase()===key.toLowerCase())){alert('That key already exists.');return;}
+  saveManageEvents(true);   // persist current edits first
+  const sort=regEvents().reduce((m,e)=>Math.max(m,+e.sort||0),0)+1;
+  DB.spxEventReg.push({id:DB.newId(),eventKey:key,name:name,financeId:null,sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7},active:true,sort});
+  DB.save();openManageEvents();
+}
+function saveManageEvents(keepOpen){
+  regEvents().forEach(e=>{
+    const nm=document.querySelector('[data-mev-name="'+e.id+'"]');if(nm)e.name=nm.value.trim()||e.name;
+    const ac=document.querySelector('[data-mev-active="'+e.id+'"]');if(ac)e.active=ac.checked;
+    const fin=document.querySelector('[data-mev-fin="'+e.id+'"]');if(fin)e.financeId=fin.value?+fin.value:null;
+    const t=document.querySelector('[data-mev-t="'+e.id+'"]');if(t)e.sponsorshipTarget=(t.value===''?null:+t.value);
+    const s=document.querySelector('[data-mev-s="'+e.id+'"]');if(s)e.sponsorshipStretch=(s.value===''?null:+s.value);
+  });
+  DB.save();if(keepOpen!==true){closePanel();render();}
+}
+
 /* ---------- boot: everyone can view (RLS + canEditProp gate writes) ---------- */
 window.addEventListener('dc-remote',render);
 window.addEventListener('hashchange',()=>{TAB=activeTab();render();});
@@ -845,6 +902,7 @@ window.setView=setView;window.clearFilters=clearFilters;window.closePanel=closeP
 window.openLink=openLink;window.confirmLink=confirmLink;window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
 window.openCreate=openCreate;window.addNcLine=addNcLine;window.toggleGeneral=toggleGeneral;window.saveNew=saveNew;window.deleteProposal=deleteProposal;window.deleteLine=deleteLine;
 window.openLinkingList=openLinkingList;window.filterLinkList=filterLinkList;
+window.openManageEvents=openManageEvents;window.addMevRow=addMevRow;window.saveManageEvents=saveManageEvents;
 // chip clicks in the linking tray
 document.addEventListener('click',e=>{const b=e.target.closest('[data-link]');if(b&&!b.disabled)openLink(+b.dataset.link);});
 </script>
