@@ -102,7 +102,8 @@
   <div class="frm">
     <label class="full">Event name<input type="text" id="m_name"></label>
     <label>Topic<select id="m_topic"></select></label>
-    <label>Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
+    <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
+    <label id="m_durwrap" style="display:none">Duration<span style="display:flex;gap:5px;align-items:center"><input type="number" id="m_dur_n" min="1" step="1" value="2" style="width:56px"><select id="m_dur_u"><option value="half">Half day</option><option value="day">Days</option><option value="week" selected>Weeks</option><option value="month">Months</option><option value="year">Years</option></select></span></label>
     <label>Start date<input type="date" id="m_date"></label>
     <label>City<input type="text" id="m_city"></label>
     <label>Country<select id="m_country"></select></label>
@@ -119,7 +120,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=49"></script>
+<script src="store.js?v=50"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -136,6 +137,8 @@ function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#ex
   document.getElementById('pt_renmad').classList.toggle('on',t==='renmad');
   document.getElementById('pt_external').classList.toggle('on',t==='external');
   document.getElementById('addBtn').textContent=(t==='external'?'+ Add project':'+ Add event');
+  /* RENMAD events stay manager-only; ANYONE can add an external/one-off project */
+  document.getElementById('addBtn').style.display=(t==='external'||DB.canManage())?'':'none';
   document.getElementById('tagline').textContent=(t==='external'
     ?'external & one-off jobs — each carries only the timelines it needs'
     :'every RENMAD event on one timeline — where the magic gets orchestrated');
@@ -251,6 +254,18 @@ document.addEventListener('mouseup',()=>{
 
 const modal=document.getElementById('modal');
 function fillSel(id,obj,sel){const s=document.getElementById(id);s.innerHTML='';Object.keys(obj).forEach(k=>{const o=document.createElement('option');o.value=k;o.textContent=k;if(k===sel)o.selected=true;s.appendChild(o);});}
+/* external-project duration <-> days (numeric; 0.5 = half a day) */
+function durToDays(){const n=Math.max(1,+document.getElementById('m_dur_n').value||1),u=document.getElementById('m_dur_u').value;
+  return u==='half'?0.5:u==='week'?n*7:u==='month'?n*30:u==='year'?n*365:n;}
+function setDurControl(days){days=+days||1;let n=1,u='day';
+  if(days<1){u='half';}
+  else if(days%365===0){u='year';n=days/365;}
+  else if(days%30===0){u='month';n=days/30;}
+  else if(days%7===0){u='week';n=days/7;}
+  else{u='day';n=Math.round(days);}
+  document.getElementById('m_dur_n').value=n;document.getElementById('m_dur_u').value=u;
+  document.getElementById('m_dur_n').disabled=(u==='half');}
+document.getElementById('m_dur_u').onchange=function(){document.getElementById('m_dur_n').disabled=(this.value==='half');};
 function openModal(id){editingId=id;
   modalIsExt=id?(evKind(DB.event(id))==='external'):(TAB==='external');
   const defDate=modalIsExt?toISO(addDays(monday(new Date()),8*7)):'2027-09-01';
@@ -258,6 +273,10 @@ function openModal(id){editingId=id;
   document.getElementById('m_title').textContent=(id?'Edit ':'Add ')+(modalIsExt?'project':'event');
   m_name.value=ev.name;fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
   m_days.value=ev.days||2;m_date.value=ev.date;m_city.value=ev.city||'';m_pm.value=ev.pm||'';m_lead.value=ev.lead||'';m_sales.value=ev.sales||'';
+  /* RENMAD events = 1/2-day length; external projects = free duration (half a day → years) */
+  document.getElementById('m_lenwrap').style.display=modalIsExt?'none':'';
+  document.getElementById('m_durwrap').style.display=modalIsExt?'':'none';
+  if(modalIsExt)setDurControl(ev.days||14);
   /* external projects pick their timelines; RENMAD events always carry all four */
   const lw=document.getElementById('m_lanes'),lh=document.getElementById('m_lanes_hdr');
   lw.style.display=lh.style.display=modalIsExt?'':'none';
@@ -273,7 +292,7 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
     const sel=Array.prototype.slice.call(document.querySelectorAll('.m_lane:checked')).map(c=>c.value);
     if(!sel.length){alert('Pick at least one timeline — a project needs somewhere to live.');return;}
     if(window._extColsMissing){alert('One-time setup needed first — see the banner on the Projects tab.');return;}
-    d.kind='external';d.lanes=sel;
+    d.kind='external';d.lanes=sel;d.days=durToDays();   // free duration for projects
   }
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
   else{const id=DB.newId();const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
@@ -285,10 +304,10 @@ document.getElementById('xlsBtn').onclick=()=>exportXLSX(TAB==='external'?'Exter
 document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
 document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
 
-function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const {start}=bounds();const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
+function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const list=tabEvents();if(!list.length)return;const {start}=bounds(list);const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
 document.getElementById('pt_renmad').onclick=()=>switchTab('renmad');
 document.getElementById('pt_external').onclick=()=>switchTab('external');
-boot(()=>{if(!DB.canManage()){document.getElementById('addBtn').style.display='none';}DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));switchTab(TAB);const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';});
+boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));switchTab(TAB);const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}); // addBtn visibility handled per-tab in switchTab
 window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
 </script>
 </body>

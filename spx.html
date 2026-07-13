@@ -103,7 +103,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=49"></script>
+<script src="store.js?v=50"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -230,6 +230,10 @@ function renderProposals(app){
     +tile('% a target',pctT==null?'—':pct(pctT),'')
     +tile('% a stretch',pctS==null?'—':pct(pctS),'')
     +'</div>';
+
+  // add-by-hand (sales / lead / admin)
+  if(DB.isSales())
+    h+='<div style="margin:0 0 10px"><button class="btn p" onclick="openCreate()">+ New proposal</button> <span class="ro-note">Add a proposal by hand — or they arrive automatically from the Proposal Builder.</span></div>';
 
   // filters
   h+='<div class="filters">';
@@ -641,7 +645,7 @@ function openPanel(id){
   // events / lines
   b+='<div class="sec"><h5>Events</h5>';
   if(p.isGeneral)b+='<div class="ro-note">General (whole-portfolio) proposal — no specific event.</div>';
-  else if(ls.length)b+=ls.map(l=>'<div class="kv"><span class="k">'+esc(shortEvent(l))+'</span><b>'+money(l.valueEur)+'</b></div>').join('');
+  else if(ls.length)b+=ls.map(l=>'<div class="kv"><span class="k">'+esc(shortEvent(l))+'</span><span><b>'+money(l.valueEur)+'</b>'+(editable?' <button class="lnk" style="color:#A32D2D;text-decoration:none" title="Delete this event line" onclick="deleteLine('+l.id+')">✕</button>':'')+'</span></div>').join('');
   else b+='<div class="ro-note">No event lines.</div>';
   b+='</div>';
   // fields
@@ -657,6 +661,7 @@ function openPanel(id){
       +fldArea('Notas','notas',p.notas)
       +fld('Link to sent deck (URL)','sentLink',p.sentLink,'text')
       +'<button class="btn p" onclick="savePanel('+id+')">Save</button> <button class="btn" onclick="closePanel()">Close</button>'
+      +' <button class="btn" style="color:#A32D2D;border-color:#f0c4c4;float:right" onclick="deleteProposal('+id+')">Delete proposal</button>'
       +'</div>';
   }else{
     b+='<div class="sec"><h5>Details</h5>'
@@ -679,6 +684,88 @@ function savePanel(id){
   DB.save();closePanel();render();
 }
 
+/* ---------- add a proposal by hand ---------- */
+function salespeopleOpts(){
+  const me=DB.currentUser;
+  const list=DB.people.filter(p=>!isTeamAccount(p)&&(p.role==='Sales'||p.role==='Lead'||p.access==='admin'||p.salesLead));
+  return list.map(p=>'<option value="'+esc(p.email||'')+'" data-name="'+esc(p.name)+'"'+((me&&me.id===p.id)?' selected':'')+'>'+esc(p.name)+'</option>').join('');
+}
+function openCreate(){
+  if(!DB.isSales()){alert('Only sales, the sales lead or an admin can add proposals.');return;}
+  const evs=DB.finance.slice().sort((a,b)=>(a.year-b.year)||(''+a.name).localeCompare(''+b.name));
+  window._ncEvOpts='<option value="">— pick event —</option>'+evs.map(f=>'<option value="'+f.id+'">'+esc(finLabel(f))+'</option>').join('');
+  const b='<div class="sec"><h5>New proposal</h5>'
+    +'<div class="fld"><label>Empresa (marketing name) *</label><input id="nc_company"></div>'
+    +'<div class="fld"><label>Responsable</label><select id="nc_resp">'+salespeopleOpts()+'</select></div>'
+    +'<div class="fld"><label>Source of lead</label><input id="nc_source" placeholder="Sponsor 2026 / New / Hot lead…"></div>'
+    +'<div class="fld"><label>Origen</label><select id="nc_origen"><option>Sponsor (prior year)</option><option>New</option></select></div>'
+    +'<div class="fld"><label>Sales status</label><select id="nc_status">'+SALES_STATUSES.map(s=>'<option value="'+s+'">'+esc(stLabel(s))+'</option>').join('')+'</select></div>'
+    +'<div class="fld"><label><input type="checkbox" id="nc_general" onchange="toggleGeneral()"> General proposal (no specific event)</label></div>'
+    +'<div id="nc_events"><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Events &amp; value</label>'
+      +'<div id="nc_lines"></div><button class="lnk" onclick="addNcLine()">+ add event</button></div>'
+    +'<div id="nc_genwrap" style="display:none"><div class="fld"><label>Value € (General)</label><input id="nc_genval" type="number" value="4000"></div></div>'
+    +'<div class="fld"><label>Included in proposal / contents</label><textarea id="nc_contents"></textarea></div>'
+    +'<div class="fld"><label>Contact — first / last / email</label><span style="display:flex;gap:5px"><input id="nc_cf" placeholder="first"><input id="nc_cl" placeholder="last"><input id="nc_ce" placeholder="email"></span></div>'
+    +'<div class="fld"><label>Fecha envío</label><input id="nc_envio" type="date" value="'+toISO(new Date())+'"></div>'
+    +'<div class="fld"><label>Notas</label><textarea id="nc_notas"></textarea></div>'
+    +'<button class="btn p" onclick="saveNew()">Create proposal</button> <button class="btn" onclick="closePanel()">Cancel</button></div>';
+  panelShell('New proposal','added by hand',b);
+  addNcLine();
+}
+function addNcLine(){const w=document.getElementById('nc_lines');if(!w)return;const d=document.createElement('div');
+  d.className='ncrow';d.style.cssText='display:flex;gap:5px;margin-bottom:5px;align-items:center';
+  d.innerHTML='<select class="nc_ev" style="flex:1;padding:6px;border:1px solid var(--line);border-radius:7px">'+window._ncEvOpts+'</select>'
+    +'<input class="nc_val" type="number" placeholder="€" style="width:84px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+    +'<input class="nc_ct" placeholder="contents" style="flex:1;padding:6px;border:1px solid var(--line);border-radius:7px">'
+    +'<button class="lnk" style="color:#A32D2D" onclick="this.parentElement.remove()">✕</button>';
+  w.appendChild(d);}
+function toggleGeneral(){const g=document.getElementById('nc_general').checked;
+  document.getElementById('nc_events').style.display=g?'none':'';document.getElementById('nc_genwrap').style.display=g?'':'none';}
+function saveNew(){
+  const company=document.getElementById('nc_company').value.trim();
+  if(!company){alert('Enter the company (empresa).');return;}
+  const respSel=document.getElementById('nc_resp'),opt=respSel.options[respSel.selectedIndex];
+  const respEmail=respSel.value||'',respName=(opt&&opt.getAttribute('data-name'))||'';
+  const general=document.getElementById('nc_general').checked,me=DB.currentUser;
+  const cf=document.getElementById('nc_cf').value.trim(),cl=document.getElementById('nc_cl').value.trim(),ce=document.getElementById('nc_ce').value.trim();
+  const contacts=(cf||cl||ce)?[{first:cf,last:cl,email:ce}]:[];
+  const pid=DB.newId();let lines=[],value=0;
+  if(general){value=+document.getElementById('nc_genval').value||0;}
+  else{
+    document.querySelectorAll('.ncrow').forEach(r=>{const evId=r.querySelector('.nc_ev').value,val=+r.querySelector('.nc_val').value||0,ct=r.querySelector('.nc_ct').value.trim();
+      if(!evId&&!val&&!ct)return;const f=DB.finance.find(f=>f.id==evId);
+      lines.push({id:DB.newId(),parentId:pid,eventId:evId?+evId:null,eventKey:null,eventName:f?f.name:'',valueEur:val,valueEdited:false,contents:ct});value+=val;});
+    if(!lines.length){alert('Add at least one event line, or tick “General proposal”.');return;}
+  }
+  DB.spxProps.push({id:pid,createdAt:new Date().toISOString(),createdBy:(me&&me.email)||'',
+    responsable:respName,responsableName:respName,responsableEmail:respEmail,company:company,companyId:null,
+    source:document.getElementById('nc_source').value.trim(),origen:document.getElementById('nc_origen').value,
+    salesStatus:document.getElementById('nc_status').value,
+    contents:document.getElementById('nc_contents').value.trim()||(general?'General':''),
+    valueEur:value,valueEdited:false,fechaEnvio:document.getElementById('nc_envio').value||null,fechaSeguimiento:null,
+    notas:document.getElementById('nc_notas').value.trim(),contacts:contacts,fileName:null,sentLink:null,
+    isGeneral:general,mode:general?'general':(lines.length>1?'multi':'single'),active:true,superseded:false});
+  lines.forEach(l=>DB.spxLines.push(l));
+  DB.save();closePanel();render();
+}
+/* ---------- delete ---------- */
+function deleteProposal(id){
+  const p=DB.spxProps.find(x=>x.id==id);if(!p)return;
+  if(!DB.canEditProp(p)){alert('You can only delete your own proposals (the sales lead and Belén can delete any).');return;}
+  if(!confirm('Delete the proposal for “'+(p.company||'')+'”? It can be recovered from the audit log.'))return;
+  DB.data.spxProps=DB.spxProps.filter(x=>x.id!=id);
+  DB.data.spxLines=DB.spxLines.filter(l=>l.parentId!=id);
+  DB.save();closePanel();render();
+}
+function deleteLine(lineId){
+  const l=DB.spxLines.find(x=>x.id==lineId);if(!l)return;
+  const p=DB.spxProps.find(x=>x.id==l.parentId);
+  if(p&&!DB.canEditProp(p)){alert('You can only edit your own proposals.');return;}
+  DB.data.spxLines=DB.spxLines.filter(x=>x.id!=lineId);
+  if(p)p.valueEur=propValue(p);
+  DB.save();if(p)openPanel(p.id);render();
+}
+
 /* ---------- boot: everyone can view (RLS + canEditProp gate writes) ---------- */
 window.addEventListener('dc-remote',render);
 window.addEventListener('hashchange',()=>{TAB=activeTab();render();});
@@ -694,6 +781,7 @@ function saveChipInit(){
 // expose handlers used by inline onclick
 window.setView=setView;window.clearFilters=clearFilters;window.closePanel=closePanel;
 window.openLink=openLink;window.confirmLink=confirmLink;window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
+window.openCreate=openCreate;window.addNcLine=addNcLine;window.toggleGeneral=toggleGeneral;window.saveNew=saveNew;window.deleteProposal=deleteProposal;window.deleteLine=deleteLine;
 // chip clicks in the linking tray
 document.addEventListener('click',e=>{const b=e.target.closest('[data-link]');if(b&&!b.disabled)openLink(+b.dataset.link);});
 </script>

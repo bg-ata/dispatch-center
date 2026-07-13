@@ -68,7 +68,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=49"></script>
+<script src="store.js?v=50"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -79,6 +79,7 @@ function render(){
   const untilTxt=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
   let h='<tr><th></th><th>Name</th><th>Role</th><th>Status</th><th>Work phone</th><th>Email</th><th>Access</th><th style="width:30px"></th></tr>';
   DB.people.forEach(p=>{
+    if(isTeamAccount(p))return;   // HR is a service, not a team member — hide it from the Team roster (it still runs approvals in the HR page)
     const ts=DB.tasksOf(p.id);
     const acc=p.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
     const s=personStatusNow(p);

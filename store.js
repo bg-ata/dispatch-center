@@ -250,7 +250,14 @@ function personStatusNow(p){
   if(rem)return {key:'remote',label:'Remote',emoji:'🏠',color:'#29ACE3',detail:clockBit};
   if(info){
     if(info.open)return {key:'working',label:'Working',emoji:'🟢',color:'#3E8C28',detail:''};
-    if(info.entries.length)return {key:'pause',label:'On a break',emoji:'⏸️',color:'#C77800',detail:''};
+    if(info.entries.length){
+      /* clocked out: if they've already done their required hours for the day (or the
+         day had no requirement), they're DONE — not "on a break". A break is only a
+         clock-out while still short of the day's hours. */
+      const exp=tcExpectedDay(id,today), workedH=(info.total||0)/60;
+      if(exp<=0||workedH>=exp)return {key:'done',label:'Done for the day',emoji:'✅',color:'#5A8C4E',detail:''};
+      return {key:'pause',label:'On a break',emoji:'⏸️',color:'#C77800',detail:''};
+    }
     if(tcExpectedDay(id,today)>0)return {key:'out',label:'Not clocked in',emoji:'⚪',color:'#9AA0A8',detail:''};
     return {key:'off',label:'Off today',emoji:'—',color:'#9AA0A8',detail:''};
   }

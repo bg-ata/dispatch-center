@@ -109,7 +109,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=49"></script>
+<script src="store.js?v=50"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 let calM=new Date();calM.setDate(1);
@@ -758,10 +758,10 @@ function renderAttendance(){
     const missing=expected&&s.key==='out';
     return {p,s,firstIn,expected,missing};
   });
-  const ord={out:0,working:1,pause:2,event:3,remote:4,holiday:5,leave:6,off:7,unknown:8};
-  rows.sort((a,b)=>{if(a.missing!==b.missing)return a.missing?-1:1;return (ord[a.s.key]??9)-(ord[b.s.key]??9)||a.p.name.localeCompare(b.p.name);});
-  const nWork=rows.filter(r=>r.s.key==='working').length,nMiss=rows.filter(r=>r.missing).length,nOff=rows.filter(r=>['holiday','leave','off'].includes(r.s.key)).length;
-  let h='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">'+nWork+' working now · <b style="color:'+(nMiss?'#D32230':'var(--muted)')+'">'+nMiss+' expected but not clocked in</b> · '+nOff+' off/away</div>';
+  const ord={out:0,working:1,done:2,pause:3,event:4,remote:5,holiday:6,leave:7,off:8,unknown:9};
+  rows.sort((a,b)=>{if(a.missing!==b.missing)return a.missing?-1:1;return (ord[a.s.key]??10)-(ord[b.s.key]??10)||a.p.name.localeCompare(b.p.name);});
+  const nWork=rows.filter(r=>r.s.key==='working').length,nDone=rows.filter(r=>r.s.key==='done').length,nMiss=rows.filter(r=>r.missing).length,nOff=rows.filter(r=>['holiday','leave','off'].includes(r.s.key)).length;
+  let h='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">'+nWork+' working now · '+nDone+' done for the day · <b style="color:'+(nMiss?'#D32230':'var(--muted)')+'">'+nMiss+' expected but not clocked in</b> · '+nOff+' off/away</div>';
   h+='<table style="width:100%;border-collapse:collapse;font-size:13px">';
   rows.forEach(r=>{
     h+='<tr style="border-bottom:1px solid #f2f0ea'+(r.missing?';background:#FBEAEA':'')+'">'+
