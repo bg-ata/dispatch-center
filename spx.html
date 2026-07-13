@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <title>RENMAD Dispatch Center — SPX Sales</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
@@ -463,11 +465,33 @@ function confirmLink(propId){
 }
 
 /* ================= HEALTH-CHECK TAB ================= */
+/* best-effort event date: a matched Projects (dc_events) row, else the free-text
+   "when" + year. Used to float ONGOING events to the top and demote finished ones. */
+const HC_MONTHS={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,march:2,april:3,june:5,july:6,
+  ene:0,abr:3,ago:7,dic:11,enero:0,febrero:1,marzo:2,abril:3,mayo:4,junio:5,julio:6,agosto:7,septiembre:8,setiembre:8,octubre:9,noviembre:10,diciembre:11};
+function finStartDate(f){
+  const nf=normCompany(f.name);
+  let e=(f.eventId!=null)?DB.events.find(x=>x.id==f.eventId):null;
+  if(!e)e=DB.events.find(x=>x.date&&(''+f.year)===(''+ymd(x.date).getFullYear())&&nf&&normCompany(x.name).indexOf(nf)>=0);
+  if(e&&e.date)return ymd(e.date);
+  if(f.year){const w=(''+(f.when||'')).toLowerCase();let mo=null;for(const k in HC_MONTHS){if(w.indexOf(k)>=0){mo=HC_MONTHS[k];break;}}
+    if(mo!=null){const dm=w.match(/(\d{1,2})/);return new Date(f.year,mo,dm?+dm[1]:1);}
+    return new Date(f.year,11,31);}   // month unknown → treat as year-end (stays "ongoing" until then)
+  return null;
+}
+function finOngoing(f){const s=finStartDate(f);if(!s)return true;const end=new Date(s);end.setDate(end.getDate()+2);const t=new Date();t.setHours(0,0,0,0);return end>=t;}
 function renderHealth(app){
-  const events=DB.finance.slice().sort((a,b)=>(b.year-a.year)||(''+a.name).localeCompare(''+b.name));
-  if(HC==null){const withT=DB.spxTargets[0];HC=withT?withT.eventId:(events[0]&&events[0].id)||null;}
+  const all=DB.finance.slice();
+  const byStartAsc=(a,b)=>{const sa=finStartDate(a),sb=finStartDate(b);return (sa?+sa:Infinity)-(sb?+sb:Infinity)||(''+a.name).localeCompare(''+b.name);};
+  const ongoing=all.filter(finOngoing).sort(byStartAsc);
+  const past=all.filter(f=>!finOngoing(f)).sort((a,b)=>{const sa=finStartDate(a),sb=finStartDate(b);return (sb?+sb:0)-(sa?+sa:0);});
+  if(HC==null)HC=(ongoing[0]&&ongoing[0].id)||(DB.spxTargets[0]&&DB.spxTargets[0].eventId)||(all[0]&&all[0].id)||null;
+  const opt=f=>'<option value="'+f.id+'"'+(''+HC===''+f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>';
+  let optsHtml=ongoing.map(opt).join('');
+  if(past.length)optsHtml+='<option disabled>──── past events ────</option>'
+    +past.map(f=>'<option value="'+f.id+'"'+(''+HC===''+f.id?' selected':'')+'>'+esc(finLabel(f))+' · (finished)</option>').join('');
   let h='<div class="filters"><label style="font-weight:700;color:var(--ink)">Event:</label>'
-    +'<select id="hc_ev">'+events.map(f=>'<option value="'+f.id+'"'+(''+HC===''+f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select></div>';
+    +'<select id="hc_ev">'+optsHtml+'</select> <span class="ro-note">Current projects first — finished events drop to the bottom.</span></div>';
   const f=DB.finance.find(f=>f.id==HC);
   if(!f){app.innerHTML=h+'<div class="card">Pick an event.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=+s.value;render();};return;}
   const t=DB.spxTargetFor(HC)||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
