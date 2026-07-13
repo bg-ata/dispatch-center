@@ -923,11 +923,23 @@ function projSaveChip(state){
   else el.textContent='☁ saved '+new Date().toTimeString().slice(0,5);
 }
 
-let PTAB='list', PSEARCH='', POPEN=null, PNODE=null;
-let PFILTER={light:'',status:'',slot:'',path:'',year:'',sector:''};
+let PTAB='list', PSEARCH='', POPEN=null, PNODE=null, PKIND='call';
+let PFILTER={light:'',status:'',slot:'',path:'',year:'',sector:'',callstatus:''};
+const isCall=c=>c && c.kind==='call';
 
 function projFiltered(){
-  let rows=PROJ.rows.slice();
+  let rows=PROJ.rows.filter(r=> PKIND==='call' ? isCall(r.computed) : !isCall(r.computed));
+  if(PKIND==='call'){
+    if(PFILTER.callstatus) rows=rows.filter(r=>r.computed.status===PFILTER.callstatus);
+    if(PFILTER.sector) rows=rows.filter(r=>projSector(r.computed)===PFILTER.sector);
+    if(PFILTER.path) rows=rows.filter(r=>r.computed.bestPath.type===PFILTER.path);
+    if(PFILTER.status) rows=rows.filter(r=>((r.user&&r.user.status)||'new')===PFILTER.status);
+    if(PSEARCH){ const q=PSEARCH.toLowerCase();
+      rows=rows.filter(r=>((r.computed.acronym+' '+r.computed.title)||'').toLowerCase().includes(q)); }
+    rows.sort((a,b)=>b.computed.score-a.computed.score);
+    return rows;
+  }
+  // ---- signed projects ----
   // default view hides RED (no comms money) and slot-taken; a light/slot filter reveals them
   if(!PFILTER.light && !PFILTER.slot) rows=rows.filter(r=>r.computed.inDefaultRank);
   if(PFILTER.light) rows=rows.filter(r=>r.computed.comms.light===PFILTER.light);
@@ -953,20 +965,42 @@ function renderProjects(){
     return; }
   if(!PROJ.rows.length){
     app.innerHTML='<h2>Projects</h2><div class="card" style="text-align:center;color:var(--muted)">No projects yet — run the gravity pipeline to populate this tab.</div>'; return; }
-  const by=PROJ.counts();
-  app.innerHTML='<h2>Projects — follow the money</h2>'+
-    '<p class="lead">Every relevant EU project, mined from CORDIS and ranked by <b>comms money × how warm our way in is</b>. Green + top-right = real dissemination budget and a warm contact — work those first. Red = no comms money (hidden by default). Click any project.</p>'+
-    '<div class="lightlead">'+
+  const calls=PROJ.rows.filter(r=>isCall(r.computed));
+  const kindToggle='<div class="subtabs" style="margin-bottom:12px">'+
+      '<button class="'+(PKIND==='call'?'on':'')+'" data-pk="call">📢 Open calls to bid ('+calls.length+')</button>'+
+      '<button class="'+(PKIND==='project'?'on':'')+'" data-pk="project">📁 Signed projects (intel)</button></div>';
+  let head, cards, subtabs;
+  if(PKIND==='call'){
+    const opn=calls.filter(r=>r.computed.status==='Open').length;
+    const fth=calls.filter(r=>r.computed.status==='Forthcoming').length;
+    const withDoor=calls.filter(r=>r.computed.bestDoorStrength>0).length;
+    const soon=calls.map(r=>r.computed.deadline).filter(Boolean).sort()[0]||'—';
+    head='<h2>Open calls — what we can still bid on</h2>'+
+      '<p class="lead">Open &amp; forthcoming Horizon calls in our sectors, each with a real <b>proposal deadline</b>. For every call we predict the likely-winning organisations from the historical record and flag <b>which of them we already know</b> — your warmest doors into a bid consortium. Click a call.</p>';
+    cards='<div class="lightlead">'+
+      '<div class="lc"><div class="n">'+calls.length+'</div><div class="l">📢 open/forthcoming calls</div></div>'+
+      '<div class="lc"><div class="n" style="color:#0a7a0a">'+opn+'</div><div class="l">🟢 open now</div></div>'+
+      '<div class="lc"><div class="n" style="color:var(--blue)">'+fth+'</div><div class="l">🔵 forthcoming</div></div>'+
+      '<div class="lc"><div class="n" style="color:var(--orange)">'+withDoor+'</div><div class="l">🚪 with a door we know</div></div>'+
+      '</div>';
+    subtabs='';
+  } else {
+    const by=PROJ.counts();
+    head='<h2>Signed projects — follow the money</h2>'+
+      '<p class="lead">Already-awarded EU projects (relationship intel, <b>not</b> biddable). Ranked by comms money × how warm our way in is — who holds the DCE slots, and the anchor orgs. Red = no comms money (hidden by default).</p>';
+    cards='<div class="lightlead">'+
       lightCard('GREEN',by.GREEN,'&gt; €500k comms')+lightCard('YELLOW',by.YELLOW,'€200–500k')+
-      lightCard('ORANGE',by.ORANGE,'&lt; €200k')+lightCard('RED',by.RED,'no comms money')+
-    '</div>'+
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'+
-      '<div class="subtabs"><button class="'+(PTAB==='list'?'on':'')+'" data-pt="list">List</button>'+
-        '<button class="'+(PTAB==='graph'?'on':'')+'" data-pt="graph">Money × access map</button></div>'+
-      '<input id="psrch" value="'+esc(PSEARCH)+'" placeholder="Search acronym, title, coordinator…" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px">'+
+      lightCard('ORANGE',by.ORANGE,'&lt; €200k')+lightCard('RED',by.RED,'no comms money')+'</div>';
+    subtabs='<div class="subtabs"><button class="'+(PTAB==='list'?'on':'')+'" data-pt="list">List</button>'+
+        '<button class="'+(PTAB==='graph'?'on':'')+'" data-pt="graph">Money × access map</button></div>';
+  }
+  app.innerHTML=kindToggle+head+cards+
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">'+subtabs+
+      '<input id="psrch" value="'+esc(PSEARCH)+'" placeholder="Search…" style="flex:1;min-width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:13px">'+
     '</div>'+
     projFilterBar()+
     '<div id="pbody"></div>';
+  document.querySelectorAll('[data-pk]').forEach(b=>b.onclick=()=>{PKIND=b.dataset.pk;PTAB='list';renderProjects();});
   document.querySelectorAll('[data-pt]').forEach(b=>b.onclick=()=>{PTAB=b.dataset.pt;renderProjects();});
   const si=document.getElementById('psrch');
   si.oninput=()=>{ PSEARCH=si.value; renderPBody(); };
@@ -976,9 +1010,17 @@ function renderProjects(){
 function lightCard(k,n,sub){ return '<div class="lc"><div class="n" style="color:'+LIGHT_C[k]+'">'+n+'</div><div class="l">'+LIGHT_DOT[k]+' '+sub+'</div></div>'; }
 
 function projFilterBar(){
-  const yrs=[...new Set(PROJ.rows.map(r=>(r.computed.startDate||'').slice(0,4)).filter(Boolean))].sort().reverse();
   const sel=(id,label,opts,cur)=>'<select data-pf="'+id+'" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px">'+
     '<option value="">'+label+'</option>'+opts.map(o=>{const[v,l]=Array.isArray(o)?o:[o,o];return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc(l)+'</option>';}).join('')+'</select>';
+  if(PKIND==='call'){
+    return '<div class="filters" style="gap:7px">'+
+      sel('callstatus','Any stage',[['Open','🟢 Open now'],['Forthcoming','🔵 Forthcoming']],PFILTER.callstatus)+
+      sel('sector','Any sector',PSECTORS.map(s=>s[0]).concat(['Other energy']),PFILTER.sector)+
+      sel('path','Any door',[['direct','Door we know'],['cold','No door yet']],PFILTER.path)+
+      sel('status','Any status',PSTATUS.map(s=>[s,s[0].toUpperCase()+s.slice(1)]),PFILTER.status)+
+      '</div>';
+  }
+  const yrs=[...new Set(PROJ.rows.filter(r=>!isCall(r.computed)).map(r=>(r.computed.startDate||'').slice(0,4)).filter(Boolean))].sort().reverse();
   return '<div class="filters" style="gap:7px">'+
     sel('light','Any light',[['GREEN','🟢 Green'],['YELLOW','🟡 Yellow'],['ORANGE','🟠 Orange'],['RED','🔴 Red (no money)']],PFILTER.light)+
     sel('status','Any status',PSTATUS.map(s=>[s,s[0].toUpperCase()+s.slice(1)]),PFILTER.status)+
@@ -998,8 +1040,31 @@ function renderPBody(){
   if(PTAB==='graph') el.querySelectorAll('[data-popen]').forEach(t=>t.onclick=()=>openProject(t.getAttribute('data-popen')));
 }
 
+function deadlineChip(c){
+  const d=c.deadline||''; const days=c.daysToDeadline;
+  let col='#7c7c78'; if(days!=null){ col = days<=60?'#b5341f':(days<=180?'#b26a10':'#0a7a0a'); }
+  const rel = days==null?'date TBC':(days<0?'closed':(days===0?'today':'in '+days+'d'));
+  return '<span style="white-space:nowrap"><b style="color:'+col+'">'+esc(d||'—')+'</b> <span style="color:#9aa2a6;font-size:11px">'+rel+'</span></span>';
+}
 function projTable(rows){
-  if(!rows.length) return '<div class="card" style="text-align:center;color:var(--muted)">No projects match these filters.</div>';
+  if(!rows.length) return '<div class="card" style="text-align:center;color:var(--muted)">Nothing matches these filters.</div>';
+  if(PKIND==='call'){
+    return '<div style="font-size:12px;color:var(--muted);margin:2px 2px 8px">'+rows.length+' open/forthcoming calls · soonest deadline first within score</div>'+
+     '<table><tr><th>#</th><th>Fit</th><th>Call topic</th><th>Sector</th><th>Type</th><th>Deadline</th><th>Stage</th><th>Our door</th><th>Status</th></tr>'+
+     rows.map((r,i)=>{ const c=r.computed, st=(r.user&&r.user.status)||'new';
+       const toa=(c.typeOfAction||'').replace(/HORIZON /,'').replace(/ Actions?/,'');
+       return '<tr data-popen="'+esc(r.id)+'">'+
+         '<td style="color:var(--muted)">'+(i+1)+'</td>'+
+         '<td><b>'+Math.round(c.score)+'</b></td>'+
+         '<td><b>'+esc(c.acronym)+'</b><div style="color:var(--muted);font-size:11.5px;max-width:40ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.title)+'</div></td>'+
+         '<td style="font-size:11.5px;color:var(--muted)">'+esc(projSector(c))+'</td>'+
+         '<td style="font-size:11px;color:var(--muted)">'+esc(toa||'—')+'</td>'+
+         '<td style="font-size:12px">'+deadlineChip(c)+'</td>'+
+         '<td><span class="slotb '+(c.status==='Open'?'open':'taken')+'">'+esc(c.status)+'</span></td>'+
+         '<td>'+(c.bestDoorStrength>0?'<span class="pathpill direct">door '+Math.round(c.bestDoorStrength)+'</span>':'<span class="pathpill cold">none yet</span>')+'</td>'+
+         '<td><span class="stat '+st+'">'+st+'</span></td></tr>';
+     }).join('')+'</table>';
+  }
   return '<div style="font-size:12px;color:var(--muted);margin:2px 2px 8px">'+rows.length+' projects</div>'+
    '<table><tr><th>#</th><th>Light</th><th>Project</th><th>Sector</th><th style="text-align:right">EC €</th><th style="text-align:right">Comms €</th><th>Slot</th><th>Best path</th><th>Status</th><th>Start</th></tr>'+
    rows.map((r,i)=>{ const c=r.computed, bp=c.bestPath, st=(r.user&&r.user.status)||'new';
@@ -1059,6 +1124,7 @@ function projScatter(rows){
 function openProject(id){ POPEN=id; PNODE=null; renderProjectPanel(); document.getElementById('ov').classList.add('on'); document.getElementById('panel').classList.add('on'); }
 function renderProjectPanel(){
   const r=PROJ.get(POPEN); if(!r){ closePanel(); return; }
+  if(isCall(r.computed)){ renderCallPanel(r); return; }
   const c=r.computed, comms=c.comms, st=(r.user&&r.user.status)||'new';
   const coord=c.coordinator||{};
   const parts=(c.consortium||[]).slice().sort((a,b)=>b.ec-a.ec);
@@ -1106,6 +1172,50 @@ function renderProjectPanel(){
     '</div>';
   const ss=document.getElementById('pstatus'); if(ss) ss.onchange=()=>{ PROJ.setStatus(POPEN,ss.value); if(TAB==='projects') renderPBody(); };
   document.querySelectorAll('#panel [data-cgnode]').forEach(g=>g.onclick=()=>projNodePop(+g.dataset.cgnode));
+}
+function renderCallPanel(r){
+  const c=r.computed, st=(r.user&&r.user.status)||'new';
+  const doors=c.ourDoors||[], pred=c.predictedBidders||[];
+  const maxWins=Math.max(1,...pred.map(b=>b.wins));
+  document.getElementById('panel').innerHTML=
+    '<div class="ph"><button class="x" onclick="closePanel()">&times;</button>'+
+      '<h3>📢 '+esc(c.acronym)+'</h3><div class="role">'+esc(c.title)+'</div>'+
+      '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;font-size:12px;color:#c3ccd0">'+
+        '<span class="slotb '+(c.status==='Open'?'open':'taken')+'">'+esc(c.status)+'</span>'+
+        '<span>'+esc(projSector(c))+'</span>'+
+        '<a href="'+esc(c.url)+'" target="_blank" rel="noopener" style="margin-left:auto;color:#9fd0ff;text-decoration:none">Portal ↗</a>'+
+      '</div></div>'+
+    '<div class="pb">'+
+      '<div class="sec" style="background:#fff8f4;border-color:#ffd9c4"><h5>Proposal deadline</h5>'+
+        '<div style="font-size:20px;font-weight:800;color:var(--ink)">'+deadlineChip(c)+'</div>'+
+        '<div style="font-size:12.5px;color:var(--muted);margin-top:4px">'+esc(c.typeOfAction||'')+' · call '+esc(c.callIdentifier||c.acronym)+'</div></div>'+
+      '<div class="sec"><h5>What the call is about</h5><div style="font-size:13px;line-height:1.5;color:#2b3438">'+esc(c.summary||'')+'</div></div>'+
+      '<div class="sec"><h5>Our comms angle</h5><div class="why">'+esc(c.commsNote||'')+'</div></div>'+
+      '<div class="sec"><h5>Our warmest doors in — orgs we know who win these calls</h5>'+
+        (doors.length?doors.slice(0,6).map(d=>{
+          const ppl=(d.people||[]).map(p=>esc(p.name)).filter(Boolean).slice(0,2).join(', ');
+          return '<div class="prt"><span><b>'+esc(d.name)+'</b>'+(ppl?' <span style="color:#9aa2a6">· '+ppl+'</span>':'')+
+            '<br><span style="font-size:11px;color:#9aa2a6">'+d.wins+' wins in this topic family'+(d.coordinated?' · coordinated '+d.coordinated:'')+'</span></span>'+
+            '<span class="pathpill direct" style="align-self:center">link '+Math.round(d.strength)+'</span></div>';
+        }).join(''):'<div style="color:#9aa2a6;font-size:13px">No org we currently know has a strong track record in this exact topic family — cold start. See predicted bidders below and Apollo the coordinator type.</div>')+
+        '<div style="font-size:11px;color:var(--muted);margin-top:8px">Predicted from who won past CORDIS projects in family <b>'+esc(c.family||'?')+'</b>. A prediction, not a guarantee.</div>'+
+      '</div>'+
+      '<div class="sec"><h5>Predicted likely bidders (from the historical record)</h5>'+
+        pred.map(b=>'<div class="moneybar"><span style="flex:0 0 52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((b.orgKey||'').toLowerCase().replace(/\b\w/g,m=>m.toUpperCase()))+(b.known?' <span style="color:var(--orange)">✓ we know</span>':'')+'</span>'+
+          '<span class="bx"><i style="width:'+Math.round(b.wins/maxWins*100)+'%;'+(b.known?'background:var(--orange)':'background:#b9c0c4')+'"></i></span>'+
+          '<span style="flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--muted)">'+b.wins+'</span></div>').join('')+
+        '<div style="font-size:11px;color:var(--muted);margin-top:6px">Orange = an org we already know. These historically win '+esc(c.family||'')+' topics — the natural consortium to join or assemble.</div>'+
+      '</div>'+
+      '<div class="sec"><h5>Fit score — '+Math.round(c.score)+'/100</h5>'+(c.scoreParts||[]).map(p=>'<div class="prt"><span>'+esc(p.label)+'</span><span class="pts">+'+p.pts+'</span></div>').join('')+'</div>'+
+      '<div class="sec"><h5>My status &amp; notes</h5>'+
+        '<div style="display:flex;gap:8px;align-items:center;margin-bottom:9px"><select id="pstatus" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px">'+
+          PSTATUS.map(s=>'<option value="'+s+'"'+(s===st?' selected':'')+'>'+s[0].toUpperCase()+s.slice(1)+'</option>').join('')+'</select>'+
+          '<button class="btn p" onclick="projMakeDeal()" style="background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600;margin-left:auto">→ Track as a bid in Pipeline</button></div>'+
+        '<div class="taginput"><input id="pnote" placeholder="Add a dated note…" onkeydown="if(event.key===\'Enter\')projAddNote()"><button class="btn" onclick="projAddNote()">Log</button></div>'+
+        '<div style="margin-top:8px">'+((r.user&&r.user.notes||[]).length?r.user.notes.map(n=>'<div class="note"><span class="d">'+esc(n.date)+'</span><br>'+esc(n.text)+'</div>').join(''):'<div style="color:#9aa2a6;font-size:12.5px">No notes yet.</div>')+'</div>'+
+      '</div>'+
+    '</div>';
+  const ss=document.getElementById('pstatus'); if(ss) ss.onchange=()=>{ PROJ.setStatus(POPEN,ss.value); if(TAB==='projects') renderPBody(); };
 }
 function bestPathBlock(c){
   const bp=c.bestPath;
@@ -1179,9 +1289,13 @@ function projMakeDeal(){
       intent:'project', persona:'comms', tags:['EU project',c.acronym,'From Projects']});
     contactId=nc.id;
   }
-  if(contactId==null){ // cold — seed the coordinator as a contact
-    const nc=CRM.addContact({name:(c.coordinator||{}).name||c.acronym+' coordinator', org:(c.coordinator||{}).name||'',
-      country:(c.coordinator||{}).country||'', intent:'project', persona:'coordinator', tags:['EU project',c.acronym,'From Projects']});
+  if(contactId==null){ // cold — seed a sensible placeholder contact
+    let nm, org;
+    if(isCall(c)){ const b=(c.predictedBidders||[])[0];
+      org=b?b.orgKey.toLowerCase().replace(/\b\w/g,m=>m.toUpperCase()):c.acronym; nm=org+' — bid lead'; }
+    else { nm=(c.coordinator||{}).name||c.acronym+' coordinator'; org=(c.coordinator||{}).name||''; }
+    const nc=CRM.addContact({name:nm, org:org, country:(c.coordinator||{}).country||'',
+      intent:'project', persona:isCall(c)?'coordinator':'coordinator', tags:['EU project',c.acronym,isCall(c)?'Open call':'From Projects']});
     contactId=nc.id;
   }
   const deals=CRM.data.deals; const nd=CRM.data.nextD||(Math.max(0,...deals.map(d=>d.id))+1);
