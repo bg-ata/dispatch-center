@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RENMAD Dispatch Center — Notifications</title>
+<style>
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;--blue:#185FA5;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{padding:16px 22px 80px;max-width:980px}
+  .nav{display:flex;align-items:center;gap:3px;margin-bottom:8px}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  button{font:inherit;cursor:pointer}
+  .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal)}
+  .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn:hover{filter:brightness(.97)}
+  select,input,textarea{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+  .panel h2{margin:0 0 3px;font-size:15px;color:var(--charcoal)}
+  .hint{font-size:12px;color:var(--muted);margin:0 0 10px}
+  .comprow{display:flex;gap:14px;flex-wrap:wrap}
+  .comprow label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:4px;text-transform:uppercase;letter-spacing:.4px}
+  .everyone{flex-direction:row !important;align-items:center;text-transform:none !important;letter-spacing:0 !important;font-size:13px !important;color:var(--ink) !important;gap:6px !important;cursor:pointer}
+  .comprow textarea{flex:1;min-width:240px;min-height:96px;resize:vertical}
+  .secthead{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--charcoal);margin:16px 0 8px}
+  .msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start}
+  .msg.unread{border-left:4px solid var(--orange);cursor:pointer;font-weight:600}
+  .msg.unread:hover{background:#fcfbf9}
+  .msg .kchip{font-size:15px;border-radius:9px;padding:4px 8px;color:#fff;flex:none;line-height:1}
+  .msg .txt{flex:1;min-width:0}
+  .msg .body{white-space:pre-wrap;word-break:break-word}
+  .msg .mline{font-size:11.5px;color:var(--muted);font-weight:400;margin-top:3px}
+  .msg .mline a{color:var(--blue);font-weight:600;text-decoration:none}
+  .msg .mline a:hover{text-decoration:underline}
+  .listbar{display:flex;align-items:center;gap:10px;margin:4px 0 10px}
+  .listbar h2{margin:0;font-size:15px;color:var(--charcoal)}
+  .empty{color:var(--muted);font-style:italic;padding:16px 4px}
+  .senderr{font-size:12.5px;color:var(--red);min-height:16px;margin-top:6px}
+  .sendok{color:var(--green)}
+  @media(max-width:680px){
+    .comprow{flex-direction:column}
+    .comprow textarea{min-width:0}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <h1>🔔 Notifications</h1>
+  <p class="sub">Answers to your requests, team notices and time-off decisions — everything the Dispatch Center wants you to see, in one place.</p>
+  <div id="warnbox"></div>
+  <div id="composer"></div>
+  <div id="listwrap"></div>
+</div>
+<script src="store.js?v=52"></script>
+<script>
+document.getElementById('nav').innerHTML=navBar('inbox');
+function refreshNav(){document.getElementById('nav').innerHTML=navBar('inbox');try{decorateNav();}catch(e){}}
+function fmtWhen(c){ // 'YYYY-MM-DD HH:MM' → 'DD/MM/YYYY HH:MM'
+  if(!c)return '';
+  const d=c.slice(0,10).split('-'),t=c.slice(11,16);
+  if(d.length!==3)return esc(c);
+  return d[2]+'/'+d[1]+'/'+d[0]+(t?' '+t:'');
+}
+function renderComposer(){
+  const box=document.getElementById('composer');
+  if(!(DB.isAdmin()||DB.isHR())){box.innerHTML='';return;}
+  const me=DB.currentUser;
+  const opts=DB.people.filter(p=>!isTeamAccount(p)&&(!me||p.id!=me.id))
+    .map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  box.innerHTML='<div class="panel"><h2>📢 Send a notice</h2>'
+    +'<p class="hint">Lands in people’s 🔔 inbox — for alarms and things the team must read.</p>'
+    +'<div class="comprow">'
+    +'<div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">To</span>'
+    +'<label class="everyone"><input type="checkbox" id="c_all"> Everyone</label>'
+    +'<select multiple size="6" id="c_who">'+opts+'</select></div>'
+    +'<label style="flex:1;min-width:240px">Message<textarea id="c_txt" maxlength="500" placeholder="What does the team need to know?"></textarea></label>'
+    +'</div>'
+    +'<div style="margin-top:10px"><button class="btn primary" id="c_send">Send</button></div>'
+    +'<div class="senderr" id="c_msg"></div></div>';
+  const all=document.getElementById('c_all'),who=document.getElementById('c_who');
+  all.onchange=()=>{who.disabled=all.checked;};
+  document.getElementById('c_send').onclick=()=>{
+    const m=document.getElementById('c_msg');m.className='senderr';m.textContent='';
+    const txt=(document.getElementById('c_txt').value||'').trim();
+    if(!txt){m.textContent='Write the notice first.';return;}
+    const ids=[...who.selectedOptions].map(o=>+o.value);
+    if(!all.checked&&!ids.length){m.textContent='Pick who gets it — or tick “Everyone”.';return;}
+    const n=notifySend(all.checked?'all':ids,'notice',txt,'');
+    m.className='senderr sendok';m.textContent='✓ Sent to '+n+' '+(n===1?'person':'people');
+    document.getElementById('c_txt').value='';
+    render();
+  };
+}
+function msgHtml(m){
+  const k=INBOX_KINDS[m.kind]||INBOX_KINDS.notice;
+  return '<div class="msg'+(m.isRead?'':' unread')+'"'+(m.isRead?'':' data-read="'+m.id+'" title="Click to mark as read"')+'>'
+    +'<span class="kchip" style="background:'+k.color+'" title="'+esc(k.label)+'">'+k.icon+'</span>'
+    +'<div class="txt"><div class="body">'+esc(m.text)+'</div>'
+    +'<div class="mline">'+esc(m.fromName||'')+' · '+fmtWhen(m.created)
+    +(m.link?' · <a href="'+esc(m.link)+'">Open →</a>':'')+'</div></div></div>';
+}
+function render(){
+  renderComposer();
+  const W=document.getElementById('listwrap');
+  const mine=inboxMine();
+  const unread=mine.filter(m=>!m.isRead),earlier=mine.filter(m=>m.isRead);
+  let h='<div class="listbar"><h2>My inbox</h2>'
+    +(unread.length?'<button class="btn" id="markAll">Mark all read</button>':'')+'</div>';
+  if(!mine.length)h+='<p class="empty">Nothing here — you’re up to date 🎉</p>';
+  else{
+    if(unread.length)h+='<div class="secthead" style="color:var(--orange)">Unread</div>'+unread.map(msgHtml).join('');
+    if(earlier.length)h+='<div class="secthead">Earlier</div>'+earlier.map(msgHtml).join('');
+  }
+  W.innerHTML=h;
+  W.querySelectorAll('[data-read]').forEach(el=>el.onclick=e=>{
+    if(e.target.tagName==='A')return; // let "Open →" navigate without eating the click
+    const m=DB.inbox.find(x=>x.id==el.dataset.read);
+    if(m){m.isRead=true;DB.save();}
+    render();refreshNav();
+  });
+  const ma=document.getElementById('markAll');
+  if(ma)ma.onclick=()=>{
+    inboxMine().forEach(m=>m.isRead=true);
+    DB.save();render();refreshNav();
+  };
+}
+boot(async()=>{
+  if(!DB.inboxReady()){
+    document.getElementById('warnbox').innerHTML='<div class="warn">Notifications need one database step — run <b>dispatch_me_inbox.sql</b> in the Supabase SQL editor.</div>';
+    return;
+  }
+  render();
+});
+window.addEventListener('dc-remote',()=>{if(DB.inboxReady())render();});
+</script>
+</body>
+</html>

@@ -144,15 +144,23 @@ function wireBody(){
     const t=DB.tickets.find(x=>x.id==btn.dataset.cmt);const inp=document.getElementById('cm_'+t.id);
     const txt=(inp.value||'').trim();if(!txt)return;
     (t.thread=t.thread||[]).push({who:me.id,when:toISO(new Date()),text:txt});
+    /* 🔔 tell the requester someone replied (not when they comment on their own) */
+    if(t.personId!=me.id)notifySend(t.personId,'ticket','New reply on your request “'+t.title+'”','tickets.html');
     DB.save();render();});
   document.querySelectorAll('[data-adm]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();
     const t=DB.tickets.find(x=>x.id==btn.dataset.adm);
     const ns=document.getElementById('st_'+t.id).value,np=document.getElementById('pr_'+t.id).value||null;
     const bits=[];
-    if(ns!==t.status)bits.push('status → '+(TICKET_STATUS[ns]||{}).label);
+    const statusChanged=ns!==t.status;
+    if(statusChanged)bits.push('status → '+(TICKET_STATUS[ns]||{}).label);
     if(np!==t.priority)bits.push('priority → '+(np?TICKET_PRIORITY[np].label:'—'));
-    if(!bits.length)return;
-    t.status=ns;t.priority=np;sysNote(t,me,bits.join(', '));
+    const ntEl=document.getElementById('nt_'+t.id),notifyAll=!!(ntEl&&ntEl.checked);
+    if(!bits.length&&!notifyAll)return;
+    if(bits.length){t.status=ns;t.priority=np;sysNote(t,me,bits.join(', '));}
+    /* 🔔 tell the requester their request moved (unless the admin is the requester) */
+    if(statusChanged&&me.id!=t.personId)notifySend(t.personId,'ticket','Your request “'+t.title+'” is now '+TICKET_STATUS[ns].label,'tickets.html');
+    /* 📣 optionally broadcast to the whole team */
+    if(notifyAll)notifySend('all','ticket','“'+t.title+'” — '+TICKET_STATUS[ns].label,'tickets.html');
     DB.save();render();});
   document.querySelectorAll('[data-close]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();
     const t=DB.tickets.find(x=>x.id==btn.dataset.close);
