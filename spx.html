@@ -119,11 +119,15 @@ const pct=x=>(x==null?'—':(Math.round(x*1000)/10)+'%');
 function stLabel(s){return ST_ES[s]||s||'—';}
 /* company-name normalisation: uppercase, strip accents + punctuation + legal suffixes.
    (Fresh implementation — the CRM had no shared helper to reuse.) */
+const LEGAL_SUFFIX={SAU:1,SLU:1,SASU:1,SARL:1,UNIPESSOAL:1,LDA:1,SA:1,SL:1,SRL:1,SAS:1,SPA:1,GMBH:1,AG:1,NV:1,BV:1,AS:1,OY:1,AB:1,PLC:1,LTD:1,LLC:1,INC:1,APS:1};
 function normCompany(s){
-  return (''+(s||'')).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase()
+  const n=(''+(s||'')).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase()
     .replace(/[.,;()\/]/g,' ')
-    .replace(/\b(SAU|SLU|SASU|SARL|UNIPESSOAL|LDA|SA|SL|SRL|SAS|SPA|GMBH|AG|NV|BV|AS|OY|AB|PLC|LTD|LLC|INC|APS)\b/g,' ')
     .replace(/\s+/g,' ').trim();
+  // strip legal-form tokens ONLY from the END ("SOLAR AB" → "SOLAR", but "AB SOLAR" stays "AB SOLAR")
+  const parts=n.split(' ');
+  while(parts.length>1&&LEGAL_SUFFIX[parts[parts.length-1]])parts.pop();
+  return parts.join(' ');
 }
 function domainOf(email){const m=(''+(email||'')).split('@');return m.length===2?m[1].toLowerCase().trim():'';}
 
@@ -180,8 +184,13 @@ function spxEvents(){
 }
 function evCurrent(e){return hasReg()?!!e.active:e.sent>0;}
 function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(evCurrent(e))s[e.key]=1;});return s;}
-/* a proposal is "current" if it's General or touches an event still in pipeline; else it's "Before" */
-function propIsCurrent(p,cur){if(p.isGeneral)return true;const ls=DB.spxLinesFor(p.id);if(!ls.length)return true;return ls.some(l=>cur[lineEvKey(l)]);}
+/* a proposal is "current" if it's General or touches an event still in pipeline; else it's "Before".
+   Keys NOT in the dc_spx_events registry count as CURRENT (never silently filed under Before) —
+   only events explicitly registered with current=false belong there. */
+function lineUnreg(l){return hasReg()&&!regEvents().some(e=>e.eventKey===lineEvKey(l));}
+function propHasUnreg(p){return !p.isGeneral&&DB.spxLinesFor(p.id).some(lineUnreg);}
+function unregChip(){return ' <span class="warnpill" title="⚠ event not in registry — add it in ⚙ Manage events">⚠</span>';}
+function propIsCurrent(p,cur){if(p.isGeneral)return true;const ls=DB.spxLinesFor(p.id);if(!ls.length)return true;return ls.some(l=>cur[lineEvKey(l)]||lineUnreg(l));}
 
 /* accounting derivation via the confirmed crosswalk (sales never type this) */
 function canonicalFor(company){
@@ -190,18 +199,18 @@ function canonicalFor(company){
     (m.marketingAliases||[]).some(a=>normCompany(a)===n)||normCompany(m.canonicalName)===n))||null;
 }
 function invMatches(cm,eventId){
-  if(!cm||!cm.invoiceClientKey)return [];
+  if(!cm||!cm.invoiceClientKey||eventId==null)return [];   // eventId==null must NEVER match all allocations
   const key=normCompany(cm.invoiceClientKey);
   return DB.invoices.filter(inv=>inv.status!=='cancelado'
     &&(inv.producto==='sponsorship'||inv.producto==='upgrade')
     &&normCompany(inv.razon_social)===key
-    &&DB.invoiceAllocs.some(a=>a.invoice_id==inv.id&&(eventId==null||a.eventId==eventId)));
+    &&DB.invoiceAllocs.some(a=>a.invoice_id==inv.id&&a.eventId==eventId));
 }
 function accountingFor(p){
   const cm=canonicalFor(p.company);
   if(!cm)return {state:'none',linked:false};
-  const evs=DB.spxLinesFor(p.id).map(l=>l.eventId).filter(x=>x!=null);
-  const scope=evs.length?evs:[null];
+  const scope=DB.spxLinesFor(p.id).map(l=>l.eventId).filter(x=>x!=null);   // ONLY event-linked lines — never [null]
+  if(!scope.length)return {state:'none',linked:true,noEvent:true};         // no €-Dashboard event → derivation impossible
   let inv=false,paid=false;
   scope.forEach(ev=>invMatches(cm,ev).forEach(i=>{inv=true;if(i.status==='pagado'||i.fecha_cobro)paid=true;}));
   return {state:paid?'paid':inv?'invoiced':'none',linked:true};
@@ -244,7 +253,8 @@ function renderProposals(app,scope){
   scope=scope||'current';
   const cur=currentEventKeys();
   const props=liveProps().filter(passFilters).filter(p=>scope==='before'?!propIsCurrent(p,cur):propIsCurrent(p,cur));
-  const val=p=>propValue(p);
+  // Event filter set → the tiles sum ONLY the lines of that event (not whole-proposal values)
+  const val=p=>flt.event?DB.spxLinesFor(p.id).filter(l=>lineEvKey(l)===flt.event).reduce((s,l)=>s+(+l.valueEur||0),0):propValue(p);
   const sum=st=>props.filter(p=>p.salesStatus===st).reduce((s,p)=>s+val(p),0);
   const firmado=sum('Confirmed'),enviado=sum('Sent'),perdido=sum('Lost'),proceso=firmado+enviado;
   // target/stretch: only where the event has a Money (dc_finance) row + a target set
@@ -314,7 +324,7 @@ function proposalsTableGeneral(props){
   if(!props.length)h+='<tr><td colspan="10" style="color:var(--muted)">No proposals'+(DB.spxProps.length?' under these filters.':' yet — they appear here automatically when the Proposal Builder generates a deck.')+'</td></tr>';
   props.slice().sort((a,b)=>(''+(b.createdAt||'')).localeCompare(''+(a.createdAt||''))).forEach(p=>{
     const ls=DB.spxLinesFor(p.id);
-    const evs=p.isGeneral?'<span style="color:var(--muted)">General</span>':(ls.length?ls.map(l=>esc(shortEvent(l))).join(', '):'—');
+    const evs=(p.isGeneral?'<span style="color:var(--muted)">General</span>':(ls.length?ls.map(l=>esc(shortEvent(l))).join(', '):'—'))+(propHasUnreg(p)?unregChip():'');
     const editable=DB.canEditProp(p);
     let valCell;
     if(ls.length>1)valCell='<span class="mval ro" title="Edit per event in the By-event view">'+money(propValue(p))+'</span>';
@@ -371,15 +381,18 @@ function proposalsTableByEvent(props){
 }
 function shortEvent(l){const f=l.eventId!=null&&DB.finance.find(f=>f.id==l.eventId);return f?(f.name+' '+(f.year||'')):(l.eventName||l.eventKey||'?');}
 function eventLineCell(l,editable){
-  if(l.eventId!=null)return esc(shortEvent(l));
+  const reg=lineUnreg(l)?unregChip():'';
+  if(l.eventId!=null)return esc(shortEvent(l))+reg;
   const canLink=editable||DB.canSalesLead();
-  return esc(l.eventName||l.eventKey||'?')+(canLink?' <span class="warnpill" data-linkline="'+l.id+'" title="This event isn\'t linked to a Money row yet — click to link">⚠ link</span>':' <span class="warnpill" title="not linked to a Money row">⚠</span>');
+  return esc(l.eventName||l.eventKey||'?')+reg+(canLink?' <span class="warnpill" data-linkline="'+l.id+'" title="This event isn\'t linked to a Money row yet — click to link">⚠ link</span>':' <span class="warnpill" title="not linked to a Money row">⚠</span>');
 }
 function statusCell(p,editable){
   if(!editable)return '<span class="stbadge '+ST_CLASS[p.salesStatus]+'">'+esc(stLabel(p.salesStatus))+'</span>';
   return '<select class="stsel" data-stid="'+p.id+'">'+SALES_STATUSES.map(s=>'<option value="'+s+'"'+(p.salesStatus===s?' selected':'')+'>'+esc(stLabel(s))+'</option>').join('')+'</select>';
 }
-function accBadge(p){const a=accountingFor(p);const info=ACC[a.state];return ' <span class="accb '+info.cls+'" title="Accounting status — derived from Facturación, never typed">'+info.txt+'</span>';}
+function accBadge(p){const a=accountingFor(p);
+  if(a.noEvent)return ' <span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>';
+  const info=ACC[a.state];return ' <span class="accb '+info.cls+'" title="Accounting status — derived from Facturación, never typed">'+info.txt+'</span>';}
 function moneyCell(id,kind,v,editable){
   if(!editable)return '<span class="mval ro">'+money(v)+'</span>';
   return '<span class="mval" data-mid="'+id+'" data-mk="'+kind+'" title="Click to edit">'+money(v)+'</span>';
@@ -407,7 +420,8 @@ function wireProposalTable(){
   // status inline
   document.querySelectorAll('.stsel').forEach(s=>s.onclick=e=>e.stopPropagation());
   document.querySelectorAll('.stsel').forEach(s=>s.onchange=()=>{
-    const p=DB.spxProps.find(x=>x.id==s.dataset.stid);if(!p)return;p.salesStatus=s.value;DB.save();render();
+    const p=DB.spxProps.find(x=>x.id==s.dataset.stid);if(!p)return;
+    const prev=p.salesStatus;p.salesStatus=s.value;askLegalOnSigned(p,prev);DB.save();render();
   });
   // money inline
   document.querySelectorAll('.mval[data-mid]').forEach(sp=>sp.onclick=e=>{
@@ -487,10 +501,15 @@ function openLink(propId){
     if(dom){const invs=DB.invoices.filter(i=>i.razon_social===rs);invs.forEach(i=>{DB.delegates.forEach(d=>{if(d.invoice_id==i.id&&domainOf(d.email)===dom)s+=3;});});}
     return {rs,s};
   }).sort((a,b)=>b.s-a.s);
-  const best=scored[0]&&scored[0].s>0?scored[0].rs:'';
-  const opts='<option value="">— none / type a custom legal name —</option>'+scored.map(x=>'<option value="'+esc(x.rs)+'"'+(x.rs===best?' selected':'')+'>'+esc(x.rs)+(x.s>0?'  ·  match '+x.s:'')+'</option>').join('');
+  // pre-select ONLY on an exact normalized match — a fuzzy score alone must not pick for you
+  const exact=nc?scored.find(x=>normCompany(x.rs)===nc):null;
+  const best=exact?exact.rs:'';
+  const opts='<option value=""'+(best?'':' selected')+'>— pick — (or type a custom legal name below)</option>'+scored.map(x=>'<option value="'+esc(x.rs)+'"'+(x.rs===best?' selected':'')+'>'+esc(x.rs)+(x.s>0?'  ·  match '+x.s:'')+'</option>').join('');
+  const cm=canonicalFor(p.company);
+  const curLink=cm?('<p class="ro-note">currently linked to <b>'+esc(cm.invoiceClientKey||(cm.legalAliases&&cm.legalAliases[0])||'?')+'</b> <button class="lnk" style="color:#A32D2D;text-decoration:none" onclick="unlinkCompany('+propId+')">✕ unlink</button></p>'):'';
   panelShell('Link company','“'+esc(p.company)+'” (marketing) → legal invoicing name',
     '<div class="sec">'
+    +curLink
     +'<div class="fld"><label>Legal name on invoices (razón social)</label><select id="lk_legal">'+opts+'</select></div>'
     +'<div class="fld"><label>…or type it</label><input id="lk_custom" placeholder="e.g. European Energy A/S"></div>'
     +(dom?'<p class="ro-note">Contact domain: <b>'+esc(dom)+'</b> — used as a match signal.</p>':'')
@@ -509,6 +528,37 @@ function confirmLink(propId){
   const n=normCompany(p.company);
   liveProps().forEach(q=>{if(normCompany(q.company)===n)q.companyId=row.id;});
   DB.save();closePanel();render();
+}
+function unlinkCompany(propId){
+  const p=DB.spxProps.find(x=>x.id==propId);if(!p)return;
+  const cm=canonicalFor(p.company);if(!cm)return;
+  if(!confirm('Unlink “'+(p.company||'')+'” from “'+(cm.invoiceClientKey||'')+'”? Invoiced/Paid will stop deriving for this company until it\'s linked again.'))return;
+  DB.data.companyMap=DB.companyMap.filter(m=>m.id!=cm.id);
+  liveProps().forEach(q=>{if(q.companyId==cm.id)q.companyId=null;});
+  DB.save();openLink(propId);render();
+}
+/* when a deal turns Firmado, capture the contract's razón social so it matches its invoice.
+   Cancel = the status still changes, nothing is written to the ledger. */
+function askLegalOnSigned(p,prevStatus){
+  if(!p||p.salesStatus!=='Confirmed'||prevStatus==='Confirmed')return;
+  const cm=canonicalFor(p.company);
+  const pre=cm?(cm.invoiceClientKey||(Array.isArray(cm.legalAliases)&&cm.legalAliases[0])||''):'';
+  const ans=prompt('Contract signed 🎉 — what is the client\'s LEGAL entity (razón social) on the contract? It matches the deal to its invoice and payment.',pre);
+  if(ans==null)return;
+  const legal=ans.trim();if(!legal)return;
+  const me=DB.currentUser;
+  if(cm){
+    if(!Array.isArray(cm.legalAliases))cm.legalAliases=cm.legalAliases?[cm.legalAliases]:[];
+    if(!cm.legalAliases.some(a=>normCompany(a)===normCompany(legal)))cm.legalAliases.push(legal);
+    cm.confirmedBy=(me&&me.email)||'';cm.confirmedAt=new Date().toISOString();
+  }else{
+    const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
+    const row={id:DB.newId(),canonicalName:p.company,marketingAliases:[p.company],legalAliases:[legal],
+      emailDomains:dom?[dom]:[],invoiceClientKey:legal,confirmedBy:(me&&me.email)||'',confirmedAt:new Date().toISOString(),status:'confirmed'};
+    DB.companyMap.push(row);
+    const n=normCompany(p.company);
+    liveProps().forEach(q=>{if(normCompany(q.company)===n)q.companyId=row.id;});
+  }
 }
 
 /* ================= HEALTH-CHECK TAB ================= */
@@ -542,10 +592,14 @@ function renderHealth(app){
   if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events yet.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
   const fid=ev.financeId; _hcFid=fid; _hcReg=(hasReg()&&ev.reg)?ev.reg:null;
   const t=_hcReg||(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
-  const conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
-  // pipeline (Sent sponsorship) for this event
+  let conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
+  if(conv>1)conv=conv/100;conv=Math.max(0,Math.min(1,conv));   // "35" means 35%, always a 0–1 fraction
+  // pipeline (Sent sponsorship) for this event — proposals already Invoiced/Paid are
+  // excluded (their money already sits in Confirmado; counting both double-counts)
   const sentLines=[];
-  liveProps().filter(p=>p.salesStatus==='Sent').forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===HC)sentLines.push(+l.valueEur||0);}));
+  liveProps().filter(p=>p.salesStatus==='Sent').forEach(p=>{
+    const acc=accountingFor(p).state;if(acc==='invoiced'||acc==='paid')return;
+    DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===HC)sentLines.push(+l.valueEur||0);});});
   const pipeline=sentLines.reduce((a,b)=>a+b,0);
   const expected=pipeline*conv;
   // confirmed = sponsorship invoiced for this event (Invoiced/Paid), NOT sales-declared
@@ -553,7 +607,7 @@ function renderHealth(app){
   const projection=spInvoiced.total+expected;
   const spTarget=+t.sponsorshipTarget||0,spStretch=+t.sponsorshipStretch||0;
   const gapT=projection-spTarget,gapS=projection-spStretch;
-  const addT=gapT>=0?0:(-gapT)/(conv||1),addS=gapS>=0?0:(-gapS)/(conv||1);
+  const addT=gapT>=0?0:(conv>0?(-gapT)/conv:null),addS=gapS>=0?0:(conv>0?(-gapS)/conv:null);   // conv 0 → can't derive
   const pasesInv=fid!=null?invoicedPases(fid):{total:0,paid:0};
   const editable=DB.canSalesLead()&&(_hcReg!=null||fid!=null);   // targets editable if the registry or a Money row holds them
 
@@ -583,8 +637,8 @@ function renderHealth(app){
     +tile('Diferencia vs Stretch',money(gapS),gapS>=0?'holgura':'falta por cerrar',gapS>=0?'good':'bad')
     +'</div>';
   h+='<div class="tiles">'
-    +tile('€ propuestas ADIC. → target','+'+money(addT),'a firmar (÷ conv '+pct(conv)+')')
-    +tile('€ propuestas ADIC. → stretch','+'+money(addS),'a firmar (÷ conv '+pct(conv)+')')
+    +tile('€ propuestas ADIC. → target',addT==null?'—':'+'+money(addT),addT==null?'conversión 0% — no calculable':'a firmar (÷ conv '+pct(conv)+')')
+    +tile('€ propuestas ADIC. → stretch',addS==null?'—':'+'+money(addS),addS==null?'conversión 0% — no calculable':'a firmar (÷ conv '+pct(conv)+')')
     +'</div>';
   h+='<p class="ro-note">Lectura rápida: si la diferencia es negativa, ese es el volumen de propuestas NUEVAS que hay que mover (teniendo en cuenta la conversión) para cerrar el hueco.</p>';
   h+='</div>';
@@ -616,7 +670,7 @@ function invoicedPases(finId){
 }
 function wireHC(t){
   const conv=document.getElementById('hc_conv');
-  if(conv)conv.onchange=()=>{const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{Sent:+conv.value});DB.save();render();};
+  if(conv)conv.onchange=()=>{let c=+conv.value;if(c>1)c=c/100;c=Math.max(0,Math.min(1,c));const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{Sent:c});DB.save();render();};
   document.querySelectorAll('.mval[data-tf]').forEach(sp=>sp.onclick=()=>{
     const fld=sp.dataset.tf;const row=ensureTarget();
     const td=sp.parentElement;td.innerHTML='<input class="money" type="number" step="any" value="'+(row[fld]==null?'':row[fld])+'">';
@@ -711,7 +765,7 @@ function openPanel(id){
   let b='';
   b+='<div class="sec"><h5>Status</h5>';
   b+='<div class="kv"><span class="k">Sales</span><span class="stbadge '+ST_CLASS[p.salesStatus]+'">'+esc(stLabel(p.salesStatus))+'</span></div>';
-  b+='<div class="kv"><span class="k">Accounting (derived)</span><span class="accb '+ACC[a.state].cls+'">'+ACC[a.state].txt+'</span></div>';
+  b+='<div class="kv"><span class="k">Accounting (derived)</span>'+(a.noEvent?'<span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>':'<span class="accb '+ACC[a.state].cls+'">'+ACC[a.state].txt+'</span>')+'</div>';
   b+='<div class="kv"><span class="k">Value</span><b>'+money(propValue(p))+'</b></div>';
   b+='<div class="kv"><span class="k">Created</span><span>'+esc((p.createdAt||'').slice(0,16).replace('T',' '))+(p.createdBy?' · '+esc(p.createdBy):'')+'</span></div>';
   b+='</div>';
@@ -753,7 +807,9 @@ function fldArea(label,f,v){return '<div class="fld"><label>'+esc(label)+'</labe
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span>'+esc(v||'—')+'</span></div>';}
 function savePanel(id){
   const p=DB.spxProps.find(x=>x.id==id);if(!p)return;
+  const prev=p.salesStatus;
   document.querySelectorAll('#panel [data-pf]').forEach(e=>{const f=e.dataset.pf;let v=e.value;if((f==='fechaEnvio'||f==='fechaSeguimiento')&&v==='')v=null;p[f]=v;});
+  askLegalOnSigned(p,prev);
   DB.save();closePanel();render();
 }
 
@@ -805,9 +861,14 @@ function saveNew(){
   const pid=DB.newId();let lines=[],value=0;
   if(general){value=+document.getElementById('nc_genval').value||0;}
   else{
-    document.querySelectorAll('.ncrow').forEach(r=>{const evKey=r.querySelector('.nc_ev').value,val=+r.querySelector('.nc_val').value||0,ct=r.querySelector('.nc_ct').value.trim();
-      if(!evKey&&!val&&!ct)return;const e=spxEvents().find(x=>x.key===evKey);
-      lines.push({id:DB.newId(),parentId:pid,eventId:e?e.financeId:null,eventKey:evKey||null,eventName:e?e.name:'',valueEur:val,valueEdited:false,contents:ct});value+=val;});
+    let noEvent=false;
+    document.querySelectorAll('.ncrow').forEach(r=>{const evSel=r.querySelector('.nc_ev'),evKey=evSel.value,val=+r.querySelector('.nc_val').value||0,ct=r.querySelector('.nc_ct').value.trim();
+      evSel.style.borderColor='';
+      if(!evKey&&!val&&!ct)return;
+      if(!evKey){noEvent=true;evSel.style.borderColor='#A32D2D';return;}   // value/contents without an event → reject, never create eventKey:null lines
+      const e=spxEvents().find(x=>x.key===evKey);
+      lines.push({id:DB.newId(),parentId:pid,eventId:e?e.financeId:null,eventKey:evKey,eventName:e?e.name:'',valueEur:val,valueEdited:false,contents:ct});value+=val;});
+    if(noEvent){alert('Pick an event for every line that has a value or contents (or remove the line).');return;}
     if(!lines.length){alert('Add at least one event line, or tick “General proposal”.');return;}
   }
   DB.spxProps.push({id:pid,createdAt:new Date().toISOString(),createdBy:(me&&me.email)||'',
@@ -835,7 +896,10 @@ function deleteLine(lineId){
   const p=DB.spxProps.find(x=>x.id==l.parentId);
   if(p&&!DB.canEditProp(p)){alert('You can only edit your own proposals.');return;}
   DB.data.spxLines=DB.spxLines.filter(x=>x.id!=lineId);
-  if(p)p.valueEur=propValue(p);
+  if(p){
+    if(DB.spxLinesFor(p.id).length)p.valueEur=propValue(p);
+    else{p.valueEur=0;p.valueEdited=false;}   // no lines left → the deleted line's value must not linger
+  }
   DB.save();if(p)openPanel(p.id);render();
 }
 
@@ -901,7 +965,7 @@ function saveChipInit(){
 window.setView=setView;window.clearFilters=clearFilters;window.closePanel=closePanel;
 window.openLink=openLink;window.confirmLink=confirmLink;window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
 window.openCreate=openCreate;window.addNcLine=addNcLine;window.toggleGeneral=toggleGeneral;window.saveNew=saveNew;window.deleteProposal=deleteProposal;window.deleteLine=deleteLine;
-window.openLinkingList=openLinkingList;window.filterLinkList=filterLinkList;
+window.openLinkingList=openLinkingList;window.filterLinkList=filterLinkList;window.unlinkCompany=unlinkCompany;
 window.openManageEvents=openManageEvents;window.addMevRow=addMevRow;window.saveManageEvents=saveManageEvents;
 // chip clicks in the linking tray
 document.addEventListener('click',e=>{const b=e.target.closest('[data-link]');if(b&&!b.disabled)openLink(+b.dataset.link);});
