@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RENMAD Dispatch Center — Team</title>
 <style>
-  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#E24B4A;}
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#E24B4A;--green:#3E8C28;--amber:#C77800;--blue:#29ACE3;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 80px;max-width:1000px}
@@ -31,6 +31,29 @@
   .assign{background:#faf9f6;font-size:12px;color:var(--muted)}
   .assign td{padding:6px 18px}
   .assign .ev{color:var(--ink);font-weight:600}
+  /* ---- 📆 Team calendar (ported from the HR page) ---- */
+  .calpanel{padding:14px 16px;margin-top:16px}
+  .calpanel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
+  .calpanel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
+  .cal{overflow-x:auto}
+  .cal table{border-collapse:collapse;font-size:11px;min-width:900px}
+  .cal th{padding:2px 0;text-align:center;font-size:9px}
+  .cal td{padding:0;border-bottom:1px solid #f0eee9;height:24px}
+  .cal td.lab{white-space:nowrap;padding:2px 10px 2px 4px;font-weight:600;color:var(--charcoal);font-size:12px;position:sticky;left:0;background:var(--card);z-index:2}
+  .cal td.lab .m{color:var(--muted);font-weight:400;font-size:10.5px}
+  .dcell{width:26px;min-width:26px;text-align:center}
+  .dcell.we{background:#f2f0ea}
+  .dcell.hol{background:#E9DEF5}
+  .dcell .blk{display:block;height:16px;margin:2px 1px;border-radius:3px}
+  .blk.ok{background:var(--green)}
+  .blk.pend{background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)}
+  .blk.rmt{background:var(--blue)}
+  .blk.rmtp{background:repeating-linear-gradient(45deg,#29ACE3,#29ACE3 4px,#cdeaf7 4px,#cdeaf7 8px)}
+  .blk.lv{background:var(--amber)}
+  .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .legend span.sw{display:inline-block;width:14px;height:11px;border-radius:3px;vertical-align:-1px;margin:0 4px 0 10px}
+  .mnav{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .mnav b{font-size:14px;color:var(--charcoal);min-width:150px;text-align:center}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none;align-items:center;justify-content:center}#modal.on{display:flex}
   .card{background:#fff;border-radius:14px;padding:20px 22px;width:420px;max-width:92vw}
   .card h3{margin:0 0 14px;font-size:17px}
@@ -50,7 +73,12 @@
   </div>
   <div class="panel"><table id="tbl"></table></div>
   <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to open their page — their events &amp; tasks on a timeline. Each person will eventually log in and see only their own.</p>
-  <div id="devPanel"></div>
+  <div class="panel calpanel"><h3>📆 Team calendar<span title="Visible to the whole team" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#E9F0FB;color:#185FA5">👁 everyone</span></h3><p class="hint" id="calHint"></p>
+    <div class="mnav"><button class="btn" id="c_prev">‹</button><b id="c_lab"></b><button class="btn" id="c_next">›</button></div>
+    <div class="cal" id="cal"></div>
+    <div class="legend"><span class="sw" style="background:var(--green)"></span>holidays<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending<span class="sw" style="background:var(--blue)"></span>office day<span class="sw" style="background:var(--amber)"></span>sick / parental leave<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday<span class="sw" style="background:#f2f0ea"></span>weekend</div>
+    <p class="hint" id="holList" style="margin-top:8px"></p></div>
+  <div class="panel calpanel"><h3>Madrid bank holidays <span id="yhY"></span></h3><p class="hint">The official “calendario laboral” this app deducts automatically — review against the BOCM each January and tell Claude if any date moved.</p><div id="yearHols"></div></div>
 </div>
 <div id="modal"><div class="card">
   <h3 id="m_title">Edit person</h3>
@@ -139,50 +167,71 @@ document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx'
   {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Access:ACCESS_LABEL[p.access||'member']||p.access,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},
   {name:'Assignments',rows:DB.tasks.filter(t=>t.assignee).map(t=>{const e=DB.event(t.eventId);return{Person:DB.personName(t.assignee),Event:e?e.name:'',Lane:t.lane,Task:t.title,Deadline:t.deadline,Status:t.status};})}
 ]);
-/* ---- device visibility (Belén's eyes ONLY — server-enforced by RLS) ----
-   Who opens the Dispatch Center on phone vs computer, and who has installed
-   the app (opened it in standalone/PWA mode). One row per person/device/day;
-   nothing else is recorded — no location, no IP, no page tracking. */
-async function renderDevices(){
-  const box=document.getElementById('devPanel');if(!box)return;
+/* ---- 📆 Team calendar (ported from the HR page — visible to EVERYONE) ----
+   The whole company can see who's on holiday or in the office before planning.
+   Sick / maternity / paternity leave stays private: only admins, HR, the person
+   themselves and a manager of the same role see those rows (canSeeLeaveOf). */
+let calM=new Date();calM.setDate(1);
+function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
+function renderCal(){
   const me=DB.currentUser;
-  if(!me||!isBelenP(me)){box.innerHTML='';return;}
-  let rows=null;
-  if(!USE_SUPABASE)rows=DB.data.logins||[];
-  else{
-    try{const r=await sb.from('dc_logins').select('*');if(r.error)throw r.error;rows=r.data||[];}
-    catch(e){box.innerHTML='<div class="panel" style="padding:14px 16px;margin-top:16px"><b>📱 Devices &amp; app adoption</b><div style="font-size:12.5px;color:var(--muted);margin-top:4px">Switches on when <b>dispatch_logins.sql</b> is run in Supabase.</div></div>';return;}
+  const y=calM.getFullYear(),m=calM.getMonth();
+  document.getElementById('c_lab').textContent=['January','February','March','April','May','June','July','August','September','October','November','December'][m]+' '+y;
+  const yh=document.getElementById('yhY');if(yh)yh.textContent=y;
+  const hols=madridHolidays(y);
+  /* bank-holiday lists need no HR data — always shown */
+  const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
+  document.getElementById('holList').innerHTML=monthHols.length
+    ?'Bank holidays this month (Madrid): '+monthHols.map(k=>'<b>'+k.slice(8)+'</b> '+hols[k]).join(' · ')
+    :'No bank holidays this month.';
+  const yl=document.getElementById('yearHols');
+  if(yl){const MONN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    yl.innerHTML='<table style="max-width:560px"><tr><th>Date</th><th>Holiday</th></tr>'+
+      Object.keys(hols).sort().map(k=>'<tr><td style="white-space:nowrap">'+(+k.slice(8))+' '+MONN[+k.slice(5,7)-1]+' '+y+' ('+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][ymd(k).getDay()]+')</td><td>'+hols[k]+'</td></tr>').join('')+
+      '</table>';}
+  if(!DB.hrReady()){ // holiday data lives in the HR tables — quiet hint, never crash
+    document.getElementById('calHint').textContent='Holiday data isn’t loaded yet — the calendar fills in once the HR module is active.';
+    document.getElementById('cal').innerHTML='';
+    return;
   }
-  const by={}; // personId -> {phone:last,tablet:last,desktop:last,pwa:bool,pwaLast}
-  rows.forEach(r=>{const o=by[r.personId]=by[r.personId]||{};
-    if(!o[r.device]||o[r.device]<r.day)o[r.device]=r.day;
-    if(r.standalone){o.pwa=true;if(!o.pwaLast||o.pwaLast<r.day)o.pwaLast=r.day;}});
-  const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const nice=iso=>{if(!iso)return '';const t=toISO(new Date());if(iso===t)return 'today';
-    const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
-  const people=DB.people.filter(p=>!isTeamAccount(p));
-  const nPhone=people.filter(p=>by[p.id]&&by[p.id].phone).length;
-  const nPwa=people.filter(p=>by[p.id]&&by[p.id].pwa).length;
-  const nAny=people.filter(p=>by[p.id]).length;
-  let h='<div class="panel" style="padding:14px 16px;margin-top:16px;overflow-x:auto">'
-    +'<b>📱 Devices &amp; app adoption</b> <span class="rolepill" style="margin-left:6px">only you can see this</span>'
-    +'<div style="font-size:12.5px;color:var(--muted);margin:4px 0 10px">One row per person, device and day — just phone/tablet/computer and whether it was the installed app. No location, no activity tracking.</div>'
-    +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px">'
-    +'<span><b style="font-size:17px;color:var(--charcoal)">'+nAny+'</b>/'+people.length+' seen</span>'
-    +'<span><b style="font-size:17px;color:var(--charcoal)">'+nPhone+'</b> on a phone</span>'
-    +'<span><b style="font-size:17px;color:var(--orange)">'+nPwa+'</b> installed the app</span></div>'
-    +'<table><tr><th>Person</th><th>📱 Phone</th><th>Tablet</th><th>💻 Computer</th><th>App installed</th></tr>';
-  people.forEach(p=>{const o=by[p.id];
-    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(p.name)+'</td>'
-      +'<td>'+(o&&o.phone?nice(o.phone):'<span style="color:#c9c6bd">—</span>')+'</td>'
-      +'<td>'+(o&&o.tablet?nice(o.tablet):'<span style="color:#c9c6bd">—</span>')+'</td>'
-      +'<td>'+(o&&o.desktop?nice(o.desktop):'<span style="color:#c9c6bd">—</span>')+'</td>'
-      +'<td>'+(o&&o.pwa?'<span style="color:var(--orange);font-weight:700">✓ yes</span> <span style="color:var(--muted);font-size:12px">· last '+nice(o.pwaLast)+'</span>':'<span style="color:#c9c6bd">not yet</span>')+'</td></tr>';
+  const people=DB.people.filter(p=>!isTeamAccount(p)).slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
+  const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
+  document.getElementById('calHint').textContent=
+    'Everyone can see who’s on holiday or in the office. Green = approved holidays, striped = pending, blue = office days.'+
+    ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'');
+  const nDays=new Date(y,m+1,0).getDate();
+  let h='<table><tr><th></th>';
+  const WD=['D','L','M','X','J','V','S'];
+  for(let d=1;d<=nDays;d++){const dt=new Date(y,m,d);h+='<th>'+WD[dt.getDay()]+'<br>'+d+'</th>';}
+  h+='<th style="text-align:left;padding-left:8px">balance</th></tr>';
+  const meNow=DB.currentUser;
+  people.forEach(p=>{
+    const used=holUsed(p.id,y);
+    const seeAdj=DB.isHRAdmin()||(meNow&&meNow.id==p.id); // carry-over/borrow visible only to HR-admin & the person
+    const adj=holAdjust(p.id,y);
+    const rem=seeAdj?holRemaining(p.id,y):(holAllowance(p)-used);
+    h+='<tr><td class="lab">'+p.name+' <span class="m">'+p.role+'</span></td>';
+    for(let d=1;d<=nDays;d++){
+      const dt=new Date(y,m,d),iso=toISO(dt);
+      const we=dt.getDay()===0||dt.getDay()===6,hol=hols[iso];
+      let cls='dcell'+(hol?' hol':we?' we':''),inner='';
+      if(!we&&!hol){
+        const req=DB.holidays.find(x=>x.personId==p.id&&x.status!=='denied'&&x.status!=='cancelled'&&(x.type||'vacation')!=='adjust'&&x.dateFrom<=iso&&x.dateTo>=iso);
+        if(req){const ty=req.type||'vacation',remB=ty==='remote',lv=LEAVE_TYPES.includes(ty);
+          if(!(lv&&!canSeeLeaveOf(p))){ // sick/parental leave hidden from people outside the team/HR
+          const c=req.status!=='approved'?(remB?'rmtp':'pend'):remB?'rmt':lv?'lv':'ok';
+          inner='<span class="blk '+c+'" title="'+(TYPE_LABEL[ty]||'')+' · '+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}}
+      }
+      h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
+    }
+    h+='<td class="lab"><span class="m">'+used+' used · '+rem+' left'+(seeAdj&&adj?' <span style="color:#29ACE3">('+(adj>0?'+':'')+adj+')</span>':'')+'</span></td></tr>';
   });
-  box.innerHTML=h+'</table></div>';
+  document.getElementById('cal').innerHTML=h+'</table>';
 }
-boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();renderDevices();});
-window.addEventListener('dc-remote',render);
+document.getElementById('c_prev').onclick=()=>{calM.setMonth(calM.getMonth()-1);renderCal();};
+document.getElementById('c_next').onclick=()=>{calM.setMonth(calM.getMonth()+1);renderCal();};
+boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();renderCal();});
+window.addEventListener('dc-remote',()=>{render();renderCal();});
 </script>
 </body>
 </html>

@@ -28,7 +28,11 @@
   .chartbox{position:relative;height:340px}
   .chartbox.sm{height:260px}
   .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
-  /* tabs */
+  /* level-1 pills: Reporting / Invoicing */
+  .tabs1{display:inline-flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px;margin:12px 0 0}
+  .tabs1 button,.tabs1 a{background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:14px;padding:7px 17px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-block}
+  .tabs1 .on{background:var(--orange);color:#fff}
+  /* level-2 tabs (Reporting sub-tabs) */
   .tabs{display:flex;gap:4px;margin:10px 0 16px;border-bottom:2px solid var(--line);flex-wrap:wrap}
   .tabs button{border:none;background:none;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
   .tabs button.on{color:var(--charcoal);border-bottom-color:var(--orange)}
@@ -108,8 +112,9 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1 style="display:flex;align-items:center;gap:10px">💶 Money<a id="factBtn" href="facturacion.html" style="display:none;margin-left:auto;font-size:13px;font-weight:600;background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 13px;text-decoration:none;color:var(--charcoal)" title="The invoicing engine — billing only">🧾 Invoicing →</a></h1>
+  <h1>💶 Money</h1>
   <p class="sub">Everything money, in one place — the read-only window. Invoiced figures flow in live from the Invoicing lines (🧾); targets &amp; SPEX are maintained by the accountant. Every change is recorded.</p>
+  <div class="tabs1" id="tabs1"></div>
   <div class="tabs" id="tabs"></div>
   <div id="warnbox"></div>
   <div id="content"></div>
@@ -206,7 +211,9 @@ const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins|
   ctx.restore();}};
 Chart.register(barlabels);
 function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
-function esc(s){return (s==null?'':''+s).replace(/"/g,'&quot;');}
+/* esc() comes from store.js (full &<>"' escaping) — no local override. */
+/* dd/mm/yyyy for DISPLAY only — stored values and option/input values stay ISO */
+function ddmmyyyy(iso){if(!iso)return'';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso)}
 
 /* ---------- tabs ---------- */
 const TABS=[['year','Year status'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events'],['insights','Insights']];
@@ -215,6 +222,9 @@ function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.canManage());}
 function activeTab(){const h=location.hash.replace('#','');return visTabs().some(t=>t[0]===h)?h:'year';}
 function render(){
   const tab=activeTab();
+  /* level-1: Reporting (this whole page) vs Invoicing (facturacion.html, billing roles only) */
+  document.getElementById('tabs1').innerHTML='<button type="button" class="on">📊 Reporting</button>'+
+    (DB.canBill()?'<a href="facturacion.html" title="Invoices — Belén &amp; Jesús only">🧾 Invoicing</a>':'');
   document.getElementById('tabs').innerHTML=visTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
   const warn=document.getElementById('warnbox');warn.innerHTML='';
@@ -381,7 +391,7 @@ function reportHtml(d,hlLines){
   const tdn=td+';text-align:right;white-space:nowrap';
   let h='<div style="font-family:Segoe UI,Arial,sans-serif;max-width:720px">';
   h+='<div style="font-size:17px;font-weight:700;color:#2B2B2B;border-left:4px solid #FF4A00;padding-left:10px;margin-bottom:2px">RENMAD events — weekly financial summary</div>';
-  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 12px;padding-left:14px">Week of '+d+'</div>';
+  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 12px;padding-left:14px">Week of '+ddmmyyyy(d)+'</div>';
   h+='<div style="font-size:24px;font-weight:800;color:#2B2B2B;margin:0 0 2px">'+num(total)+'</div>';
   h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 14px">signed this week across '+wk.length+' event'+(wk.length===1?'':'s')+'</div>';
   if(hlLines.length){h+='<div style="font-size:13px;font-weight:700;color:#2B2B2B;margin:0 0 6px">Highlights</div><ul style="margin:0 0 16px;padding-left:20px">'
@@ -391,7 +401,7 @@ function reportHtml(d,hlLines){
   h+='<tr><th style="'+th+'">Event</th><th style="'+th+'">Event date</th><th style="'+thn+'">This week</th><th style="'+thn+'">Total so far</th><th style="'+thn+'">Target</th><th style="'+thn+'">% of target</th><th style="'+th+'">Status</th></tr>';
   ongoing.forEach(o=>{
     const st=o.res?('<span style="color:'+o.res.color+';font-weight:700">'+o.res.label+'</span>'):'<span style="color:#b4b1a8">pending</span>';
-    h+='<tr><td style="'+td+';font-weight:600;color:#2B2B2B">'+o.name+'</td><td style="'+td+'">'+(o.when||'')+'</td>'
+    h+='<tr><td style="'+td+';font-weight:600;color:#2B2B2B">'+o.name+'</td><td style="'+td+'">'+ddmmyyyy(o.when)+'</td>'
       +'<td style="'+tdn+(o.wEur?';color:#FF4A00;font-weight:700':'')+'">'+(o.wEur?num(o.wEur):'—')+'</td>'
       +'<td style="'+tdn+'">'+num(o.soFar)+'</td><td style="'+tdn+'">'+num(o.target)+'</td>'
       +'<td style="'+tdn+'">'+(o.pct!=null?o.pct+' %':'—')+'</td><td style="'+td+'">'+st+'</td></tr>';});
@@ -402,16 +412,16 @@ function reportHtml(d,hlLines){
 }
 function reportPlain(d,hlLines){
   const {wk,total,ongoing}=reportData(d);
-  let t='RENMAD events — weekly financial summary · week of '+d+'\n\n';
+  let t='RENMAD events — weekly financial summary · week of '+ddmmyyyy(d)+'\n\n';
   t+='Signed this week: '+eur(total)+' ('+wk.length+' events)\n\nHighlights:\n'+hlLines.map(l=>' • '+l).join('\n')+'\n\nOngoing events:\n';
-  ongoing.forEach(o=>{t+=' - '+o.name+' ('+(o.when||'')+'): this week '+(o.wEur?eur(o.wEur):'—')+' · so far '+eur(o.soFar)+' / target '+eur(o.target)+(o.pct!=null?' ('+o.pct+' %)':'')+'\n';});
+  ongoing.forEach(o=>{t+=' - '+o.name+' ('+ddmmyyyy(o.when)+'): this week '+(o.wEur?eur(o.wEur):'—')+' · so far '+eur(o.soFar)+' / target '+eur(o.target)+(o.pct!=null?' ('+o.pct+' %)':'')+'\n';});
   return t;
 }
 function openReport(){
   if(!DB.weeklyReady()||!repWeekDates().length){alert('The weekly data module has no data yet, so there is nothing to report.');return;}
   const dates=repWeekDates();
   if(!repDate||!dates.includes(repDate))repDate=dates[0];
-  document.getElementById('rp_week').innerHTML=dates.map(d=>'<option '+(d===repDate?'selected':'')+'>'+d+'</option>').join('');
+  document.getElementById('rp_week').innerHTML=dates.map(d=>'<option value="'+d+'" '+(d===repDate?'selected':'')+'>'+ddmmyyyy(d)+'</option>').join('');
   document.getElementById('rp_hl').value=autoHighlights(repDate).join('\n');
   refreshReport();
   document.getElementById('repmodal').classList.add('on');
@@ -475,7 +485,7 @@ function renderWeek(){
     weekAnalysis()+
     (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
   const sel=document.getElementById('wkSel');
-  sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+d+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
+  sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+ddmmyyyy(d)+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
   sel.onchange=()=>{weekDate=sel.value;renderWeek();};
   let h='<tr><th>Event</th><th>Week</th>'+SERVICES.map(s=>'<th class="num">'+s[1]+'</th>').join('')+'<th class="num">Week total</th><th>Status with new takings</th></tr>';
   if(!rows.length)h+='<tr><td colspan="9" class="wsempty">A quiet week — no money recorded.</td></tr>';
@@ -699,7 +709,7 @@ function weekAnalysis(){
     const vals=moneyWeeks.map(d=>totalsBy[d]).sort((a,b)=>a-b),med=vals[Math.floor(vals.length/2)];
     lines.push(tot>0?('This week came in at <b>'+Math.round(100*tot/med)+' %</b> of a typical '+y+' money week (median '+eur(med)+').')
       :('A quiet week — the typical '+y+' money week brings '+eur(med)+'.'));
-    lines.push('Best week of '+y+' so far: '+moneyWeeks[0]+' with '+eur(totalsBy[moneyWeeks[0]])+
+    lines.push('Best week of '+y+' so far: '+ddmmyyyy(moneyWeeks[0])+' with '+eur(totalsBy[moneyWeeks[0]])+
       (moneyWeeks[0]===weekDate?' — this one.':'.'));
   }
   const rows=DB.weekly.filter(r=>r.date===weekDate&&weekMoney(r)>0);
@@ -730,7 +740,7 @@ function detailAnalysis(ms,ev){
     else lines.push('Too early for a reliable projection — most money historically arrives after this point.');
   }
   const best=ev.rows.slice().sort((a,b)=>(+b.totalEur||0)-(+a.totalEur||0))[0];
-  if(best&&(+best.totalEur||0)>0)lines.push('Best week so far: '+best.date+' (+'+eur(+best.totalEur)+').');
+  if(best&&(+best.totalEur||0)>0)lines.push('Best week so far: '+ddmmyyyy(best.date)+' (+'+eur(+best.totalEur)+').');
   return anaBox(lines);
 }
 function compareAnalysis(ms,ev){
@@ -1134,7 +1144,7 @@ function wireImport(){
   drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])handle(e.dataTransfer.files[0]);};
 }
 
-boot(()=>{try{const f=document.getElementById('factBtn');if(f&&DB.canBill())f.style.display='';}catch(e){} render();});
+boot(()=>{render();});
 window.addEventListener('hashchange',render);
 window.addEventListener('dc-remote',()=>{if(activeTab()==='year')renderYear();});
 </script>

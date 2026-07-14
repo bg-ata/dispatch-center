@@ -15,14 +15,13 @@
   .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   h1{margin:6px 0 2px;font-size:22px;font-weight:700;color:var(--charcoal)}
   .sub{color:var(--muted);font-size:13px;margin:0 0 10px}
-  .tabs{display:flex;gap:4px;margin:10px 0 16px;border-bottom:2px solid var(--line)}
-  .tabs button{border:none;background:none;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
-  .tabs button.on{color:var(--charcoal);border-bottom-color:var(--orange)}
+  /* SPX pill tabs */
+  .tabs{display:flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px}
+  .tabs button{background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:13px;padding:6px 13px;border-radius:8px;cursor:pointer}
+  .tabs button.on{background:var(--orange);color:#fff}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
   .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
-  .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
-  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  @media(max-width:900px){.two{grid-template-columns:1fr}}
+  .panel .hint,.hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
   select,button,input{font:inherit}
   input,select{padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink)}
   .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer}
@@ -32,71 +31,37 @@
   .btn:hover{filter:brightness(.97)}
   .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
   .alarm{background:#FBEAEA;border:1px solid #E8B4B4;color:#8a1d1d;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
-  .alarm a{color:#8a1d1d;font-weight:700}
   .decide{border-left:3px solid var(--orange)}
+  .banner{background:#fff;border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--ink);margin-bottom:10px}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #efede8;vertical-align:top}
   th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block;white-space:nowrap}
   .empty{color:var(--muted);font-style:italic;padding:10px 2px}
-  .frm label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px}
-  .days{font-size:13px;color:var(--charcoal);font-weight:600;margin:2px 0 6px}
-  .flags{font-size:12px;color:var(--red);margin:0 0 10px;min-height:15px}
-  .flags div{margin-bottom:2px}
-  .flag{color:var(--red);font-size:12px}
-  /* calendar */
-  .cal{overflow-x:auto}
-  .cal table{border-collapse:collapse;font-size:11px;min-width:900px}
-  .cal th{padding:2px 0;text-align:center;font-size:9px}
-  .cal td{padding:0;border-bottom:1px solid #f0eee9;height:24px}
-  .cal td.lab{white-space:nowrap;padding:2px 10px 2px 4px;font-weight:600;color:var(--charcoal);font-size:12px;position:sticky;left:0;background:var(--card);z-index:2}
-  .cal td.lab .m{color:var(--muted);font-weight:400;font-size:10.5px}
-  .dcell{width:26px;min-width:26px;text-align:center}
-  .dcell.we{background:#f2f0ea}
-  .dcell.hol{background:#E9DEF5}
-  .dcell .blk{display:block;height:16px;margin:2px 1px;border-radius:3px}
-  .blk.ok{background:var(--green)}
-  .blk.pend{background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)}
-  .blk.rmt{background:var(--blue)}
-  .blk.rmtp{background:repeating-linear-gradient(45deg,#29ACE3,#29ACE3 4px,#cdeaf7 4px,#cdeaf7 8px)}
-  .blk.lv{background:var(--amber)}
-  .legend{font-size:11.5px;color:var(--muted);margin-top:8px}
-  .legend span.sw{display:inline-block;width:14px;height:11px;border-radius:3px;vertical-align:-1px;margin:0 4px 0 10px}
   .mnav{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
   .mnav b{font-size:14px;color:var(--charcoal);min-width:150px;text-align:center}
-  /* allocation */
-  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
-  .chipbox{background:#faf9f6;border:1px solid var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:var(--muted)}
-  .chipbox b{display:block;font-size:16px;color:var(--charcoal);font-variant-numeric:tabular-nums}
-  .chipbox.good b{color:var(--green)}.chipbox.bad b{color:var(--red)}
-  td input.hrs{width:76px;text-align:right;padding:4px 7px}
-  tr.auto td{color:var(--muted);background:#faf9f6}
   tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
   .code{font-size:11px;color:var(--muted)}
-  /* compact allocation form: projects flow into as many columns as fit → one screen */
-  .autoline{font-size:12px;color:var(--muted);background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:7px 11px;margin-bottom:10px}
-  .autoline b{color:var(--charcoal)}
-  .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:2px 18px}
-  .acell{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #efede8;min-width:0}
-  .acell .alab{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .acell input.hrs{width:70px;text-align:right;padding:4px 7px;flex:0 0 auto}
-  .atot{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:700;border-top:2px solid var(--line);background:#f6f5f1;padding:9px 11px;margin-top:8px;border-radius:0 0 9px 9px}
-  .atot .num{font-variant-numeric:tabular-nums}
   .mx{overflow-x:auto}
   .mx table{font-size:12px;min-width:640px}
   .mx td.c{text-align:center}
   .ok2{color:var(--green);font-weight:700}.no2{color:var(--red);font-weight:700}.na{color:#c9c6bd}
   .padd{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
   .padd label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
-  /* phones: thumb-sized daily verbs (punch, approve/deny), tabs that fit, tables scroll in their box */
+  /* collapsible fold (same pattern as the Me page) */
+  .fold{background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+  .fold>button.fhead{width:100%;text-align:left;background:none;border:none;padding:12px 16px;font:600 14px 'Segoe UI',sans-serif;color:var(--charcoal);cursor:pointer}
+  .fold>.fbody{display:none;padding:0 16px 14px}
+  .fold.open>.fbody{display:block}
+  .fbody h4{margin:16px 0 2px;font-size:13.5px;color:var(--charcoal)}
+  .fbody h4:first-child{margin-top:4px}
+  /* phones: tabs that fit, thumb-sized decision buttons, tables scroll in their box */
   @media(max-width:680px){
     .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .tabs button{padding:11px 13px;white-space:nowrap;font-size:14px}
-    #punchBtn{width:100% !important;padding:20px 12px !important;font-size:20px !important;border-radius:14px}
     .btn.ok,.btn.no{padding:12px 16px;margin:2px 0}
-    .frm input,.frm select{width:100%}
-    td input.hrs{width:62px}
+    .padd input,.padd select{width:100%}
   }
 </style>
 </head>
@@ -104,251 +69,95 @@
 <div class="app">
   <div id="nav"></div>
   <h1>🌴 HR</h1>
-  <p class="sub">Holidays, weekly hour allocation and the time clock. Working days follow the official Madrid labour calendar — Mon–Thu 8 h + Fri 5.5 h, and 7 h days in July &amp; August.</p>
-  <div class="tabs" id="tabs"></div>
+  <p class="sub">Managing the team's time — holiday balances &amp; leave, weekly hour allocation and the legal time clock. Working days follow the official Madrid labour calendar — Mon–Thu 8 h + Fri 5.5 h, and 7 h days in July &amp; August.</p>
+  <div id="banner"></div>
+  <div class="tabs" id="tabs" style="width:max-content;max-width:100%;margin:10px 0 14px"></div>
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
 <script src="store.js?v=52"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
-let calM=new Date();calM.setDate(1);
-let weekISO=toISO(monday(new Date()));
-const HRTABS=[['holidays','Holidays'],['allocation','Allocation'],['timeclock','Time clock']];
-function activeTab(){const h=location.hash.replace('#','');return HRTABS.some(t=>t[0]===h)?h:'holidays';}
+/* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
+   Tolerant: table missing / RLS says no / local mode → LOGINS stays empty and the
+   device icons simply don't show. */
+let LOGINS=[];
+/* tiny visibility chip next to panel titles — who can see this information */
+function visBadge(t){const pub=t==='everyone';return '<span title="'+(pub?'Visible to the whole team':'Private — '+t)+'" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:'+(pub?'#E9F0FB':'#F0EEE7')+';color:'+(pub?'#185FA5':'#7c7c78')+'">'+(pub?'👁 everyone':'🔒 '+t)+'</span>'}
+/* collapsible fold — open/closed state survives re-renders */
+const _open={};
+function foldHtml(id,title){
+  return '<div class="fold'+(_open[id]?' open':'')+'" id="'+id+'"><button class="fhead" type="button">'+title+' <span class="arr">'+(_open[id]?'▾':'▸')+'</span></button><div class="fbody" id="'+id+'Body"></div></div>';
+}
+function wireFolds(){
+  document.querySelectorAll('.fold>.fhead').forEach(b=>b.onclick=()=>{
+    const f=b.parentElement,open=f.classList.toggle('open');
+    _open[f.id]=open;const a=b.querySelector('.arr');if(a)a.textContent=open?'▾':'▸';
+  });
+}
+const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+/* ---- tabs & access -----------------------------------------------------
+   Full HR admins (Belén + the HR flag) get all three tabs.
+   Finance-only users (Jesús) get ONLY Allocation.
+   Everyone else meets a wall — their own stuff lives in 🙋 Me. */
+const HRTABS=[['holidays','Holidays admin'],['allocation','Allocation'],['timeclock','Time clock admin']];
+function fullHR(){return DB.isHRAdmin()||DB.isHR();}
+function myTabs(){return fullHR()?HRTABS:HRTABS.filter(t=>t[0]==='allocation');}
+function activeTab(){const h=location.hash.replace('#','');const ts=myTabs();return ts.some(t=>t[0]===h)?h:ts[0][0];}
 function render(){
-  if(_tcTick){clearInterval(_tcTick);_tcTick=null;} // stop the live clock when leaving the time-clock tab
+  const tabsEl=document.getElementById('tabs'),warn=document.getElementById('warnbox'),banner=document.getElementById('banner');
+  if(!DB.canSeeHR()){
+    tabsEl.style.display='none';banner.innerHTML='';warn.innerHTML='';
+    document.getElementById('content').innerHTML=
+      '<div class="panel" style="text-align:center;padding:46px 20px"><div style="font-size:36px;margin-bottom:6px">🔒</div>'+
+      '<h3 style="margin:0 0 8px">HR — this area is for Belén &amp; HR.</h3>'+
+      '<p class="hint" style="max-width:540px;margin:0 auto;font-size:13px">Everything about YOUR OWN day (clock, hours, holidays, to-dos) now lives in <a href="home.html" style="color:var(--orange);font-weight:700">🙋 Me</a>.</p></div>';
+    return;
+  }
+  banner.innerHTML='<div class="banner">Your own clock, hours &amp; holidays are in <a href="home.html" style="color:var(--orange);font-weight:700">🙋 Me</a> — this page is for managing the team’s time.</div>';
   const tab=activeTab();
-  document.getElementById('tabs').innerHTML=HRTABS.map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
+  tabsEl.style.display='';
+  tabsEl.innerHTML=myTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
-  const warn=document.getElementById('warnbox');
   if(!DB.hrReady()){warn.innerHTML='<div class="warn">The HR module is not active yet — run <b>dispatch_hr.sql</b> (and <b>dispatch_hr2.sql</b>) in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
   warn.innerHTML='';
   ({holidays:renderHolidays,allocation:renderAlloc,timeclock:renderTimeclock})[tab]();
 }
-/* ================= shared: alarms ================= */
 function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
-function isExemptDay(iso){ // periods where team overlaps are normal: August, Christmas, Easter week
-  const d=ymd(iso),m=d.getMonth(),day=d.getDate();
-  if(m===7)return true;
-  if((m===11&&day>=22)||(m===0&&day<=6))return true;
-  const e=easter(d.getFullYear());
-  return d>=addDays(e,-7)&&d<=addDays(e,1);
-}
-function overlapDays(aF,aT,bF,bT){ // shared NON-EXEMPT working days of two ranges
-  const from=aF>bF?aF:bF,to=aT<bT?aT:bT,out=[];
-  if(from>to)return out;
-  for(let d=ymd(from);toISO(d)<=to;d=addDays(d,1)){const iso=toISO(d);
-    if(d.getDay()===0||d.getDay()===6||madHol(iso))continue;
-    if(!isExemptDay(iso))out.push(iso);}
-  return out;
-}
-function reqAlarms(r){ // ⚠ strings for one request (used at request time AND in the approval panel)
-  const p=DB.person(r.personId),alarms=[];if(!p)return alarms;
-  if(r.type==='remote'){
-    const yr=r.dateFrom.slice(0,4);
-    const used=remoteDaysUsed(r.personId,yr)+(r.id?0:(+r.workDays||0));
-    if(used>REMOTE_MAX_DAYS)alarms.push('Office days: '+used+' of '+REMOTE_MAX_DAYS+' in '+yr+' — over the 8-day yearly limit.');
-    return alarms;
-  }
-  DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId!=r.personId
-    &&DB.person(o.personId)&&DB.person(o.personId).role===p.role).forEach(o=>{
-    const ov=overlapDays(r.dateFrom,r.dateTo,o.dateFrom,o.dateTo);
-    if(ov.length)alarms.push('Team overlap: '+DB.personName(o.personId)+' is also off '+ov.length+' of these working day'+(ov.length===1?'':'s')+' (outside Xmas / Easter / August).');
-  });
-  DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId==r.personId&&o.id!=r.replaces).forEach(o=>{
-    let gap=null;
-    if(o.dateTo<r.dateFrom)gap=workingDaysBetween(toISO(addDays(ymd(o.dateTo),1)),toISO(addDays(ymd(r.dateFrom),-1)));
-    else if(r.dateTo<o.dateFrom)gap=workingDaysBetween(toISO(addDays(ymd(r.dateTo),1)),toISO(addDays(ymd(o.dateFrom),-1)));
-    if(gap!=null&&gap>0&&gap<=5)alarms.push('Broken-up holidays: only '+gap+' working day'+(gap===1?'':'s')+' in the office between this and '+fmtRange(o)+' — something is not quite right.');
-  });
-  return alarms;
-}
-function typeChip(r){const ty=r.type||'vacation';if(ty==='vacation')return '';
-  const col=ty==='remote'?'var(--blue)':'var(--amber)';
-  return '<span class="chip" style="background:'+col+'">'+TYPE_LABEL[ty]+'</span> ';}
-function statusChip(h){
-  if(h.status==='approved')return '<span class="chip" style="background:var(--green)">Approved</span>';
-  if(h.status==='denied')return '<span class="chip" style="background:var(--red)">Denied</span>';
-  if(h.status==='cancelled')return '<span class="chip" style="background:#9AA0A8">Cancelled</span>';
-  return '<span class="chip" style="background:var(--amber)">'+holStageLabel(h)+'</span>';
-}
-function changeAdvice(r){ // what a change request means for the final holiday
-  if(!r.replaces)return null;
-  const o=DB.holidays.find(x=>x.id==r.replaces);if(!o)return null;
-  const net=(+r.workDays||0)-(+o.workDays||0);
-  return 'CHANGE of '+fmtRange(o)+' ('+o.workDays+'d) → '+fmtRange(r)+' ('+r.workDays+'d) · net '+(net>0?'+':'')+net+' day'+(Math.abs(net)===1?'':'s')+' on the balance.';
-}
-/* ================= TAB 1: HOLIDAYS ================= */
+/* ================= TAB 1: HOLIDAYS ADMIN ================= */
 function renderHolidays(){
-  const me=DB.currentUser;
   document.getElementById('content').innerHTML=
-    '<div id="decidebox"></div>'+
-    '<div class="two">'+
-    '<div class="panel"><h3>Request time off</h3>'+
-    '<p class="hint">Your request goes to <span id="chainTxt"></span>. Office days: up to '+REMOTE_MAX_DAYS+' days per year. Approved holidays can be changed — use “Request change” next to them.</p>'+
-    '<div id="chgBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12.5px;padding:8px 12px;border-radius:8px;margin-bottom:10px"></div>'+
-    '<div class="frm">'+
-    '<label>Type<select id="r_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
-    '<label>From<input type="date" id="r_from"></label>'+
-    '<label>To (inclusive)<input type="date" id="r_to"></label>'+
-    '<div class="days" id="r_days">&nbsp;</div><div class="flags" id="r_flags"></div>'+
-    '<label>Note (optional)<input id="r_note" placeholder="e.g. family trip"></label></div>'+
-    '<button class="btn primary" id="r_send">Send request</button>'+
-    '<span id="r_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span></div>'+
-    '<div class="panel"><h3>My requests</h3><p class="hint" id="myBal"></p><table id="mine"></table></div>'+
-    '</div>'+
-    (DB.isHRAdmin()?
-      '<div class="panel"><h3>Holiday balances — who to chase</h3><p class="hint">People take their holidays whenever they like — the <b>Pace</b> colour just flags anyone who\'s taken little for how far into the year we are, so you can check in (by mid-year, nothing taken is worth a nudge). '+
-      '<b style="color:#D32230">Behind</b> · <b style="color:#C77800">a bit behind</b> · <b style="color:#3E8C28">on track</b> · <span style="color:#7c7c78">plenty of time</span> early in the year. Carry-over days from last year are the only ones with a hard deadline — <b>use before 28 Feb</b> (flagged under the name). Most-behind first.</p><div id="balBox"></div></div>'+
-      '<div class="panel"><h3>Load past holidays (HR)</h3><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
-      '<div class="padd"><label>Person<select id="b_who"></select></label>'+
-      '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
-      '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
-      '<label>Note<input id="b_note" placeholder="loaded from record" style="width:160px"></label>'+
-      '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
-      '<div class="padd" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"><label>Cancel an approved holiday<select id="x_hol" style="max-width:340px"></select></label>'+
-      '<button class="btn no" id="x_go">Cancel it</button><span id="x_msg" style="font-size:12px;color:var(--green)"></span></div>'+
-      '</div>'+
-      '<div class="panel"><h3>Place someone on leave (HR)</h3><p class="hint">Sick / maternity / paternity leave. During it the person doesn’t have to clock in or allocate hours — the app stops expecting either. This does <b>not</b> use their 23-day holiday allowance.</p>'+
-      '<div class="padd"><label>Person<select id="lv_who"></select></label>'+
-      '<label>Type<select id="lv_type"><option value="sick">Sick leave</option><option value="maternity">Maternity</option><option value="paternity">Paternity</option></select></label>'+
-      '<label>From<input type="date" id="lv_from"></label><label>To<input type="date" id="lv_to"></label>'+
-      '<label>Note<input id="lv_note" placeholder="optional" style="width:150px"></label>'+
-      '<button class="btn primary" id="lv_add">Add leave</button><span id="lv_msg" style="font-size:12px;color:var(--green)"></span></div></div>'+
-      '<div class="panel"><h3>Carry-over / borrowed days (HR)</h3><p class="hint">Add days a person carries over from last year, or lets them borrow from next year (upon approval). Positive = extra days available this year; use a negative number to remove. Carried-over days should be enjoyed before 28 Feb.</p>'+
-      '<div class="padd"><label>Person<select id="aj_who"></select></label>'+
-      '<label>Year<input type="number" id="aj_year" value="'+new Date().getFullYear()+'" style="width:90px"></label>'+
-      '<label>Days (+/−)<input type="number" step="0.5" id="aj_days" style="width:90px" placeholder="e.g. 3"></label>'+
-      '<label>Reason<select id="aj_kind"><option value="carryover">Carry-over from last year</option><option value="borrow">Borrowed from next year</option><option value="other">Other adjustment</option></select></label>'+
-      '<button class="btn primary" id="aj_add">Add</button><span id="aj_msg" style="font-size:12px;color:var(--green)"></span></div></div>'
-      :'')+
-    '<div class="panel"><h3>Team calendar</h3><p class="hint" id="calHint"></p>'+
-    '<div class="mnav"><button class="btn" id="c_prev">‹</button><b id="c_lab"></b><button class="btn" id="c_next">›</button></div>'+
-    '<div class="cal" id="cal"></div>'+
-    '<div class="legend"><span class="sw" style="background:var(--green)"></span>holidays'+
-    '<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending'+
-    '<span class="sw" style="background:var(--blue)"></span>office day'+
-    '<span class="sw" style="background:var(--amber)"></span>sick / parental leave'+
-    '<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday'+
-    '<span class="sw" style="background:#f2f0ea"></span>weekend</div>'+
-    '<p class="hint" id="holList" style="margin-top:8px"></p></div>'+
-    '<div class="panel"><h3>Madrid bank holidays <span id="yhY"></span></h3><p class="hint">The official “calendario laboral” this app deducts automatically — review against the BOCM each January and tell Claude if any date moved.</p><div id="yearHols"></div></div>';
-  renderDecide();renderMine();renderBalances();renderBackfill();renderCal();wireForm();
-  document.getElementById('c_prev').onclick=()=>{calM.setMonth(calM.getMonth()-1);renderCal();};
-  document.getElementById('c_next').onclick=()=>{calM.setMonth(calM.getMonth()+1);renderCal();};
-}
-function renderDecide(){
-  const box=document.getElementById('decidebox');
-  const list=DB.holidays.filter(holActsOnMe);
-  if(!list.length){box.innerHTML='';return;}
-  let h='<div class="panel decide"><h3>⏰ Needs your decision</h3><p class="hint">Requests at your step of the chain. Red flags are automatic checks — they don’t block, they warn.</p><table>'+
-    '<tr><th>Who</th><th>Type</th><th>Dates</th><th>Days</th><th>Note</th><th>⚠ Flags</th><th></th></tr>';
-  list.forEach(r=>{
-    const p=DB.person(r.personId);
-    const flags=reqAlarms(r);
-    const adv=changeAdvice(r);
-    h+='<tr><td><b>'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span></td>'+
-      '<td>'+(r.type==='remote'?'Office day':'Holidays')+'</td>'+
-      '<td>'+fmtRange(r)+'</td><td>'+(r.workDays||'?')+'</td><td>'+esc(r.note||'')+'</td>'+
-      '<td>'+(adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
-      (flags.length?flags.map(f=>'<div class="flag">⚠ '+f+'</div>').join(''):(adv?'':'<span style="color:var(--muted)">none</span>'))+'</td>'+
-      '<td style="white-space:nowrap"><button class="btn ok" data-ap="'+r.id+'">Approve</button> <button class="btn no" data-dn="'+r.id+'">Deny</button></td></tr>';
-  });
-  box.innerHTML=h+'</table></div>';
-  box.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,true));
-  box.querySelectorAll('[data-dn]').forEach(b=>b.onclick=()=>decide(b.dataset.dn,false));
-}
-function decide(id,ok){
-  const r=DB.holidays.find(x=>x.id==id);if(!r)return;
-  const me=DB.currentUser;
-  let note='';
-  if(!ok){note=prompt('Reason for denying (shown to '+DB.personName(r.personId)+'):')||'';}
-  r.log=(r.log||[]).concat([{by:me.name,at:new Date().toISOString(),action:(ok?'approved ('+r.status+' step)':'denied'),note}]);
-  r.status=ok?holNextStatus(r):'denied';
-  /* a fully approved CHANGE releases the holiday it replaces (kept visible as cancelled) */
-  if(r.status==='approved'&&r.replaces){
-    const o=DB.holidays.find(x=>x.id==r.replaces);
-    if(o&&o.status!=='cancelled'){o.status='cancelled';
-      o.log=(o.log||[]).concat([{by:me.name,at:new Date().toISOString(),action:'cancelled — replaced by the approved change to '+fmtRange(r)}]);}
-  }
-  DB.save();render();
-}
-function renderMine(){
-  const me=DB.currentUser;const tbl=document.getElementById('mine');
-  if(!me){tbl.innerHTML='<tr><td class="empty">Log in to request holidays.</td></tr>';return;}
-  document.getElementById('chainTxt').textContent=holChain(me).map(s=>s.key==='hr'?'HR':s.who.name).join(' → ');
-  const yr=new Date().getFullYear();
-  const mine=DB.holidays.filter(h=>h.personId==me.id&&(h.type||'vacation')!=='adjust').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-  const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
-  document.getElementById('myBal').innerHTML='Holidays '+yr+': <b>'+used+' used · '+rem+' left</b> of '+holAllowance(me)+(adj?' ('+(adj>0?'+':'')+adj+' carry/borrow)':'')+
-    ' — <span style="color:#8a4a12">'+holDeadlineText(yr)+'</span>.';
-  let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
-  if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
-  mine.forEach(r=>{
-    const deny=(r.log||[]).filter(l=>l.action==='denied').map(l=>l.note).filter(Boolean).join('; ');
-    const pending=['manager','belen','hr'].includes(r.status);
-    const hrLeave=LEAVE_TYPES.includes(r.type); // sick/mat/pat added by HR — not self-cancellable
-    const chg=r.replaces?' <span style="color:var(--muted);font-size:11px" title="'+esc2(changeAdvice(r)||'')+'">🔁 change</span>':'';
-    h+='<tr><td>'+typeChip(r)+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
-      '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+esc(deny)+'</span>':'')+'</td>'+
-      '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
-      (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
-  });
-  tbl.innerHTML=h;
-  tbl.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{
-    if(!confirm('Withdraw this request?'))return;
-    DB.data.holidays=DB.holidays.filter(x=>x.id!=b.dataset.cx);DB.save();render();});
-  tbl.querySelectorAll('[data-chg]').forEach(b=>b.onclick=()=>startChange(+b.dataset.chg));
-}
-function esc2(s){return (s||'').replace(/"/g,'&quot;');}
-let changeOf=null;
-function startChange(id){
-  const o=DB.holidays.find(x=>x.id==id);if(!o)return;
-  changeOf=id;
-  const ban=document.getElementById('chgBanner');
-  ban.style.display='block';
-  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'office days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
-  document.getElementById('chgOff').onclick=e=>{e.preventDefault();changeOf=null;ban.style.display='none';};
-  const ty=document.getElementById('r_type');ty.value=o.type||'vacation';ty.disabled=true;
-  ban.scrollIntoView({block:'center',behavior:'smooth'});
-}
-function wireForm(){
-  const f=document.getElementById('r_from'),t=document.getElementById('r_to'),ty=document.getElementById('r_type');
-  const upd=()=>{
-    const days=document.getElementById('r_days'),fl=document.getElementById('r_flags');
-    if(!f.value||!t.value||t.value<f.value){days.innerHTML='&nbsp;';fl.innerHTML='';return;}
-    const wd=workingDaysBetween(f.value,t.value);
-    const hols=[];for(let d=ymd(f.value);toISO(d)<=t.value;d=addDays(d,1)){const n=madHol(toISO(d));if(n&&d.getDay()!==0&&d.getDay()!==6)hols.push(toISO(d).slice(5)+' '+n);}
-    days.textContent=wd+' working day'+(wd===1?'':'s')+(hols.length?' — bank holidays not counted: '+hols.join(', '):'');
-    const fake={id:null,personId:DB.currentUser.id,dateFrom:f.value,dateTo:t.value,type:ty.value,workDays:wd,replaces:changeOf};
-    fl.innerHTML=reqAlarms(fake).map(a=>'<div>⚠ '+a+'</div>').join('');
-  };
-  f.onchange=upd;t.onchange=upd;ty.onchange=upd;
-  document.getElementById('r_send').onclick=()=>{
-    const me=DB.currentUser;if(!me){alert('Log in first.');return;}
-    if(!f.value||!t.value||t.value<f.value){alert('Pick a valid date range.');return;}
-    const wd=workingDaysBetween(f.value,t.value);
-    if(wd<=0){alert('That range has no working days (weekend / bank holidays).');return;}
-    if(ty.value==='remote'&&remoteDaysUsed(me.id,f.value.slice(0,4))+wd>REMOTE_MAX_DAYS){
-      alert('That would exceed the office-days limit of '+REMOTE_MAX_DAYS+' days this year.');return;}
-    const chain=holChain(me);
-    const orig=changeOf?DB.holidays.find(x=>x.id==changeOf):null;
-    DB.holidays.push({id:DB.newId(),personId:me.id,dateFrom:f.value,dateTo:t.value,workDays:wd,type:ty.value,
-      replaces:orig?orig.id:null,
-      note:document.getElementById('r_note').value.trim(),status:chain[0].key,
-      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'office days':'holidays'))}]});
-    DB.save();
-    changeOf=null;document.getElementById('chgBanner').style.display='none';ty.disabled=false;
-    f.value='';t.value='';document.getElementById('r_note').value='';upd();
-    const m=document.getElementById('r_msg');m.textContent='Sent — '+(chain[0].key==='hr'?'HR':chain[0].who.name)+' has been flagged.';
-    setTimeout(()=>m.textContent='',4000);
-    render();
-  };
+    '<p class="hint" style="margin:0 0 10px">📆 The team calendar lives in <a href="people.html" style="color:var(--orange);font-weight:700">👥 Team</a> now.</p>'+
+    foldHtml('adminFold','⚙ Admin actions')+
+    '<div class="panel"><h3>Holiday balances — who to chase'+visBadge('Belén + HR')+'</h3><p class="hint">People take their holidays whenever they like — the <b>Pace</b> colour just flags anyone who\'s taken little for how far into the year we are, so you can check in (by mid-year, nothing taken is worth a nudge). '+
+    '<b style="color:#D32230">Behind</b> · <b style="color:#C77800">a bit behind</b> · <b style="color:#3E8C28">on track</b> · <span style="color:#7c7c78">plenty of time</span> early in the year. Carry-over days from last year are the only ones with a hard deadline — <b>use before 28 Feb</b> (flagged under the name). Most-behind first.</p><div id="balBox"></div></div>';
+  document.getElementById('adminFoldBody').innerHTML=
+    '<h4>Load past holidays</h4><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
+    '<div class="padd"><label>Person<select id="b_who"></select></label>'+
+    '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
+    '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
+    '<label>Note<input id="b_note" placeholder="loaded from record" style="width:160px"></label>'+
+    '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+    '<div class="padd" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"><label>Cancel an approved holiday<select id="x_hol" style="max-width:340px"></select></label>'+
+    '<button class="btn no" id="x_go">Cancel it</button><span id="x_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+    '<h4>Place someone on leave</h4><p class="hint">Sick / maternity / paternity leave. During it the person doesn’t have to clock in or allocate hours — the app stops expecting either. This does <b>not</b> use their 23-day holiday allowance.</p>'+
+    '<div class="padd"><label>Person<select id="lv_who"></select></label>'+
+    '<label>Type<select id="lv_type"><option value="sick">Sick leave</option><option value="maternity">Maternity</option><option value="paternity">Paternity</option></select></label>'+
+    '<label>From<input type="date" id="lv_from"></label><label>To<input type="date" id="lv_to"></label>'+
+    '<label>Note<input id="lv_note" placeholder="optional" style="width:150px"></label>'+
+    '<button class="btn primary" id="lv_add">Add leave</button><span id="lv_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+    '<h4>Carry-over / borrowed days</h4><p class="hint">Add days a person carries over from last year, or lets them borrow from next year (upon approval). Positive = extra days available this year; use a negative number to remove. Carried-over days should be enjoyed before 28 Feb.</p>'+
+    '<div class="padd"><label>Person<select id="aj_who"></select></label>'+
+    '<label>Year<input type="number" id="aj_year" value="'+new Date().getFullYear()+'" style="width:90px"></label>'+
+    '<label>Days (+/−)<input type="number" step="0.5" id="aj_days" style="width:90px" placeholder="e.g. 3"></label>'+
+    '<label>Reason<select id="aj_kind"><option value="carryover">Carry-over from last year</option><option value="borrow">Borrowed from next year</option><option value="other">Other adjustment</option></select></label>'+
+    '<button class="btn primary" id="aj_add">Add</button><span id="aj_msg" style="font-size:12px;color:var(--green)"></span></div>';
+  renderBackfill();renderBalances();wireFolds();
 }
 function renderBackfill(){
   const who=document.getElementById('b_who');if(!who)return;
-  who.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+  const roster=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name));
+  who.innerHTML=roster.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
   document.getElementById('b_add').onclick=()=>{
     const f=document.getElementById('b_from').value,t=document.getElementById('b_to').value;
     if(!f||!t||t<f){alert('Pick a valid date range.');return;}
@@ -361,13 +170,13 @@ function renderBackfill(){
       log:[{by:me.name,at:new Date().toISOString(),action:'loaded from record (pre-approved)'}]});
     DB.save();
     const m=document.getElementById('b_msg');m.textContent='Added ✓';setTimeout(()=>m.textContent='',3000);
-    render();
+    renderBackfill();renderBalances();
   };
   /* HR admin: cancel any approved holiday on request (kept visible as cancelled, reason logged) */
   const xh=document.getElementById('x_hol');
   if(xh){
     const opts=DB.holidays.filter(h=>h.status==='approved').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+DB.personName(h.personId)+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', office':'')+')</option>').join(''):'<option value="">— none approved —</option>';
+    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+esc(DB.personName(h.personId))+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', office':'')+')</option>').join(''):'<option value="">— none approved —</option>';
     document.getElementById('x_go').onclick=()=>{
       const h=DB.holidays.find(x=>x.id==xh.value);if(!h)return;
       const reason=prompt('Reason for cancelling '+DB.personName(h.personId)+'’s '+fmtRange(h)+' (they will see it):');
@@ -376,13 +185,13 @@ function renderBackfill(){
       h.log=(h.log||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),action:'cancelled by HR on request',note:reason}]);
       DB.save();
       const m=document.getElementById('x_msg');m.textContent='Cancelled ✓';setTimeout(()=>m.textContent='',3000);
-      render();
+      renderBackfill();renderBalances();
     };
   }
   /* HR: place someone on sick / maternity / paternity leave */
   const lw=document.getElementById('lv_who');
   if(lw){
-    lw.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    lw.innerHTML=roster.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
     document.getElementById('lv_add').onclick=()=>{
       const f=document.getElementById('lv_from').value,t=document.getElementById('lv_to').value;
       if(!f||!t||t<f){alert('Pick a valid date range.');return;}
@@ -393,13 +202,13 @@ function renderBackfill(){
         log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:'placed on '+TYPE_LABEL[ty].toLowerCase()+' by HR'}]});
       DB.save();
       const m=document.getElementById('lv_msg');m.textContent='Leave added ✓';setTimeout(()=>m.textContent='',3000);
-      render();
+      renderBackfill();renderBalances();
     };
   }
   /* HR: carry-over / borrowed days adjustment (a signed balance change for a year) */
   const aw=document.getElementById('aj_who');
   if(aw){
-    aw.innerHTML=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+    aw.innerHTML=roster.map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
     document.getElementById('aj_add').onclick=()=>{
       const yr=+document.getElementById('aj_year').value,days=+document.getElementById('aj_days').value,kind=document.getElementById('aj_kind').value;
       if(!yr||!days){alert('Enter a year and a number of days (can be negative).');return;}
@@ -409,7 +218,7 @@ function renderBackfill(){
         log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:(days>0?'+':'')+days+' days '+kind+' by HR'}]});
       DB.save();
       const m=document.getElementById('aj_msg');m.textContent='Adjustment added ✓';setTimeout(()=>m.textContent='',3000);
-      render();
+      renderBackfill();renderBalances();
     };
   }
 }
@@ -439,12 +248,12 @@ function renderBalances(){
   };
   const over=rows.filter(r=>r.over);
   let h=over.length?('<div class="alarm" style="margin-bottom:10px">⚠ <b>'+over.length+' over their holiday allowance:</b> '+
-    over.map(r=>r.p.name+' (by '+Math.abs(r.rem)+' day'+(Math.abs(r.rem)===1?'':'s')+')').join(' · ')+
-    ' — if any of these came from <b>last year\'s</b> allocation, add them under “Carry-over / borrowed days” below so the balance is right.</div>'):'';
+    over.map(r=>esc(r.p.name)+' (by '+Math.abs(r.rem)+' day'+(Math.abs(r.rem)===1?'':'s')+')').join(' · ')+
+    ' — if any of these came from <b>last year\'s</b> allocation, add them under “Carry-over / borrowed days” in the ⚙ Admin actions fold so the balance is right.</div>'):'';
   h+='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Taken</th><th class="num">Pending</th><th class="num">Left</th><th style="width:210px">Pace</th></tr>';
   rows.forEach(r=>{const b=band(r),base=r.allow||1,pct=Math.max(0,Math.min(100,100*r.used/base));
     const carry=r.adj>0?('<div style="font-size:10px;color:'+(now<=feb28?'#C77800':'#D32230')+';margin-top:1px">'+r.adj+' carry-over day'+(r.adj===1?'':'s')+' · '+(now<=feb28?'use before 28 Feb':'past 28 Feb')+'</div>'):'';
-    h+='<tr><td>'+r.p.name+' <span class="m">'+r.p.role+'</span>'+carry+'</td>'+
+    h+='<tr><td>'+esc(r.p.name)+' <span class="code">'+esc(r.p.role)+'</span>'+carry+'</td>'+
       '<td class="num">'+r.allow+(r.adj?' <span style="color:#29ACE3">('+(r.adj>0?'+':'')+r.adj+')</span>':'')+'</td>'+
       '<td class="num">'+r.used+'</td>'+
       '<td class="num">'+(r.pending?'<span style="color:#C77800">+'+r.pending+'</span>':'—')+'</td>'+
@@ -454,60 +263,7 @@ function renderBalances(){
   });
   box.innerHTML=h+'</table>';
 }
-function renderCal(){
-  const me=DB.currentUser;
-  // The holiday calendar is visible to EVERYONE — the whole company, so anyone can
-  // see who's away before planning. Sick / parental leave stays private (managers,
-  // HR and the person only); everyone else just sees holidays and remote working.
-  const people=DB.people.filter(p=>!isTeamAccount(p)).slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
-  const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
-  document.getElementById('calHint').textContent=
-    'Everyone can see who’s on holiday or in the office. Green = approved holidays, striped = pending, blue = office days.'+
-    ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'');
-  const y=calM.getFullYear(),m=calM.getMonth();
-  document.getElementById('c_lab').textContent=['January','February','March','April','May','June','July','August','September','October','November','December'][m]+' '+y;
-  const yh=document.getElementById('yhY');if(yh)yh.textContent=y;
-  const nDays=new Date(y,m+1,0).getDate();
-  const hols=madridHolidays(y);
-  let h='<table><tr><th></th>';
-  const WD=['D','L','M','X','J','V','S'];
-  for(let d=1;d<=nDays;d++){const dt=new Date(y,m,d);h+='<th>'+WD[dt.getDay()]+'<br>'+d+'</th>';}
-  h+='<th style="text-align:left;padding-left:8px">balance</th></tr>';
-  const meNow=DB.currentUser;
-  people.forEach(p=>{
-    const used=holUsed(p.id,y);
-    const seeAdj=DB.isHRAdmin()||(meNow&&meNow.id==p.id); // carry-over/borrow visible only to HR-admin & the person
-    const adj=holAdjust(p.id,y);
-    const rem=seeAdj?holRemaining(p.id,y):(holAllowance(p)-used);
-    h+='<tr><td class="lab">'+p.name+' <span class="m">'+p.role+'</span></td>';
-    for(let d=1;d<=nDays;d++){
-      const dt=new Date(y,m,d),iso=toISO(dt);
-      const we=dt.getDay()===0||dt.getDay()===6,hol=hols[iso];
-      let cls='dcell'+(hol?' hol':we?' we':''),inner='';
-      if(!we&&!hol){
-        const req=DB.holidays.find(x=>x.personId==p.id&&x.status!=='denied'&&x.status!=='cancelled'&&(x.type||'vacation')!=='adjust'&&x.dateFrom<=iso&&x.dateTo>=iso);
-        if(req){const ty=req.type||'vacation',remB=ty==='remote',lv=LEAVE_TYPES.includes(ty);
-          if(!(lv&&!canSeeLeaveOf(p))){ // sick/parental leave hidden from people outside the team/HR
-          const c=req.status!=='approved'?(remB?'rmtp':'pend'):remB?'rmt':lv?'lv':'ok';
-          inner='<span class="blk '+c+'" title="'+(TYPE_LABEL[ty]||'')+' · '+fmtRange(req)+' · '+(req.status==='approved'?'approved':holStageLabel(req))+'"></span>';}}
-      }
-      h+='<td class="'+cls+'" '+(hol?'title="'+hols[iso]+'"':'')+'>'+inner+'</td>';
-    }
-    h+='<td class="lab"><span class="m">'+used+' used · '+rem+' left'+(seeAdj&&adj?' <span style="color:#29ACE3">('+(adj>0?'+':'')+adj+')</span>':'')+'</span></td></tr>';
-  });
-  document.getElementById('cal').innerHTML=h+'</table>';
-  const monthHols=Object.keys(hols).filter(k=>k.slice(5,7)===String(m+1).padStart(2,'0')).sort();
-  document.getElementById('holList').innerHTML=monthHols.length
-    ?'Bank holidays this month (Madrid): '+monthHols.map(k=>'<b>'+k.slice(8)+'</b> '+hols[k]).join(' · ')
-    :'No bank holidays this month.';
-  /* the full official year list, always visible so it's noted somewhere */
-  const yl=document.getElementById('yearHols');
-  if(yl){const MONN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    yl.innerHTML='<table style="max-width:560px"><tr><th>Date</th><th>Holiday</th></tr>'+
-      Object.keys(hols).sort().map(k=>'<tr><td style="white-space:nowrap">'+(+k.slice(8))+' '+MONN[+k.slice(5,7)-1]+' '+y+' ('+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][ymd(k).getDay()]+')</td><td>'+hols[k]+'</td></tr>').join('')+
-      '</table>';}
-}
-/* ================= TAB 2: ALLOCATION ================= */
+/* ================= TAB 2: ALLOCATION (Jesús's whole view) ================= */
 const fmtH=v=>(Math.round(v*100)/100).toLocaleString('es-ES');
 /* project numbers follow an order: category prefix ("02.") first, then the running
    accounting code, then insertion order. New event codes continue the sequence. */
@@ -515,92 +271,12 @@ function projPrefix(p){const m=(p.label||'').match(/^\s*(\d+)/);return m?+m[1]:9
 function projCodeNum(p){const m=(p.code||'').match(/\d+/);return m?+m[0]:0;}
 function projCmp(a,b){return projPrefix(a)-projPrefix(b)||projCodeNum(a)-projCodeNum(b)||(a.sort||0)-(b.sort||0);}
 function nextProjectCode(){const mx=Math.max(70314,...DB.projects.map(projCodeNum));return String(mx+1);}
-function activeProjects(){return DB.projects.filter(p=>p.active!==false&&!p.kind).sort(projCmp);}
 function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
 function renderAlloc(){
   document.getElementById('content').innerHTML=
-    '<div id="alarms"></div>'+
-    '<div class="panel"><h3>My week</h3>'+
-    '<div class="mnav"><button class="btn" id="w_prev">‹</button><b id="w_lab"></b><button class="btn" id="w_next">›</button>'+
-    '<button class="btn" id="w_now" style="font-size:12px">This week</button>'+
-    '<span id="w_msg" style="font-size:12px;color:var(--green)"></span></div>'+
-    '<div class="chips" id="chips"></div><div id="ts"></div>'+
-    '<div style="margin-top:12px"><button class="btn primary" id="saveBtn">Save my hours</button></div></div>'+
+    '<p class="hint" style="margin:0 0 10px">Everyone fills their own week in <a href="home.html" style="color:var(--orange);font-weight:700">🙋 Me</a> — this tab is the oversight side.</p>'+
     '<div id="mgr"></div>';
-  renderAlarms();renderWeek();renderMgr();
-  document.getElementById('saveBtn').onclick=saveWeek;
-  document.getElementById('w_prev').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),-7));renderWeek();};
-  document.getElementById('w_next').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),7));renderWeek();};
-  document.getElementById('w_now').onclick=()=>{weekISO=toISO(monday(new Date()));renderWeek();};
-}
-function renderAlarms(){
-  const me=DB.currentUser,box=document.getElementById('alarms');
-  if(!me){box.innerHTML='';return;}
-  const miss=missingWeeks(me.id);
-  box.innerHTML=miss.length
-    ?'<div class="alarm">⏰ <b>'+miss.length+' week'+(miss.length===1?'':'s')+' without your hours:</b> '+
-      miss.map(w=>'<a href="#" data-goto="'+w+'">'+w+'</a>').join(' · ')+' — filling them in is mandatory.</div>'
-    :'';
-  box.querySelectorAll('[data-goto]').forEach(a=>a.onclick=e=>{e.preventDefault();weekISO=a.dataset.goto;renderWeek();});
-}
-function renderWeek(){
-  const me=DB.currentUser;
-  const mon=ymd(weekISO),fri=addDays(mon,4);
-  document.getElementById('w_lab').textContent='Week of '+weekISO+' ('+fmtD(mon)+' – '+fmtD(fri)+')';
-  if(!me){document.getElementById('ts').innerHTML='<tr><td class="empty">Log in to fill your hours.</td></tr>';return;}
-  const w=weekWorkInfo(weekISO,me.id);
-  const t=tsFor(me.id,weekISO);
-  const manual=t?Object.assign({},t.hours):{};
-  const sum=Object.values(manual).reduce((a,v)=>a+(+v||0),0);
-  const remaining=Math.round((w.toAllocate-sum)*100)/100;
-  const over=remaining<-0.01, exact=Math.abs(remaining)<0.01;
-  document.getElementById('chips').innerHTML=
-    '<span class="chipbox">Required<b>'+fmtH(w.required)+' h</b></span>'+
-    (w.fest>0?'<span class="chipbox" title="'+w.festNames.join(', ')+'">00. Festivos (auto)<b>'+fmtH(w.fest)+' h</b></span>':'')+
-    (w.vac>0?'<span class="chipbox">04. Vacaciones (auto)<b>'+fmtH(w.vac)+' h</b></span>':'')+
-    (w.leave>0?'<span class="chipbox">On leave (auto)<b>'+fmtH(w.leave)+' h</b></span>':'')+
-    '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
-    '<span class="chipbox '+(exact?'good':'bad')+'" id="remChip">'+(over?'⚠ Over by':'Remaining')+'<b>'+(exact?'✓ 0':fmtH(Math.abs(remaining))+' h')+'</b></span>';
-  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
-  const autos=[];
-  if(w.fest>0&&fp)autos.push('<b>'+fp.label+'</b> '+fmtH(w.fest)+' h <span class="code">('+w.festNames.join(', ')+')</span>');
-  if(w.vac>0&&vp)autos.push('<b>'+vp.label+'</b> '+fmtH(w.vac)+' h <span class="code">(approved holidays)</span>');
-  let h=autos.length?'<div class="autoline">Auto-filled for you: '+autos.join(' &nbsp;·&nbsp; ')+'</div>':'';
-  h+='<div class="agrid">'+activeProjects().map(p=>
-      '<label class="acell" title="'+p.label+(p.code?' ('+p.code+')':'')+'"><span class="alab">'+p.label+(p.code?' <span class="code">('+p.code+')</span>':'')+'</span>'+
-      '<input class="hrs" type="number" min="0" step="0.25" data-pid="'+p.id+'" value="'+(manual[p.id]!=null?manual[p.id]:'')+'" placeholder="0"></label>').join('')+'</div>';
-  h+='<div class="atot"><span>Total (with auto-filled lines)</span><span class="num" id="tsTotal">'+fmtH(sum+w.fest+w.vac)+' / '+fmtH(w.required)+' h</span></div>';
-  document.getElementById('ts').innerHTML=h;
-  document.querySelectorAll('#ts input').forEach(inp=>inp.oninput=()=>{
-    let s=0;document.querySelectorAll('#ts input').forEach(i=>s+=(+i.value||0));
-    document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required)+' h';
-    const rem=Math.round((w.toAllocate-s)*100)/100,ov=rem<-0.01,ex=Math.abs(rem)<0.01;
-    const chip=document.getElementById('remChip');
-    chip.className='chipbox '+(ex?'good':'bad');
-    chip.innerHTML=(ov?'⚠ Over by':'Remaining')+'<b>'+(ex?'✓ 0':fmtH(Math.abs(rem))+' h')+'</b>';
-    // flag the over amount on the total row too
-    const tot=document.getElementById('tsTotal');tot.style.color=ov?'var(--red)':'';
-  });
-}
-function saveWeek(){
-  const me=DB.currentUser;if(!me){alert('Log in first.');return;}
-  const hours={};
-  document.querySelectorAll('#ts input').forEach(i=>{const v=+i.value;if(v>0)hours[i.dataset.pid]=v;});
-  const w=weekWorkInfo(weekISO,me.id);
-  const sum=Object.values(hours).reduce((a,v)=>a+(+v||0),0);
-  if(sum-w.toAllocate>0.01){ // the week can't hold more than it has — block it
-    alert('You have allocated '+fmtH(sum)+' h but this week only has '+fmtH(w.toAllocate)+' h to allocate'+
-      ((w.fest||w.vac)?' (bank holidays / holidays already take the rest)':'')+'.\n\nPlease take '+fmtH(sum-w.toAllocate)+' h off before saving.');
-    return;
-  }
-  let t=tsFor(me.id,weekISO);
-  if(t)t.hours=hours;else DB.timesheets.push({id:DB.newId(),personId:me.id,week:weekISO,hours});
-  DB.save();
-  const m=document.getElementById('w_msg');
-  m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
-  m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
-  setTimeout(()=>m.textContent='',5000);
-  renderAlarms();renderWeek();renderMgr();
+  renderMgr();
 }
 function lastWeeks(n){
   const out=[],cur=monday(new Date());
@@ -608,20 +284,20 @@ function lastWeeks(n){
   return out;
 }
 function renderMgr(){
-  const box=document.getElementById('mgr');
+  const box=document.getElementById('mgr');if(!box)return;
   /* allocations oversight is UNBUNDLED from HR powers: Belén + HR (rrhh) + the
      finance flag (Jesús, accounting) can read/download; only HR can approve/edit */
   const seeTotals=DB.isHRAdmin()||DB.canFinance();
   // the status of people (who's tracked their hours) is admin-only, per Belén
-  if(!(DB.isAdmin()||DB.isHRAdmin()||seeTotals)){box.innerHTML='';return;}
+  if(!(DB.isAdmin()||DB.isHRAdmin()||seeTotals)){box.innerHTML='<div class="empty">Nothing here for your permissions.</div>';return;}
   let h='';
   if(DB.isAdmin()||DB.isHRAdmin()){
     const weeks=lastWeeks(8),curW=toISO(monday(new Date()));
     const team=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name));
-    h+='<div class="panel"><h3>Team completeness</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Whole company · admin only.</p><div class="mx"><table>'+
+    h+='<div class="panel"><h3>Team completeness'+visBadge('Belén + HR + Jesús')+'</h3><p class="hint">✓ = week fully allocated · ✗ = missing or incomplete (current week not counted until it ends). Whole company · admin only.</p><div class="mx"><table>'+
       '<tr><th>Person</th>'+weeks.map(w=>'<th class="num">'+w.slice(5)+'</th>').join('')+'</tr>';
     team.forEach(p=>{
-      h+='<tr><td>'+p.name+'</td>'+weeks.map(w=>{
+      h+='<tr><td>'+esc(p.name)+'</td>'+weeks.map(w=>{
         if(w>=curW)return '<td class="c na">–</td>';
         return '<td class="c '+(tsComplete(p.id,w)?'ok2">✓':'no2">✗')+'</td>';
       }).join('')+'</tr>';
@@ -636,8 +312,8 @@ function renderMgr(){
     DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){const w=weekWorkInfo(toISO(m),p.id);festT+=w.fest;vacT+=w.vac;}});
     const fp=autoProject('festivos'),vp=autoProject('vacaciones');
     const allT=grand+festT+vacT;
-    const row=(label,code,v)=>'<tr><td>'+label+'</td><td class="code">'+(code||'')+'</td><td class="num">'+fmtH(v)+'</td><td class="num">'+(allT?Math.round(100*v/allT)+' %':'—')+'</td></tr>';
-    h+='<div class="panel"><h3>Hours by project (since '+HR_START+')</h3><p class="hint">The allocation engine output — accounting codes included. Only Belén, HR and accounting (finance permission) see this block (project profitability will be built on top of it).</p><table>'+
+    const row=(label,code,v)=>'<tr><td>'+esc(label)+'</td><td class="code">'+esc(code||'')+'</td><td class="num">'+fmtH(v)+'</td><td class="num">'+(allT?Math.round(100*v/allT)+' %':'—')+'</td></tr>';
+    h+='<div class="panel"><h3>Hours by project (since '+HR_START+')'+visBadge('Belén + HR + Jesús')+'</h3><p class="hint">The allocation engine output — accounting codes included. Only Belén, HR and accounting (finance permission) see this block (project profitability will be built on top of it).</p><table>'+
       '<tr><th>Project</th><th>Code</th><th class="num">Hours</th><th class="num">Share</th></tr>';
     if(fp&&festT>0)h+=row(fp.label+' (auto)','',festT);
     if(vp&&vacT>0)h+=row(vp.label+' (auto)','',vacT);
@@ -651,10 +327,10 @@ function renderMgr(){
   // Project numbers: created / retired ONLY by Belén, Carlos and Jesús (accounting).
   // They follow an order — new event codes continue the running accounting sequence.
   if(DB.canManageProjects()){
-    h+='<div class="panel"><h3>Project numbers</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays). '+
+    h+='<div class="panel"><h3>Project numbers'+visBadge('Belén + HR + Jesús')+'</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays). '+
       'Only Belén, Carlos and Jesús can create these — and the code follows the running order.</p><table>'+
       '<tr><th>#</th><th>Project</th><th>Code</th><th></th></tr>'+
-      DB.projects.filter(p=>!p.kind).sort(projCmp).map((p,i)=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td class="code">'+(i+1)+'</td><td>'+p.label+'</td><td class="code">'+(p.code||'—')+'</td>'+
+      DB.projects.filter(p=>!p.kind).sort(projCmp).map((p,i)=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td class="code">'+(i+1)+'</td><td>'+esc(p.label)+'</td><td class="code">'+esc(p.code||'—')+'</td>'+
         '<td><button class="btn" style="font-size:11px;padding:3px 9px" data-tgl="'+p.id+'">'+(p.active===false?'Reactivate':'Retire')+'</button></td></tr>').join('')+
       '</table><div class="padd"><label>New project label<input id="np_label" placeholder="02. Hidrógeno 27"></label>'+
       '<label>Cost code<input id="np_code" value="'+nextProjectCode()+'" style="width:100px"></label>'+
@@ -667,7 +343,7 @@ function renderMgr(){
   box.querySelectorAll('[data-tgl]').forEach(b=>b.onclick=()=>{
     if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can retire project numbers.');return;}
     const p=DB.projects.find(x=>x.id==b.dataset.tgl);if(!p)return;
-    p.active=(p.active===false);DB.save();renderMgr();renderWeek();});
+    p.active=(p.active===false);DB.save();renderMgr();});
   const ab=document.getElementById('np_add');
   if(ab)ab.onclick=()=>{
     if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can create project numbers.');return;}
@@ -678,7 +354,7 @@ function renderMgr(){
     if(code&&/^\d+$/.test(code)&&+code<+suggested&&!confirm('Code '+code+' is below the next number in sequence ('+suggested+'). Add it out of order anyway?'))return;
     DB.projects.push({id:DB.newId(),label:l,code:code,kind:null,
       sort:Math.max(0,...DB.projects.map(p=>p.sort||0))+1,active:true});
-    DB.save();renderMgr();renderWeek();};
+    DB.save();renderMgr();};
 }
 function exportHours(){
   const rows=[];
@@ -697,55 +373,39 @@ function exportHours(){
   rows.sort((a,b)=>a.Week===b.Week?a.Person.localeCompare(b.Person):a.Week.localeCompare(b.Week));
   exportXLSX('RENMAD_hours_'+new Date().toISOString().slice(0,10)+'.xlsx',[{name:'Allocations',rows}]);
 }
-/* ================= TAB 3: TIME CLOCK (registro horario) ================= */
-let tcM=new Date();tcM.setDate(1);
-let _tcTick=null;
-let tcWho=null;
+/* ================= TAB 3: TIME CLOCK ADMIN (registro horario) ================= */
+let tcM=new Date();tcM.setDate(1); // month shown in the team time sheet
+let tcWho=null;                    // person shown in the team time sheet
+let phWho=null;                    // person shown in the history panel
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
-const nowHM=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
 function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');} // display HH:MM, full HH:MM:SS kept in the record
-function renderTimeclock(){
-  const me=DB.currentUser;
-  if(!DB.tcReady()){document.getElementById('content').innerHTML='<div class="warn">The time clock is not active yet — run <b>dispatch_hr3.sql</b> in Supabase, then reload.</div>';return;}
-  const hradmin=DB.isHRAdmin();
-  document.getElementById('content').innerHTML=
-    '<div id="tcAlarm"></div>'+
-    '<div class="two">'+
-    '<div class="panel"><h3>My day</h3><p class="hint">Clock in when you start, out when you stop (also around lunch if you wish). Every punch is legally immutable — if something is wrong, report it and HR corrects it with a linked amendment.</p>'+
-    '<div id="tcState"></div></div>'+
-    '<div class="panel"><h3>Report a mistake</h3><p class="hint">Forgot to clock, or a punch is wrong? Say what happened — it opens a message thread with HR (Belén / Jesús), who make the correction. Everything is logged.</p>'+
-    '<div class="frm"><label>Day<input type="date" id="tr_day" value="'+toISO(new Date())+'"></label>'+
-    '<label>Punch concerned (optional)<select id="tr_entry"></select></label>'+
-    '<label>What happened<input id="tr_text" placeholder="e.g. I forgot to clock out yesterday — I left at 18:15"></label></div>'+
-    '<button class="btn primary" id="tr_send">Send to HR</button><span id="tr_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>'+
-    '<div id="myReports" style="margin-top:14px"></div></div>'+
-    '</div>'+
-    '<div class="panel"><h3>My month</h3>'+
-    '<div class="mnav"><button class="btn" id="tm_prev">‹</button><b id="tm_lab"></b><button class="btn" id="tm_next">›</button></div>'+
-    '<div class="mx" id="myMonth"></div>'+
-    '<p class="hint" style="margin-top:8px">* = entry added afterwards. Amended punches stop counting but stay in the permanent archive with who/when/why.</p></div>'+
-    (hradmin?'<div class="panel"><h3>👀 Who’s in today</h3><p class="hint">Live view of who has clocked in, who’s on a break, who’s off and who is at an event. Anyone expected today who hasn’t clocked in is flagged in red so you can give them a nudge.</p><div id="tcToday"></div></div>'+
-    '<div class="panel"><h3>📣 Away at events</h3><p class="hint">Who has flagged themselves out of the office at an event, and when. People add these on their own Overview page.</p><div id="tcEvents"></div></div>'+
-    '<div class="panel decide"><h3>🛠 Corrections queue (HR)</h3><p class="hint">Workers report, you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
-    '<div class="panel"><h3>Team time sheet (HR)</h3><div class="mnav"><select id="tw_who"></select><button class="btn" id="tw_prev">‹</button><b id="tw_lab"></b><button class="btn" id="tw_next">›</button>'+
-    '<button class="btn" id="tcXlsM" style="font-size:12px">⬇ Month, everyone</button><button class="btn" id="tcXlsA" style="font-size:12px">⬇ Full archive (hash-chained)</button></div>'+
-    '<div class="mx" id="teamMonth"></div></div>':'');
-  renderTcState();renderTcAlarm();wireReport();renderMyReports();renderMyMonth();
-  document.getElementById('tm_prev').onclick=()=>{tcM.setMonth(tcM.getMonth()-1);renderMyMonth();renderTeamMonth();};
-  document.getElementById('tm_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderMyMonth();renderTeamMonth();};
-  if(hradmin){
-    const tw=document.getElementById('tw_who');
-    tw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'" '+(tcWho==p.id?'selected':'')+'>'+p.name+'</option>').join('');
-    if(!tcWho)tcWho=+tw.value;
-    tw.onchange=()=>{tcWho=+tw.value;renderTeamMonth();};
-    document.getElementById('tw_prev').onclick=()=>{tcM.setMonth(tcM.getMonth()-1);renderMyMonth();renderTeamMonth();};
-    document.getElementById('tw_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderMyMonth();renderTeamMonth();};
-    document.getElementById('tcXlsM').onclick=exportTcMonth;
-    document.getElementById('tcXlsA').onclick=exportTcArchive;
-    renderTcQueue();renderTeamMonth();renderAttendance();renderEventAway();
-  }
+const DEV_ICON={phone:'📱',tablet:'📲',desktop:'💻'};
+function devIcons(rows){
+  return rows.map(l=>'<span title="'+esc(l.device||'device')+(l.standalone?' · installed app':'')+'">'+(DEV_ICON[l.device]||'💻')+(l.standalone?'⭐':'')+'</span>').join(' ');
 }
-/* HR-admin board: who is in / on a break / off / at an event right now */
+function renderTimeclock(){
+  if(!DB.tcReady()){document.getElementById('content').innerHTML='<div class="warn">The time clock is not active yet — run <b>dispatch_hr3.sql</b> in Supabase, then reload.</div>';return;}
+  document.getElementById('content').innerHTML=
+    '<div class="panel"><h3>👀 Who’s in today'+visBadge('Belén + HR')+'</h3><p class="hint">Live view of who has clocked in, who’s on a break, who’s off and who is at an event. Anyone expected today who hasn’t clocked in is flagged in red so you can give them a nudge. Device icons = how they opened the Dispatch today: 📱 phone · 📲 tablet · 💻 desktop · ⭐ installed app.</p><div id="tcToday"></div></div>'+
+    '<div class="panel"><h3>🕵 Person history'+visBadge('Belén + HR')+'</h3><p class="hint">One person at a time: their punches this month plus the devices they’ve logged in from over the last 30 days.</p>'+
+    '<div class="mnav"><select id="ph_who"></select></div><div class="mx" id="phMonth"></div><div id="phDev" style="margin-top:12px"></div></div>'+
+    '<div class="panel decide"><h3>🛠 Corrections queue'+visBadge('Belén + HR')+'</h3><p class="hint">Workers report (from 🙋 Me), you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
+    '<div class="panel"><h3>Team time sheet'+visBadge('Belén + HR')+'</h3><div class="mnav"><select id="tw_who"></select><button class="btn" id="tw_prev">‹</button><b id="tw_lab"></b><button class="btn" id="tw_next">›</button>'+
+    '<button class="btn" id="tcXlsM" style="font-size:12px">⬇ Month, everyone</button><button class="btn" id="tcXlsA" style="font-size:12px">⬇ Full archive (hash-chained)</button></div>'+
+    '<div class="mx" id="teamMonth"></div>'+
+    '<p class="hint" style="margin-top:8px">* = entry added afterwards. Amended punches stop counting but stay in the permanent archive with who/when/why.</p></div>'+
+    '<div class="panel"><h3>📣 Away at events'+visBadge('Belén + HR')+'</h3><p class="hint">Who has flagged themselves out of the office at an event, and when. People add these on their own 🙋 Me page.</p><div id="tcEvents"></div></div>';
+  const tw=document.getElementById('tw_who');
+  tw.innerHTML=DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'" '+(tcWho==p.id?'selected':'')+'>'+esc(p.name)+'</option>').join('');
+  if(!tcWho)tcWho=+tw.value;
+  tw.onchange=()=>{tcWho=+tw.value;renderTeamMonth();};
+  document.getElementById('tw_prev').onclick=()=>{tcM.setMonth(tcM.getMonth()-1);renderTeamMonth();};
+  document.getElementById('tw_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderTeamMonth();};
+  document.getElementById('tcXlsM').onclick=exportTcMonth;
+  document.getElementById('tcXlsA').onclick=exportTcArchive;
+  renderAttendance();renderPersonHistory();renderTcQueue();renderTeamMonth();renderEventAway();
+}
+/* HR-admin board: who is in / on a break / off / at an event right now — with today's devices */
 function renderAttendance(){
   const box=document.getElementById('tcToday');if(!box)return;
   const today=toISO(new Date());
@@ -756,7 +416,8 @@ function renderAttendance(){
     const firstIn=info.entries.find(e=>e.kind==='in');
     const expected=tcExpectedDay(p.id,today)>0;
     const missing=expected&&s.key==='out';
-    return {p,s,firstIn,expected,missing};
+    const devs=LOGINS.filter(l=>l.personId==p.id&&l.day===today);
+    return {p,s,firstIn,expected,missing,devs};
   });
   const ord={out:0,working:1,done:2,pause:3,event:4,remote:5,holiday:6,leave:7,off:8,unknown:9};
   rows.sort((a,b)=>{if(a.missing!==b.missing)return a.missing?-1:1;return (ord[a.s.key]??10)-(ord[b.s.key]??10)||a.p.name.localeCompare(b.p.name);});
@@ -768,10 +429,32 @@ function renderAttendance(){
       '<td style="padding:5px 8px;width:38px">'+avatarHtml(r.p,28)+'</td>'+
       '<td style="padding:5px 8px;font-weight:600;color:var(--charcoal)">'+esc(r.p.name)+' <span style="color:var(--muted);font-weight:400;font-size:11px">'+esc(r.p.role)+'</span></td>'+
       '<td style="padding:5px 8px"><span style="color:'+r.s.color+';font-weight:600">'+r.s.emoji+' '+esc(r.s.label)+'</span>'+(r.s.detail?' <span style="color:var(--muted);font-size:11px">· '+esc(r.s.detail)+'</span>':'')+'</td>'+
+      '<td style="padding:5px 8px;font-size:14px;white-space:nowrap">'+(r.devs.length?devIcons(r.devs):'')+'</td>'+
       '<td style="padding:5px 8px;color:var(--muted);font-size:12px;text-align:right;white-space:nowrap">'+(r.firstIn?('in '+(r.firstIn.time||'').slice(0,5)):(r.missing?'<span style="color:#D32230;font-weight:600">no punch yet</span>':''))+'</td></tr>';
   });
   h+='</table>';
   box.innerHTML=h;
+}
+/* HR-admin: one person's current-month punches + their last-30-days devices */
+function renderPersonHistory(){
+  const sel=document.getElementById('ph_who');if(!sel)return;
+  const people=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!people.length){document.getElementById('phMonth').innerHTML='<div class="empty">No people in the roster.</div>';return;}
+  if(phWho==null||!people.some(p=>p.id==phWho))phWho=people[0].id;
+  sel.innerHTML=people.map(p=>'<option value="'+p.id+'"'+(phWho==p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('');
+  sel.onchange=()=>{phWho=+sel.value;renderPersonHistory();};
+  const now=new Date();now.setDate(1);
+  document.getElementById('phMonth').innerHTML=
+    '<p class="hint" style="margin:6px 0 4px"><b style="color:var(--charcoal)">Punches — '+MONTHS[now.getMonth()]+' '+now.getFullYear()+'</b></p>'+monthTable(phWho,now);
+  const cut=toISO(addDays(new Date(),-30));
+  const mine=LOGINS.filter(l=>l.personId==phWho&&(l.day||'')>=cut);
+  const byDay={};mine.forEach(l=>{(byDay[l.day]=byDay[l.day]||[]).push(l);});
+  const days=Object.keys(byDay).sort().reverse();
+  let h='<p class="hint" style="margin:0 0 4px"><b style="color:var(--charcoal)">Devices — last 30 days</b> · 📱 phone · 📲 tablet · 💻 desktop · ⭐ installed app</p>';
+  if(!days.length)h+='<div class="empty">'+(USE_SUPABASE?'No device logins recorded for this person in the last 30 days.':'No device data — dc_logins is only populated in Supabase mode.')+'</div>';
+  else h+='<table style="max-width:420px"><tr><th>Day</th><th>Devices</th></tr>'+
+    days.map(d=>'<tr><td style="white-space:nowrap">'+esc(d)+'</td><td style="font-size:15px">'+devIcons(byDay[d])+'</td></tr>').join('')+'</table>';
+  document.getElementById('phDev').innerHTML=h;
 }
 /* HR-admin: history of who has been away at events, most recent first */
 let _evAwayAll=false;
@@ -801,76 +484,6 @@ function renderEventAway(){
   document.getElementById('ev_xls').onclick=()=>exportXLSX('RENMAD_event_attendance.xlsx',[{name:'At events',rows:all.map(e=>({Person:DB.personName(e.personId),Event:e.title||'',From:e.dateFrom,To:e.dateTo}))}]);
   box.querySelectorAll('[data-evdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this event-away entry?'))return;DB.data.eventaway=DB.eventaway.filter(x=>x.id!=b.dataset.evdel);DB.save();renderEventAway();});
 }
-function renderTcState(){
-  const me=DB.currentUser,box=document.getElementById('tcState');
-  if(_tcTick){clearInterval(_tcTick);_tcTick=null;}
-  if(!me){box.innerHTML='<div class="empty">Log in to clock in.</div>';return;}
-  const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
-  box.innerHTML=
-    '<div style="font-size:16px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+';margin-bottom:2px" id="tcStateLbl">'+
-    (info.open?'🟢 Clocked IN':'⚪ Clocked out')+'</div>'+
-    '<div style="font-size:34px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums;line-height:1.05" id="tcLive">0:00:00</div>'+
-    '<div style="font-size:12px;color:var(--muted);margin-bottom:12px">worked today'+(exp?' · '+exp+' h expected':' · no work expected today')+'</div>'+
-    '<button class="btn primary" id="punchBtn" style="font-size:15px;padding:10px 22px">'+(info.open?'Clock OUT':'Clock IN')+'</button>'+
-    punchAckHtml()+
-    '<div style="margin-top:12px;font-size:12.5px">'+(info.entries.length?('Today: '+info.entries.map(entryLabel).join(' · ')):'No punches yet today.')+'</div>'+
-    '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkTxt" style="font-size:12px;color:var(--muted)"></span></div>'+
-      '<div style="height:14px;border-radius:8px;background:#ece9e2;overflow:hidden"><div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div></div>'+
-      '<div id="wkNote" style="font-size:12.5px;margin-top:6px;min-height:16px"></div>'+
-    '</div>';
-  const tick=()=>{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('tcLive');if(el)el.textContent=fmtHMS(li.seconds);updateWeekBar(me);};
-  tick();if(info.open)_tcTick=setInterval(tick,1000);
-  document.getElementById('punchBtn').onclick=async ev=>{
-    const b=ev.currentTarget;if(b.disabled)return; // no double punches
-    b.disabled=true;b.textContent='Saving…';
-    await DB.punch(info.open?'out':'in'); // awaited insert; failure -> pending queue + banner
-    renderTcState();renderMyMonth();
-  };
-}
-/* the weekly-hours bar: red when far off, filling green as hours are clocked; live */
-function updateWeekBar(me){
-  const bar=document.getElementById('wkBar');if(!bar||!me)return;
-  const p=tcWeekProgress(me.id);
-  bar.style.width=Math.round(p.pct*100)+'%';
-  bar.style.background='hsl('+Math.round(p.pct*120)+',68%,42%)'; // 0=red → 60=amber → 120=green
-  const fmt=h=>{const H=Math.floor(h+1e-9),M=Math.round((h-H)*60);return M?H+'h '+M+'m':H+'h';};
-  const txt=document.getElementById('wkTxt');
-  if(txt)txt.textContent=p.target<=0?'no hours expected this week':(fmt(p.worked)+' of '+fmt(p.target));
-  const note=document.getElementById('wkNote');if(!note)return;
-  if(p.target<=0)note.innerHTML='<span style="color:var(--muted)">Holiday week — nothing to clock.</span>';
-  else if(p.done)note.innerHTML='<span style="color:var(--green);font-weight:700">✓ Week complete — that’s your '+fmt(p.target)+'. Nice one.</span>';
-  else if(p.remaining<=WEEK_NEAR_H)note.innerHTML='<span style="color:#D32230;font-weight:700">🔔 Under 30 minutes to go this week!</span>';
-  else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
-}
-function renderTcAlarm(){
-  const me=DB.currentUser,box=document.getElementById('tcAlarm');
-  if(!me){box.innerHTML='';return;}
-  const miss=tcMissingDays(me.id);
-  const ot=tcOvertimeWeeks(me.id);
-  let h='';
-  if(miss.length)h+='<div class="alarm">⏰ <b>Days with no punches:</b> '+miss.join(' · ')+' — report what happened so HR can complete the record.</div>';
-  if(ot.length)h+='<div class="alarm">⚠ <b>Over the weekly hours:</b> '+ot.map(o=>o.week+' — '+fmtHMS(o.worked*3600).replace(/:\d\d$/,'')+' h clocked vs '+o.allowed+' h allowed (+'+(Math.round(o.over*10)/10)+' h)').join(' · ')+'. The day-to-day is flexible, but the weekly total is over — please balance it.</div>';
-  box.innerHTML=h;
-}
-function wireReport(){
-  const me=DB.currentUser;
-  const daySel=document.getElementById('tr_day'),entSel=document.getElementById('tr_entry');
-  const fill=()=>{const es=me?tcEffective(me.id,daySel.value):[];
-    entSel.innerHTML='<option value="">— whole day / forgot to clock —</option>'+es.map(e=>'<option value="'+e.id+'">'+entryLabel(e)+'</option>').join('');};
-  daySel.onchange=fill;fill();
-  document.getElementById('tr_send').onclick=()=>{
-    if(!me){alert('Log in first.');return;}
-    const txt=document.getElementById('tr_text').value.trim();
-    if(!txt){alert('Say what happened — HR needs it to correct the record.');return;}
-    DB.tcreports.push({id:DB.newId(),personId:me.id,day:daySel.value,entryId:entSel.value?+entSel.value:null,
-      thread:[{by:me.name,at:new Date().toISOString(),text:txt}],status:'open'});
-    DB.save();
-    document.getElementById('tr_text').value='';
-    const m=document.getElementById('tr_msg');m.textContent='Sent — HR has been flagged.';setTimeout(()=>m.textContent='',4000);
-    renderMyReports();
-  };
-}
 function threadHtml(r){
   return '<div style="background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12.5px">'+
     (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
@@ -880,23 +493,9 @@ function reportChip(r){
     :r.status==='answered'?'<span class="chip" style="background:var(--blue)">Answered</span>'
     :'<span class="chip" style="background:var(--amber)">Open</span>';
 }
-function renderMyReports(){
-  const me=DB.currentUser,box=document.getElementById('myReports');
-  if(!me||!box)return;
-  const mine=DB.tcreports.filter(r=>r.personId==me.id).sort((a,b)=>b.id-a.id).slice(0,6);
-  if(!mine.length){box.innerHTML='';return;}
-  box.innerHTML='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">My reports</div>'+
-    mine.map(r=>'<div style="margin-bottom:10px"><b>'+(r.day||'')+'</b> '+reportChip(r)+threadHtml(r)+
-      (r.status!=='resolved'?'<input id="rr_'+r.id+'" placeholder="reply…" style="width:70%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-rr="'+r.id+'">Send</button>':'')+'</div>').join('');
-  box.querySelectorAll('[data-rr]').forEach(b=>b.onclick=()=>{
-    const r=DB.tcreports.find(x=>x.id==b.dataset.rr);const inp=document.getElementById('rr_'+r.id);
-    if(!inp.value.trim())return;
-    r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),text:inp.value.trim()}]);
-    if(r.status==='answered')r.status='open';
-    DB.save();renderMyReports();});
-}
-function monthTable(personId){
-  const y=tcM.getFullYear(),m=tcM.getMonth();
+function monthTable(personId,refDate){
+  const ref=refDate||tcM;
+  const y=ref.getFullYear(),m=ref.getMonth();
   const last=new Date(y,m+1,0).getDate(),today=toISO(new Date());
   let h='<table><tr><th>Day</th><th>Punches</th><th class="num">Worked</th><th class="num">Expected</th><th class="num">Diff</th></tr>';
   let wSum=0,eSum=0,any=false;
@@ -916,16 +515,11 @@ function monthTable(personId){
   h+='<tr class="total"><td>Total</td><td></td><td class="num">'+fmtMin(wSum)+'</td><td class="num">'+fmtMin(eSum)+'</td><td class="num">'+((wSum-eSum>=0?'+':'−')+fmtMin(Math.abs(wSum-eSum)))+'</td></tr>';
   return h+'</table>';
 }
-function renderMyMonth(){
-  const me=DB.currentUser;if(!me)return;
-  const lab=['January','February','March','April','May','June','July','August','September','October','November','December'][tcM.getMonth()]+' '+tcM.getFullYear();
-  document.getElementById('tm_lab').textContent=lab;
-  const tw=document.getElementById('tw_lab');if(tw)tw.textContent=lab;
-  document.getElementById('myMonth').innerHTML=monthTable(me.id);
-}
 function renderTeamMonth(){
-  const el=document.getElementById('teamMonth');
-  if(el&&tcWho)el.innerHTML=monthTable(tcWho);
+  const el=document.getElementById('teamMonth');if(!el)return;
+  const lab=document.getElementById('tw_lab');
+  if(lab)lab.textContent=MONTHS[tcM.getMonth()]+' '+tcM.getFullYear();
+  if(tcWho)el.innerHTML=monthTable(tcWho);
 }
 function renderTcQueue(){
   const box=document.getElementById('tcQueue');if(!box)return;
@@ -935,7 +529,7 @@ function renderTcQueue(){
     const p=DB.person(r.personId);
     const es=tcEffective(r.personId,r.day||toISO(new Date()));
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">'+
-      '<b>'+(p?p.name:'?')+'</b> · '+(r.day||'')+' '+reportChip(r)+threadHtml(r)+
+      '<b>'+esc(p?p.name:'?')+'</b> · '+(r.day||'')+' '+reportChip(r)+threadHtml(r)+
       '<input id="qr_'+r.id+'" placeholder="reply…" style="width:46%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-qr="'+r.id+'">Reply</button> '+
       '<span style="margin-left:12px"></span>'+
       '<select id="qa_act_'+r.id+'" style="font-size:12px"><option value="add">add missed punch</option><option value="fix">correct a punch</option><option value="void">void a punch</option></select> '+
@@ -976,7 +570,7 @@ function renderTcQueue(){
     r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),
       text:'✔ Amendment applied: '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
     r.status='resolved';
-    DB.save();renderTcQueue();renderTeamMonth();renderMyMonth();
+    DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
   });
 }
 function exportTcMonth(){
@@ -1004,7 +598,12 @@ function exportTcArchive(){
   exportXLSX('RENMAD_timeclock_ARCHIVE_'+new Date().toISOString().slice(0,16).replace(':','')+'.xlsx',
     [{name:'Archive',rows}]);
 }
-boot(render);
+boot(async()=>{
+  if(USE_SUPABASE&&sb){
+    try{const r=await sb.from('dc_logins').select('*');if(!r.error)LOGINS=r.data||[];}catch(e){}
+  }
+  render();
+});
 window.addEventListener('hashchange',render);
 window.addEventListener('dc-remote',render);
 </script>
