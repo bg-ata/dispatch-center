@@ -761,7 +761,28 @@ function buildSeed(){
   ];
   people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
   {const c=people.find(p=>p.name==='Cintia Hernández');if(c)c.salesLead=true;} // local demo mirrors dispatch_spx.sql
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  /* Facturación códigos-contables master (mirrors dispatch_facturacion_codigos.sql).
+     eventId links an item to its dc_finance row so RENMAD lines still feed the € Dashboard;
+     Webinars / ATA / future editions carry a código but no event. */
+  const codigos=[
+   {id:1,item:'Webinars',codigo:'01',eventId:null},
+   {id:2,item:'ATA',codigo:'06',eventId:null},
+   {id:3,item:'Almacenamiento 26',codigo:'70308',eventId:5},
+   {id:4,item:'Invest 26',codigo:'70309',eventId:1},
+   {id:5,item:'Biometano 26',codigo:'70310',eventId:2},
+   {id:6,item:'Polonia 26',codigo:'70311',eventId:4},
+   {id:7,item:'Datacenters 26',codigo:'70312',eventId:3},
+   {id:8,item:'Storage Italia 26',codigo:'70313',eventId:6},
+   {id:9,item:'Hidrógeno 26',codigo:'70315',eventId:11},
+   {id:10,item:'Chile 26',codigo:'70316',eventId:9},
+   {id:11,item:'México 27',codigo:'70317',eventId:null},
+   {id:12,item:'Useful AI 26',codigo:'70318',eventId:7},
+   {id:13,item:'Invest Italia 26',codigo:'70319',eventId:8},
+   {id:14,item:'Datacenters Italia 26',codigo:'70320',eventId:10},
+   {id:15,item:'Biometano 27',codigo:'70321',eventId:null},
+   {id:16,item:'Almacenamiento 27',codigo:'70322',eventId:null},
+  ];
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -789,9 +810,11 @@ const COLS={
   /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
      row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
   invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by'],
-  invalloc:['id','invoice_id','eventId','amount','passes'],
+  invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId'],
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
-  codigos:['id','codigo','descripcion'],
+  /* códigos = the item↔código-contable master Jesús maintains (item name + accounting
+     code + optional link to a dc_finance event so RENMAD lines still roll into the € Dashboard) */
+  codigos:['id','item','codigo','descripcion','eventId'],
   /* team request box: anyone opens tickets about the Dispatch Center itself
      (bug / usability / change / idea); admins triage (status + priority);
      the thread jsonb holds follow-up comments [{who,when,text|sys}] */
@@ -1038,6 +1061,9 @@ const DB={
   /* may this user edit THIS proposal? own (by responsable email) OR sales lead/admin. Mirrors the RLS UPDATE policy. */
   canEditProp(p){if(this.canSalesLead())return true;const u=this.currentUser;return !!(u&&p&&(''+(p.responsableEmail||'')).toLowerCase()===(''+(u.email||'')).toLowerCase());},
   invoice(id){return this.invoices.find(i=>i.id==id);},
+  /* item↔código master lookups (Jesús's mini-BD) */
+  codigoById(id){return id?this.codigos.find(c=>c.id==id):null;},
+  codigoForEvent(finId){return (finId!=null&&finId!=='')?this.codigos.find(c=>c.eventId==finId):null;},
   allocsFor(invoiceId){return this.invoiceAllocs.filter(a=>a.invoice_id==invoiceId);},
   invoicesFor(finId){const ids={};this.invoiceAllocs.forEach(a=>{if(a.eventId==finId)ids[a.invoice_id]=1;});return this.invoices.filter(i=>ids[i.id]);},
   delegatesFor(finId){return this.delegates.filter(d=>d.eventId==finId);},

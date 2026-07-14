@@ -73,7 +73,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=51"></script>
+<script src="store.js?v=52"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={ev:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
@@ -110,7 +110,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected</div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding</div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="cfgCod">⚙ Accounting codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an event-split sheet">⬇ Excel</button></h3>'+
+    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (item · código · pedido · razón social)">⬇ Excel</button></h3>'+
     '<div class="flt">'+
       '<select id="f_ev"><option value="all">— all events —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(flt.ev==f.id?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('')+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
@@ -146,9 +146,12 @@ function render(){
         'Entered by':i.entered_by||'',
         'Comments':i.comentarios||''
       }))},
-      {name:'Event split',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const f=finById(a.eventId);return{
+      {name:'Analítica',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);return{
         'Invoice nº':i.numero_factura||'',
-        'Event':f?finLabelClean(f):('#'+a.eventId),
+        'Order (pedido)':(i.pedido&&i.pedido!=='N/A')?i.pedido:'',
+        'Company (razón social)':i.razon_social||'',
+        'Item':c?(c.item||''):(f?finLabelClean(f):''),
+        'Código contable':a.codigo||(c?(c.codigo||''):''),
         'Amount €':+a.amount||0,
         'Passes':+a.passes||0
       };}))}
@@ -173,11 +176,13 @@ function filtered(){
   }).sort((a,b)=>((a.fecha||'').localeCompare(b.fecha||''))||((a.numero_factura||'').localeCompare(b.numero_factura||'',undefined,{numeric:true})));
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Events (split)</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
   if(!rows.length)h+='<tr><td colspan="13" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
-    const chips=allocs.map(a=>{const f=finById(a.eventId);return '<span class="allocchip">'+esc(f?finLabelClean(f):('#'+a.eventId))+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
+    const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
+      const label=c?(esc(c.item||'?')+(c.codigo?' · '+esc(c.codigo):'')):(f?esc(finLabelClean(f)):('#'+(a.eventId||'?')));
+      return '<span class="allocchip">'+label+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
     const stSel='<select class="inl" data-st="'+i.id+'">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
       '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
@@ -216,34 +221,40 @@ function renderTable(rows){
 
 /* ---------- códigos contables (mini-BD, hand-maintained) ---------- */
 function codigosPanel(){
-  let h='<div class="panel"><h3>Accounting codes <span class="hint">— the mini-database behind the “accounting code” field; maintained by hand</span></h3><table style="max-width:560px"><tr><th>Code</th><th>Description</th><th style="width:24px"></th></tr>';
-  DB.codigos.forEach(c=>{h+='<tr><td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" style="width:110px"></td>'+
+  const evOpts=sel=>'<option value="">— no event —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
+  let h='<div class="panel"><h3>Items &amp; accounting codes <span class="hint">— the mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list</span></h3>'+
+    '<table style="max-width:860px"><tr><th>Item</th><th>Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th>Notes</th><th style="width:24px"></th></tr>';
+  DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true})).forEach(c=>{
+    h+='<tr><td><input data-cf="item" data-id="'+c.id+'" value="'+esc(c.item||'')+'" style="width:190px" placeholder="e.g. Almacenamiento 26"></td>'+
+    '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" style="width:90px"></td>'+
+    '<td><select data-cf="eventId" data-id="'+c.id+'" style="width:220px">'+evOpts(c.eventId)+'</select></td>'+
     '<td><input data-cf="descripcion" data-id="'+c.id+'" value="'+esc(c.descripcion||'')+'" style="width:100%"></td>'+
     '<td><button class="del" data-cdel="'+c.id+'">×</button></td></tr>';});
-  h+='</table><div style="margin-top:8px"><button class="btn sm" id="addCod">+ Add code</button></div></div>';
+  h+='</table><div style="margin-top:8px"><button class="btn sm" id="addCod">+ Add item</button> <span class="hint">linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals.</span></div></div>';
   return h;
 }
 function wireCodigos(){
-  document.querySelectorAll('[data-cf]').forEach(el=>el.onchange=()=>{const c=DB.codigos.find(x=>x.id==el.dataset.id);if(!c)return;c[el.dataset.cf]=el.value;DB.save();});
-  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this code?'))return;DB.data.codigos=DB.codigos.filter(x=>x.id!=b.dataset.cdel);DB.save();render();});
-  const ac=document.getElementById('addCod');if(ac)ac.onclick=()=>{DB.codigos.push({id:DB.newId(),codigo:'',descripcion:''});DB.save();render();};
+  document.querySelectorAll('[data-cf]').forEach(el=>el.onchange=()=>{const c=DB.codigos.find(x=>x.id==el.dataset.id);if(!c)return;
+    c[el.dataset.cf]=el.dataset.cf==='eventId'?(el.value?+el.value:null):el.value;DB.save();});
+  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this item?'))return;DB.data.codigos=DB.codigos.filter(x=>x.id!=b.dataset.cdel);DB.save();render();});
+  const ac=document.getElementById('addCod');if(ac)ac.onclick=()=>{DB.codigos.push({id:DB.newId(),item:'',codigo:'',descripcion:'',eventId:null});DB.save();render();};
 }
 
 /* ---------- add / edit modal ---------- */
 function openModal(inv){
   editingId=inv?inv.id:null;
-  allocRows=inv?DB.allocsFor(inv.id).map(a=>({id:a.id,eventId:a.eventId,amount:a.amount,passes:a.passes})):[{id:null,eventId:'',amount:'',passes:''}];
+  allocRows=inv?DB.allocsFor(inv.id).map(a=>{let cid=a.codigoId,cod=a.codigo;
+      if(!cid&&a.eventId!=null&&a.eventId!==''){const m=DB.codigoForEvent(a.eventId);if(m){cid=m.id;cod=cod||m.codigo;}}
+      return {id:a.id,codigoId:cid||'',codigo:cod||'',eventId:a.eventId,amount:a.amount,passes:a.passes};}):[{id:null,codigoId:'',codigo:'',eventId:'',amount:'',passes:''}];
   const i=inv||{fecha:todayISO(),vencimiento:todayISO(),iva_pct:21,status:'no_pagado',metodo_pago:'transferencia',en_usd:false,entered_by:actorName()};
-  const codOpts='<datalist id="codlist">'+DB.codigos.map(c=>'<option value="'+esc(c.codigo||'')+'">'+esc(c.descripcion||'')+'</option>').join('')+'</datalist>';
   const pOpts=sel=>'<option value="">—</option>'+DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+esc(p.name)+'</option>').join('');
   const invOpts=sel=>'<option value="">—</option>'+DB.invoices.filter(x=>x.id!=editingId).map(x=>'<option value="'+x.id+'" '+(x.id==sel?'selected':'')+'>'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+'</option>').join('');
   document.getElementById('modalbody').innerHTML=
-    '<h3>'+(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice')+'</h3>'+codOpts+
+    '<h3>'+(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice')+'</h3>'+
     '<div class="frm">'+
     '<label class="w2">Invoice nº *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R…"></label>'+
     '<label>Date *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
     '<label>Due date<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
-    '<label>Accounting code<input id="m_cod" list="codlist" value="'+esc(i.codigo_contable||'')+'"></label>'+
     '<label>Entered by <span class="hint" style="text-transform:none;font-weight:400">(automatic)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
     '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
     '<label>Product *<select id="m_prod"><option value="">—</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(i.producto===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select></label>'+
@@ -267,9 +278,9 @@ function openModal(inv){
     '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
     '<label class="w4">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
     '</div>'+
-    '<div class="sect" style="margin-top:8px">Event split (analítica) <span class="hint" style="text-transform:none;font-weight:400">(one invoice can be shared across several events; the passes create the delegate seats)</span></div>'+
+    '<div class="sect" style="margin-top:8px">Analítica <span class="hint" style="text-transform:none;font-weight:400">(split the invoice across items — each line needs its código contable; passes on an event item create the delegate seats)</span></div>'+
     '<table class="alloctbl" id="atbl"></table>'+
-    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ event</button> <span id="asum" class="hint"></span></div>'+
+    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ item</button> <span id="asum" class="hint"></span></div>'+
     '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
   document.getElementById('modal').classList.add('on');
   wireModal(i);
@@ -279,14 +290,21 @@ function paseTotal(){
   return t?(TIPO_PASES[t]||0)*n:0;
 }
 function renderAllocs(){
-  const evOpts=sel=>'<option value="">— event —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
-  let h='<tr><th>Event (€ Dashboard row)</th><th style="width:130px">Amount €</th><th style="width:110px">Passes 🎟</th><th style="width:24px"></th></tr>';
-  allocRows.forEach((a,ix)=>{h+='<tr><td><select data-af="eventId" data-ix="'+ix+'">'+evOpts(a.eventId)+'</select></td>'+
+  const cods=DB.codigos.slice().sort((a,b)=>(''+(a.item||'')).localeCompare(''+(b.item||'')));
+  const itemOpts=sel=>'<option value="">— item —</option>'+cods.map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(c.item||('#'+c.id))+(c.codigo?' ('+esc(c.codigo)+')':'')+'</option>').join('');
+  let h='<tr><th>Item</th><th style="width:92px">Código *</th><th style="width:120px">Amount €</th><th style="width:96px">Passes 🎟</th><th style="width:24px"></th></tr>';
+  allocRows.forEach((a,ix)=>{const cod=a.codigo||'';const warn=a.codigoId&&!cod;
+    h+='<tr><td><select data-af="codigoId" data-ix="'+ix+'">'+itemOpts(a.codigoId)+'</select></td>'+
+    '<td><input data-cod="'+ix+'" value="'+esc(cod)+'" readonly tabindex="-1" title="comes from the chosen item" style="color:#555;background:'+(warn?'#ffe2c4':'#f0eee7')+'"></td>'+
     '<td><input type="number" step="any" data-af="amount" data-ix="'+ix+'" value="'+(a.amount!=null?a.amount:'')+'"></td>'+
     '<td><input type="number" step="1" min="0" data-af="passes" data-ix="'+ix+'" value="'+(a.passes!=null?a.passes:'')+'" placeholder="0"></td>'+
     '<td><button class="del" data-adel="'+ix+'">×</button></td></tr>';});
   document.getElementById('atbl').innerHTML=h;
-  document.querySelectorAll('[data-af]').forEach(el=>el.onchange=()=>{allocRows[+el.dataset.ix][el.dataset.af]=el.value;allocSummary();});
+  document.querySelectorAll('[data-af]').forEach(el=>el.onchange=()=>{
+    const r=allocRows[+el.dataset.ix];
+    if(el.dataset.af==='codigoId'){const c=DB.codigoById(+el.value);r.codigoId=el.value?+el.value:'';r.codigo=c?(c.codigo||''):'';r.eventId=(c&&c.eventId!=null)?c.eventId:'';renderAllocs();}
+    else r[el.dataset.af]=el.value;
+    allocSummary();});
   document.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{allocRows.splice(+b.dataset.adel,1);renderAllocs();allocSummary();});
   allocSummary();
 }
@@ -323,7 +341,7 @@ function wireModal(i){
   $('m_st').addEventListener('change',()=>{if($('m_st').value==='cancelado')$('m_pago').value='na';});
   /* paying by Card marks the invoice Paid automatically */
   $('m_pago').addEventListener('change',()=>{if($('m_pago').value==='tarjeta'&&$('m_st').value!=='cancelado')$('m_st').value='pagado';});
-  $('addAlloc').onclick=()=>{allocRows.push({id:null,eventId:'',amount:'',passes:''});renderAllocs();};
+  $('addAlloc').onclick=()=>{allocRows.push({id:null,codigoId:'',codigo:'',eventId:'',amount:'',passes:''});renderAllocs();};
   $('m_cancel').onclick=closeModal;
   $('m_save').onclick=saveInvoice;
   renderAllocs();refreshVis();calc();
@@ -347,14 +365,17 @@ function saveInvoice(){
   if(!fecha)return err('Date is missing.');
   if(+fecha.slice(0,4)>new Date().getFullYear())return err('The date cannot go beyond the current year.');
   if($('m_iva').value==='0'&&!$('m_motivo').value)return err('0% VAT: choose the reason (exempt / not subject / reverse charge / export).');
-  const allocs=allocRows.filter(r=>r.eventId&&((+r.amount||0)!==0||(+r.passes||0)>0));
+  /* analítica: every line carrying money/passes MUST have an item (código contable) — mandatory */
+  const dataLines=allocRows.filter(r=>((+r.amount||0)!==0||(+r.passes||0)>0));
+  if(dataLines.some(r=>!r.codigoId))return err('Every analítica line needs an item / código contable — it is mandatory.');
+  const allocs=dataLines.filter(r=>r.codigoId);
   const base=+$('m_base').value||0,sum=allocs.reduce((a,r)=>a+(+r.amount||0),0);
   if(allocs.length&&Math.abs(sum-base)>0.01){
-    if(!confirm('The event split ('+finFmt(sum)+') does not add up to the net amount ('+finFmt(base)+'). Save anyway?'))return;
+    if(!confirm('The analítica ('+finFmt(sum)+') does not add up to the net amount ('+finFmt(base)+'). Save anyway?'))return;
   }
   const row={
     id:editingId||DB.newId(),
-    codigo_contable:$('m_cod').value.trim()||null,
+    codigo_contable:(allocs[0]&&(DB.codigoById(+allocs[0].codigoId)||{}).codigo)||null,
     producto:prod,cantidad:$('m_cant').value===''?null:+$('m_cant').value,
     tipo_pase:prod==='tickets'?($('m_pase').value||null):null,
     pase_cantidad:prod==='tickets'?(+$('m_pasec').value||1):null,
@@ -382,8 +403,11 @@ function saveInvoice(){
   /* sync allocations: update kept rows, add new, drop removed */
   const keep={};
   allocs.forEach(a=>{
-    if(a.id){const ex=DB.invoiceAllocs.find(x=>x.id==a.id);if(ex){ex.eventId=+a.eventId;ex.amount=+a.amount||0;ex.passes=+a.passes||0;keep[ex.id]=1;return;}}
-    const na={id:DB.newId(),invoice_id:row.id,eventId:+a.eventId,amount:+a.amount||0,passes:+a.passes||0};
+    const c=DB.codigoById(+a.codigoId)||{};
+    const evId=(c.eventId!=null&&c.eventId!=='')?+c.eventId:null; // RENMAD item → feeds the € Dashboard; Webinars/ATA/etc → null
+    const codStr=c.codigo||a.codigo||'';
+    if(a.id){const ex=DB.invoiceAllocs.find(x=>x.id==a.id);if(ex){ex.eventId=evId;ex.amount=+a.amount||0;ex.passes=+a.passes||0;ex.codigo=codStr;ex.codigoId=+a.codigoId;keep[ex.id]=1;return;}}
+    const na={id:DB.newId(),invoice_id:row.id,eventId:evId,amount:+a.amount||0,passes:+a.passes||0,codigo:codStr,codigoId:+a.codigoId};
     DB.invoiceAllocs.push(na);keep[na.id]=1;
   });
   DB.data.invalloc=DB.invoiceAllocs.filter(x=>x.invoice_id!=row.id||keep[x.id]);
@@ -399,6 +423,7 @@ function syncDelegates(inv){
   const src=inv.producto==='tickets'?'ticket':'sponsor';
   DB.allocsFor(inv.id).forEach(a=>{
     const want=+a.passes||0;if(want<=0)return;
+    if(a.eventId==null||a.eventId==='')return; // non-event item (Webinars/ATA/…) → no delegate seats
     const have=DB.delegates.filter(d=>d.invoice_id==inv.id&&d.eventId==a.eventId).length;
     for(let k=have;k<want;k++){
       DB.delegates.push({id:DB.newId(),eventId:a.eventId,source:src,invoice_id:inv.id,
