@@ -452,7 +452,8 @@ function moneyCell(id,kind,v,editable){
 function contactCell(p){
   const c=(p.contacts||[]);if(!c.length)return '<span style="color:var(--muted)">—</span>';
   const first=c[0];const name=((first.first||'')+' '+(first.last||'')).trim()||first.email||'—';
-  return esc(name)+(c.length>1?' <span style="color:var(--muted)">+'+(c.length-1)+'</span>':'');
+  const tip=c.map(x=>(((x.first||'')+' '+(x.last||'')).trim()||'—')+(x.email?' · '+x.email:'')+(x.phone?' · '+x.phone:'')).join('\n');
+  return '<span title="'+esc(tip)+'">'+esc(name)+(c.length>1?' <span style="color:var(--muted)">+'+(c.length-1)+'</span>':'')+'</span>';
 }
 
 /* ----- proposals interactions ----- */
@@ -791,8 +792,20 @@ function openPanel(id){
       +(p.notas?'<div class="kv" style="margin-top:8px"><span class="k">Notas</span></div><div class="ro-note">'+esc(p.notas)+'</div>':'')
       +'<p class="ro-note" style="margin-top:10px">Read-only — this is '+esc(p.responsableName||'someone else')+'\'s proposal. The sales lead and Belén can edit any.</p></div>';
   }
-  // contacts
-  b+='<div class="sec"><h5>Contacts</h5>'+((p.contacts&&p.contacts.length)?p.contacts.map(c=>'<div class="kv"><span>'+esc(((c.first||'')+' '+(c.last||'')).trim()||'—')+'</span><span class="k">'+esc(c.email||'')+'</span></div>').join(''):'<div class="ro-note">none</div>')+'</div>';
+  // contacts — up to 3 people per proposal, editable in place by whoever can edit the proposal
+  if(editable){
+    b+='<div class="sec"><h5>Contacts</h5>';
+    for(let i=0;i<3;i++){const c=(p.contacts||[])[i]||{};
+      b+='<div style="display:flex;gap:5px;margin-bottom:4px">'
+        +'<input data-ci="'+i+'" data-ck="first" placeholder="first name" value="'+esc(c.first||'')+'" style="flex:1;min-width:66px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+        +'<input data-ci="'+i+'" data-ck="last" placeholder="surname" value="'+esc(c.last||'')+'" style="flex:1;min-width:66px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+        +'<input data-ci="'+i+'" data-ck="email" placeholder="email" value="'+esc(c.email||'')+'" style="flex:1.5;min-width:110px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+        +'<input data-ci="'+i+'" data-ck="phone" placeholder="phone" value="'+esc(c.phone||'')+'" style="flex:.9;min-width:76px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+        +'</div>';}
+    b+='<div class="ro-note">Up to 3 contacts — saved with the Save button above.</div></div>';
+  }else{
+    b+='<div class="sec"><h5>Contacts</h5>'+((p.contacts&&p.contacts.length)?p.contacts.map(c=>'<div class="kv"><span>'+esc(((c.first||'')+' '+(c.last||'')).trim()||'—')+'</span><span class="k">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</span></div>').join(''):'<div class="ro-note">none</div>')+'</div>';
+  }
   panelShell(p.company||'Proposal',esc(p.responsableName||p.responsable||'')+(p.fileName?' · '+esc(p.fileName):''),b);
 }
 function fld(label,f,v,type){return '<div class="fld"><label>'+esc(label)+'</label><input data-pf="'+f+'" type="'+type+'" value="'+esc(v==null?'':v)+'"></div>';}
@@ -810,6 +823,13 @@ function savePanel(id){
   const prev=p.salesStatus;
   const NULLABLE={fechaEnvio:1,fechaSeguimiento:1,stage:1,accountType:1,source:1,productPackage:1,packageTier:1,reasonForLoss:1};
   document.querySelectorAll('#panel [data-pf]').forEach(e=>{const f=e.dataset.pf;let v=e.value;if(NULLABLE[f]&&v==='')v=null;p[f]=v;});
+  if(document.querySelector('#panel [data-ci]')){   // contact rows were rendered → collect up to 3
+    const cs=[];for(let i=0;i<3;i++){
+      const g=k=>{const e=document.querySelector('#panel [data-ci="'+i+'"][data-ck="'+k+'"]');return e?e.value.trim():'';};
+      const c={first:g('first'),last:g('last'),email:g('email'),phone:g('phone')};
+      if(c.first||c.last||c.email||c.phone){if(!c.phone)delete c.phone;cs.push(c);}}
+    p.contacts=cs;
+  }
   const st=statusOfStage(p.stage);if(st)p.salesStatus=st;   // stage drives the derived status; blank stage keeps the legacy one
   if(p.stage!=='Lost')p.reasonForLoss=null;                 // a reason only makes sense on a lost deal
   askLegalOnSigned(p,prev);
@@ -840,7 +860,8 @@ function openCreate(){
       +'<div id="nc_lines"></div><button class="lnk" onclick="addNcLine()">+ add event</button></div>'
     +'<div id="nc_genwrap" style="display:none"><div class="fld"><label>Value € (General)</label><input id="nc_genval" type="number" value="4000"></div></div>'
     +'<div class="fld"><label>Included in proposal / contents</label><textarea id="nc_contents"></textarea></div>'
-    +'<div class="fld"><label>Contact — first name / surname / email</label><span style="display:flex;gap:5px"><input id="nc_cf" placeholder="first name"><input id="nc_cl" placeholder="surname"><input id="nc_ce" placeholder="email"></span></div>'
+    +'<div class="fld"><label>Contacts (up to 3) — first name / surname / email / phone</label>'
+      +[0,1,2].map(i=>'<span style="display:flex;gap:5px;margin-bottom:4px"><input id="nc_cf'+i+'" placeholder="first name"><input id="nc_cl'+i+'" placeholder="surname"><input id="nc_ce'+i+'" placeholder="email"><input id="nc_cp'+i+'" placeholder="phone"></span>').join('')+'</div>'
     +'<div class="fld"><label>Sent date</label><input id="nc_envio" type="date" value="'+toISO(new Date())+'"></div>'
     +'<div class="fld"><label>Follow up date (next touchpoint)</label><input id="nc_fu" type="date"></div>'
     +'<div class="fld"><label>Notes</label><textarea id="nc_notas"></textarea></div>'
@@ -863,8 +884,10 @@ function saveNew(){
   const respSel=document.getElementById('nc_resp'),opt=respSel.options[respSel.selectedIndex];
   const respEmail=respSel.value||'',respName=(opt&&opt.getAttribute('data-name'))||'';
   const general=document.getElementById('nc_general').checked,me=DB.currentUser;
-  const cf=document.getElementById('nc_cf').value.trim(),cl=document.getElementById('nc_cl').value.trim(),ce=document.getElementById('nc_ce').value.trim();
-  const contacts=(cf||cl||ce)?[{first:cf,last:cl,email:ce}]:[];
+  const contacts=[];for(let i=0;i<3;i++){
+    const gv=id=>{const e=document.getElementById(id+i);return e?e.value.trim():'';};
+    const c={first:gv('nc_cf'),last:gv('nc_cl'),email:gv('nc_ce'),phone:gv('nc_cp')};
+    if(c.first||c.last||c.email||c.phone){if(!c.phone)delete c.phone;contacts.push(c);}}
   const pid=DB.newId();let lines=[],value=0;
   if(general){value=+document.getElementById('nc_genval').value||0;}
   else{
