@@ -99,9 +99,12 @@ function render(){
   }
   W.innerHTML=DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>';
   const rows=filtered();
-  const base=rows.reduce((a,i)=>a+(+i.importe_base||0),0), tot=rows.reduce((a,i)=>a+(+i.total_factura||0),0);
-  const cob=rows.reduce((a,i)=>a+(i.status==='cancelado'?0:cobrado(i)),0);
-  const pend=rows.reduce((a,i)=>a+((i.status==='cancelado')?0:Math.max(0,(+i.total_factura||0)-cobrado(i))),0);
+  /* cancelled invoices are OUT of every card (they were inflating Net/Total while the
+     € Dashboard correctly excluded them — the two screens disagreed) */
+  const live=rows.filter(i=>i.status!=='cancelado');
+  const base=live.reduce((a,i)=>a+(+i.importe_base||0),0), tot=live.reduce((a,i)=>a+(+i.total_factura||0),0);
+  const cob=live.reduce((a,i)=>a+cobrado(i),0);
+  const pend=live.reduce((a,i)=>a+Math.max(0,(+i.total_factura||0)-cobrado(i)),0);
   C.innerHTML=
     '<div class="cards">'+
       '<div class="cardk"><div class="v">'+rows.length+'</div><div class="k">Invoices</div></div>'+
@@ -141,7 +144,7 @@ function render(){
         'VAT €':+i.iva_importe||0,
         'Total €':+i.total_factura||0,
         'Status':INV_STATUS[i.status]||i.status||'',
-        'Collected €':i.status==='pagado'?(+i.total_factura||0):'',
+        'Collected €':(i.status!=='cancelado'&&cobrado(i))?cobrado(i):'',
         'Sales rep':i.responsable_comercial?DB.personName(i.responsable_comercial):'',
         'Entered by':i.entered_by||'',
         'Comments':i.comentarios||''
@@ -192,7 +195,7 @@ function renderTable(rows){
       '<td class="num">'+eurF(i.iva_importe)+' <span class="hint">'+(i.iva_pct!=null?i.iva_pct+'%':'')+'</span></td>'+
       '<td class="num"><b>'+eurF(i.total_factura)+'</b></td>'+
       '<td>'+stSel+'</td>'+
-      '<td>'+(i.status==='pagado'?eurF(i.total_factura):(i.status==='cancelado'?'':'<span class="hint">—</span>'))+'</td>'+
+      '<td>'+(i.status==='cancelado'?'':(cobrado(i)?eurF(cobrado(i)):'<span class="hint">—</span>'))+'</td>'+
       '<td>'+(i.responsable_comercial?esc(DB.personName(i.responsable_comercial)):'—')+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td>'+esc(i.entered_by||'')+'</td>'+
@@ -205,7 +208,8 @@ function renderTable(rows){
     if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — edit the invoice.');s.value=i.status;return;}
     i.status=s.value;
     if(i.status==='cancelado')i.metodo_pago='na';
-    if(i.status==='pagado'&&!i.fecha_cobro)i.fecha_cobro=todayISO();
+    if(i.status==='pagado'){if(!i.fecha_cobro)i.fecha_cobro=todayISO();}
+    else i.fecha_cobro=null; // leaving Paid clears the stamp — a stale one made SPX count it as paid forever
     DB.save();render();
   });
   document.querySelectorAll('[data-kill]').forEach(b=>b.onclick=()=>{
@@ -363,13 +367,24 @@ function saveInvoice(){
   if((prod==='abono'||st==='abono')&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. R20260012).');
   const fecha=$('m_fecha').value;
   if(!fecha)return err('Date is missing.');
-  if(+fecha.slice(0,4)>new Date().getFullYear())return err('The date cannot go beyond the current year.');
+  const yr=+fecha.slice(0,4);
+  if(yr>new Date().getFullYear())return err('The date cannot go beyond the current year.');
+  if(yr<2020)return err('That date looks wrong ('+fecha.slice(0,4)+') — check the year.');
   if($('m_iva').value==='0'&&!$('m_motivo').value)return err('0% VAT: choose the reason (exempt / not subject / reverse charge / export).');
+  if($('m_usd').checked&&$('m_usdi').value==='')return err('Invoiced in USD: enter the USD amount too (both EUR and USD go in by hand).');
   /* analítica: every line carrying money/passes MUST have an item (código contable) — mandatory */
   const dataLines=allocRows.filter(r=>((+r.amount||0)!==0||(+r.passes||0)>0));
   if(dataLines.some(r=>!r.codigoId))return err('Every analítica line needs an item / código contable — it is mandatory.');
   const allocs=dataLines.filter(r=>r.codigoId);
-  const base=+$('m_base').value||0,sum=allocs.reduce((a,r)=>a+(+r.amount||0),0);
+  let base=+$('m_base').value||0;
+  /* credit notes are stored NEGATIVE — everywhere downstream (Money, KPIs, Excel) sums
+     them, so a positive abono would double-count revenue instead of reversing it. */
+  const esAbono=(prod==='abono'||st==='abono');
+  if(esAbono&&base>0){
+    base=-base;
+    allocRows.forEach(r=>{if((+r.amount||0)>0)r.amount=-Math.abs(+r.amount);});
+  }
+  const sum=allocs.reduce((a,r)=>a+(+r.amount||0),0);
   if(allocs.length&&Math.abs(sum-base)>0.01){
     if(!confirm('The analítica ('+finFmt(sum)+') does not add up to the net amount ('+finFmt(base)+'). Save anyway?'))return;
   }
@@ -391,8 +406,12 @@ function saveInvoice(){
     iva_pct:+$('m_iva').value,iva_motivo:$('m_iva').value==='0'?$('m_motivo').value:null,
     iva_importe:num2(base*(+$('m_iva').value)/100),total_factura:num2(base*(1+(+$('m_iva').value)/100)),
     descuento_pct:$('m_dto').value===''?null:+$('m_dto').value,
-    status:st,fecha_cobro:null,
-    importe_cobrado:null,
+    /* collections: importe_cobrado (legacy partial payments) is PRESERVED on edit — never
+       wiped by an unrelated change. fecha_cobro follows the status: stamped when Paid,
+       CLEARED when not (a stale stamp used to make SPX report unpaid invoices as paid). */
+    status:st,
+    fecha_cobro:st==='pagado'?((editingId&&(DB.invoice(editingId)||{}).fecha_cobro)||todayISO()):null,
+    importe_cobrado:editingId?((DB.invoice(editingId)||{}).importe_cobrado!=null?(DB.invoice(editingId)||{}).importe_cobrado:null):null,
     metodo_pago:st==='cancelado'?'na':$('m_pago').value,
     comentarios:$('m_com').value.trim(),
     abono_de:(st==='abono'||prod==='abono')&&$('m_abde').value?+$('m_abde').value:null,
@@ -421,12 +440,18 @@ function syncDelegates(inv){
   if(inv.status==='cancelado')return;
   if(!(inv.producto==='tickets'||inv.producto==='sponsorship'))return;
   const src=inv.producto==='tickets'?'ticket':'sponsor';
+  /* passes are summed PER EVENT first: two analítica lines on the same event (e.g. stand +
+     extra passes) used to top up to the max of the two instead of the total. */
+  const wantByEvent={};
   DB.allocsFor(inv.id).forEach(a=>{
-    const want=+a.passes||0;if(want<=0)return;
     if(a.eventId==null||a.eventId==='')return; // non-event item (Webinars/ATA/…) → no delegate seats
-    const have=DB.delegates.filter(d=>d.invoice_id==inv.id&&d.eventId==a.eventId).length;
+    wantByEvent[a.eventId]=(wantByEvent[a.eventId]||0)+(+a.passes||0);
+  });
+  Object.keys(wantByEvent).forEach(evId=>{
+    const want=wantByEvent[evId];if(want<=0)return;
+    const have=DB.delegates.filter(d=>d.invoice_id==inv.id&&d.eventId==evId).length;
     for(let k=have;k<want;k++){
-      DB.delegates.push({id:DB.newId(),eventId:a.eventId,source:src,invoice_id:inv.id,
+      DB.delegates.push({id:DB.newId(),eventId:+evId,source:src,invoice_id:inv.id,
         sponsor_name:src==='sponsor'?(inv.razon_social||''):null,
         name:'',email:'',company:src==='ticket'?(inv.razon_social||''):'',job_title:'',
         seller:inv.responsable_comercial||null,crm_tagged:false,materials_sent:false,

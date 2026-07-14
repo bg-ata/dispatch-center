@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RENMAD Dispatch Center — Overview</title>
+<title>RENMAD Dispatch Center — Me</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--green:#3E8C28;--amber:#C77800;--blue:#29ACE3;}
   *{box-sizing:border-box}
@@ -16,20 +16,18 @@
   h1{margin:6px 0 2px;font-size:23px;font-weight:700;color:var(--charcoal);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .rolepill{font-size:11px;padding:2px 9px;border-radius:20px;background:#eceae3;color:#5f5e5a;font-weight:600}
   .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
-  .grid2{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;align-items:start}
-  /* phones: one column, timer first then the profile card (wrappers dissolve via display:contents) */
-  @media(max-width:860px){
-    .grid2{display:flex;flex-direction:column;gap:0}
-    .grid2>div{display:contents}
-    #clockPanel{order:1}#profPanel{order:2}#awayPanel{order:3}#alarmPanel{order:4}
-  }
+  .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;align-items:start}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr}}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
   .panel h3{margin:0 0 4px;font-size:15px;color:var(--charcoal)}
   .panel .hint{font-size:12px;color:var(--muted);font-weight:400;margin:0 0 10px}
   .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;color:var(--charcoal);cursor:pointer;font:inherit}
   .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
+  .btn.ok{background:var(--green);color:#fff;border-color:var(--green);font-weight:600}
+  .btn.no{color:var(--red);border-color:#f0c4c4}
   .btn:hover{filter:brightness(.97)}
   .clockbig{font-size:30px;font-weight:800;color:var(--charcoal);padding:10px 30px}
+  .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
   .alarm{background:#FBEAEA;border:1px solid #E8B4B4;color:#8a1d1d;font-size:13px;padding:10px 14px;border-radius:10px;margin-bottom:10px}
   .alarm a{color:#8a1d1d;font-weight:700}
   .allgood{background:#EAF5E6;border:1px solid #BEE0AF;color:#2f6a1f;font-size:13px;padding:10px 14px;border-radius:10px}
@@ -37,20 +35,65 @@
   .evchip{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;color:var(--charcoal);cursor:pointer;text-decoration:none}
   .evchip:hover{border-color:var(--orange)} .evchip .dot{width:10px;height:10px;border-radius:3px}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #efede8}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #efede8;vertical-align:top}
   th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   .st{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;color:#fff;white-space:nowrap}
+  .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block;white-space:nowrap}
   .empty{color:var(--muted);font-style:italic;padding:8px 2px}
   .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #f2f0ea;font-size:13px}
   .kv:last-child{border-bottom:none} .kv .k{color:var(--muted)} .kv .v{color:var(--charcoal);font-weight:600;text-align:right}
-  .prof-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-  /* phones: landing = a big clock in/out screen; the rest scrolls below the fold */
+  input,select{padding:7px 9px;border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit}
+  .frm label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px}
+  .days{font-size:13px;color:var(--charcoal);font-weight:600;margin:2px 0 6px}
+  .flags{font-size:12px;color:var(--red);margin:0 0 10px;min-height:15px}
+  .flags div{margin-bottom:2px}
+  .flag{color:var(--red);font-size:12px}
+  .decidecard{border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fff}
+  /* allocation */
+  .mnav{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .mnav b{font-size:14px;color:var(--charcoal);min-width:150px;text-align:center}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+  .chipbox{background:#faf9f6;border:1px solid var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:var(--muted)}
+  .chipbox b{display:block;font-size:16px;color:var(--charcoal);font-variant-numeric:tabular-nums}
+  .chipbox.good b{color:var(--green)}.chipbox.bad b{color:var(--red)}
+  .code{font-size:11px;color:var(--muted)}
+  .autoline{font-size:12px;color:var(--muted);background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:7px 11px;margin-bottom:10px}
+  .autoline b{color:var(--charcoal)}
+  .agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:2px 18px}
+  .acell{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #efede8;min-width:0}
+  .acell .alab{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acell input.hrs{width:70px;text-align:right;padding:4px 7px;flex:0 0 auto}
+  .atot{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:700;border-top:2px solid var(--line);background:#f6f5f1;padding:9px 11px;margin-top:8px;border-radius:0 0 9px 9px}
+  .atot .num{font-variant-numeric:tabular-nums}
+  .mx{overflow-x:auto}
+  .mx table{font-size:12px;min-width:520px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
+  /* to-do */
+  .td2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:520px){.td2{grid-template-columns:1fr}}
+  .tdcol h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .tditem{display:flex;align-items:flex-start;gap:7px;padding:6px 0;border-bottom:1px solid #f2f0ea;font-size:13px}
+  .tditem .tdtxt{flex:1;min-width:0;overflow-wrap:anywhere}
+  .tditem button{border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:12px;padding:2px 7px;color:var(--charcoal);flex:0 0 auto}
+  .tditem button:hover{filter:brightness(.96)}
+  .duechip{font-size:10.5px;font-weight:700;border-radius:9px;padding:1px 7px;background:#f0eee7;color:var(--muted);white-space:nowrap}
+  .duechip.late{background:var(--red);color:#fff}
+  /* fold pattern */
+  .fold{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+  .fold>button.fhead{width:100%;text-align:left;background:none;border:none;padding:12px 16px;font:600 14px 'Segoe UI',sans-serif;color:var(--charcoal);cursor:pointer}
+  .fold>.fbody{display:none;padding:0 16px 14px}
+  .fold.open>.fbody{display:block}
+  .fold .arr{float:right;color:var(--muted);font-size:12px}
+  /* phones */
   @media(max-width:680px){
     h1{font-size:19px}
     .btn{padding:10px 14px}
     .btn.clockbig{width:100%;padding:26px 12px;font-size:28px;border-radius:14px}
     #clockPanel{padding:18px 16px}
     #clockPanel #liveWorked{font-size:34px}
+    .frm input,.frm select{width:100%}
+    .acell input.hrs{width:62px}
   }
 </style>
 </head>
@@ -64,32 +107,72 @@
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
 let _clockTick=null;
+let weekISO=toISO(monday(new Date()));   // allocation week being edited
+let tcM=new Date();tcM.setDate(1);       // month shown in "My month"
+let changeOf=null;                        // holiday change-request in progress
+const _open={};                           // fold open/closed state (survives re-renders)
+
+/* tiny visibility chip next to panel titles — who can see this information */
+function visBadge(t){const pub=t==='everyone';return '<span title="'+(pub?'Visible to the whole team':'Private — '+t)+'" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:'+(pub?'#E9F0FB':'#F0EEE7')+';color:'+(pub?'#185FA5':'#7c7c78')+'">'+(pub?'👁 everyone':'🔒 '+t)+'</span>'}
+
+function foldHtml(id,title){
+  return '<div class="fold'+(_open[id]?' open':'')+'" id="'+id+'"><button class="fhead" type="button">'+title+' <span class="arr">'+(_open[id]?'▾':'▸')+'</span></button><div class="fbody" id="'+id+'Body"></div></div>';
+}
+function wireFolds(){
+  document.querySelectorAll('.fold>.fhead').forEach(b=>b.onclick=()=>{
+    const f=b.parentElement,open=f.classList.toggle('open');
+    _open[f.id]=open;const a=b.querySelector('.arr');if(a)a.textContent=open?'▾':'▸';
+  });
+}
+function openFold(id){
+  const f=document.getElementById(id);if(!f)return;
+  _open[id]=true;f.classList.add('open');
+  const a=f.querySelector('.arr');if(a)a.textContent='▾';
+  f.scrollIntoView({block:'start',behavior:'smooth'});
+}
 
 function render(){
   const me=DB.currentUser;const C=document.getElementById('content');
-  if(!me){C.innerHTML='<h1>🧭 Overview</h1><p class="sub">You are signed in but not in the staff roster yet — ask Belén to add you. Once added, this becomes your personal home.</p>';return;}
+  if(_clockTick){clearInterval(_clockTick);_clockTick=null;}
+  if(!me){C.innerHTML='<h1>🙋 Me</h1><p class="sub">You are signed in but not in the staff roster yet — ask Belén to add you. Once added, this becomes your personal home.</p>';return;}
   const acc=me.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
+  /* "at an event" head suffix, computed up-front for the fold title */
+  const today=toISO(new Date());
+  let awaySuffix='';
+  if(DB.eventReady()){
+    const mineAw=DB.eventaway.filter(e=>e.personId==me.id);
+    const cur=mineAw.find(e=>(e.dateFrom||'')<=today&&(e.dateTo||'')>=today);
+    const up=mineAw.filter(e=>(e.dateFrom||'')>today).length;
+    awaySuffix=cur?' <span style="font-size:12px;color:#185FA5;font-weight:700">· now: '+esc(cur.title||'Event')+'</span>'
+      :(up?' <span style="font-size:12px;color:var(--muted);font-weight:400">· '+up+' upcoming</span>':'');
+  }
   C.innerHTML=
-    '<h1>🧭 Hi, '+me.name.split(' ')[0]+' <span class="rolepill">'+me.role+'</span>'+
+    '<h1>🙋 Me — '+esc(me.name.split(' ')[0])+' <span class="rolepill">'+me.role+'</span>'+
       '<span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span>'+
       (me.finance?'<span class="rolepill" style="background:#185FA5;color:#fff">€ finance</span>':'')+
       (me.hr?'<span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</h1>'+
-    '<p class="sub">Your day at a glance — clock in, see what needs you, and jump to your events.</p>'+
+    '<p class="sub">Your whole day in one place — clock in, plan your week, tick off your list and manage your time off.</p>'+
     '<div class="grid2">'+
-      '<div><div class="panel" id="profPanel"></div></div>'+
-      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="awayPanel"></div><div class="panel" id="alarmPanel"></div></div>'+
+      '<div><div class="panel" id="clockPanel"></div><div class="panel" id="allocPanel"></div></div>'+
+      '<div><div class="panel" id="alarmPanel"></div><div class="panel" id="todoPanel"></div><div class="panel" id="holPanel"></div></div>'+
     '</div>'+
-    '<div class="panel" id="evPanel"></div>';
-  renderClock();renderAway();renderAlarms();renderProfile();renderEvents();
+    '<div class="panel" id="evPanel"></div>'+
+    foldHtml('awayFold','📣 At an event'+awaySuffix)+
+    foldHtml('reportFold','🛠 Report a clock mistake')+
+    foldHtml('monthFold','📆 My month')+
+    foldHtml('profFold','👤 My profile'+visBadge('everyone'));
+  renderClock();renderAllocPanel();renderAlarms();renderTodo();renderHolPanel();renderEvents();
+  renderAwayFold();renderReportFold();renderMonthFold();renderProfFold();
+  wireFolds();
 }
 
-/* ---- clock in / out ---- */
+/* ================= clock in / out (SACRED — ported verbatim from the old home) ================= */
 function renderClock(){
   const me=DB.currentUser,box=document.getElementById('clockPanel');
   if(_clockTick){clearInterval(_clockTick);_clockTick=null;}
-  if(!DB.tcReady()){box.innerHTML='<h3>⏱ Time clock</h3><p class="hint">Not active yet — run dispatch_hr3.sql. Once live, clock in/out lives right here.</p>';return;}
+  if(!DB.tcReady()){box.innerHTML='<h3>⏱ Clock'+visBadge('you + HR')+'</h3><p class="hint">Not active yet — run dispatch_hr3.sql. Once live, clock in/out lives right here.</p>';return;}
   const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
-  box.innerHTML='<h3>⏱ Time clock</h3>'+
+  box.innerHTML='<h3>⏱ Clock'+visBadge('you + HR')+'</h3>'+
     '<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">'+
     '<button class="btn primary clockbig" id="punch">'+(info.open?'Clock OUT':'Clock IN')+'</button>'+
     '<div><div style="font-size:15px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+'" id="clockState">'+(info.open?'🟢 Clocked in':'⚪ Clocked out')+'</div>'+
@@ -102,7 +185,7 @@ function renderClock(){
       '<div style="height:14px;border-radius:8px;background:#ece9e2;overflow:hidden"><div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div></div>'+
       '<div id="wkNote" style="font-size:12.5px;margin-top:6px;min-height:16px"></div>'+
     '</div>'+
-    '<div style="margin-top:12px"><a href="hr.html#timeclock" style="font-size:12px;color:var(--muted)">Full month &amp; report a mistake →</a></div>';
+    '<div style="margin-top:12px;font-size:12px;color:var(--muted)"><a href="#" id="lnkMonth" style="color:var(--muted)">Full month ↓</a> &nbsp;·&nbsp; <a href="#" id="lnkReport" style="color:var(--muted)">report a mistake ↓</a></div>';
   const tick=()=>{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('liveWorked');if(el)el.textContent=fmtHMS(li.seconds);updateWeekBar(me);};
   tick();if(info.open)_clockTick=setInterval(tick,1000);
   document.getElementById('punch').onclick=async ev=>{
@@ -111,6 +194,8 @@ function renderClock(){
     await DB.punch(info.open?'out':'in'); // awaited insert; failure -> pending queue + banner
     renderClock();
   };
+  document.getElementById('lnkMonth').onclick=e=>{e.preventDefault();openFold('monthFold');};
+  document.getElementById('lnkReport').onclick=e=>{e.preventDefault();openFold('reportFold');};
 }
 
 /* weekly-hours bar (same behaviour as the HR time-clock tab): fills red→green
@@ -129,37 +214,432 @@ function updateWeekBar(me){
   else if(p.remaining<=WEEK_NEAR_H)note.innerHTML='<span style="color:var(--red);font-weight:700">🔔 Under 30 minutes to go this week!</span>';
   else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
 }
-/* ---- "at an event" (away from the office) ----
-   Collapsed to a single line by default (screen space); tap to unfold the form + list. */
-let awayOpen=false;
-function renderAway(){
-  const me=DB.currentUser,box=document.getElementById('awayPanel');if(!box)return;
+
+/* ================= my week allocation (ported from hr.html Allocation tab) ================= */
+const fmtH=v=>(Math.round(v*100)/100).toLocaleString('es-ES');
+function projPrefix(p){const m=(p.label||'').match(/^\s*(\d+)/);return m?+m[1]:99;}
+function projCodeNum(p){const m=(p.code||'').match(/\d+/);return m?+m[0]:0;}
+function projCmp(a,b){return projPrefix(a)-projPrefix(b)||projCodeNum(a)-projCodeNum(b)||(a.sort||0)-(b.sort||0);}
+function activeProjects(){return DB.projects.filter(p=>p.active!==false&&!p.kind).sort(projCmp);}
+function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
+function renderAllocPanel(){
+  const box=document.getElementById('allocPanel');
+  let h='<h3>📊 My week allocation'+visBadge('you + HR')+'</h3>';
+  if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
+  box.innerHTML=h+
+    '<p class="hint">Split your week’s hours across the project numbers — bank holidays and approved holidays are filled in for you.</p>'+
+    '<div id="allocAlarm"></div>'+
+    '<div class="mnav"><button class="btn" id="w_prev">‹</button><b id="w_lab"></b><button class="btn" id="w_next">›</button>'+
+    '<button class="btn" id="w_now" style="font-size:12px">This week</button>'+
+    '<span id="w_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+    '<div class="chips" id="chips"></div><div id="ts"></div>'+
+    '<div style="margin-top:12px"><button class="btn primary" id="saveBtn">Save my hours</button></div>';
+  renderAllocAlarm();renderWeek();
+  document.getElementById('saveBtn').onclick=saveWeek;
+  document.getElementById('w_prev').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),-7));renderWeek();};
+  document.getElementById('w_next').onclick=()=>{weekISO=toISO(addDays(ymd(weekISO),7));renderWeek();};
+  document.getElementById('w_now').onclick=()=>{weekISO=toISO(monday(new Date()));renderWeek();};
+}
+function renderAllocAlarm(){
+  const me=DB.currentUser,box=document.getElementById('allocAlarm');
+  if(!me||!box){if(box)box.innerHTML='';return;}
+  const miss=missingWeeks(me.id);
+  box.innerHTML=miss.length
+    ?'<div class="alarm">⏰ <b>'+miss.length+' week'+(miss.length===1?'':'s')+' without your hours:</b> '+
+      miss.map(w=>'<a href="#" data-goto="'+w+'">'+w+'</a>').join(' · ')+' — filling them in is mandatory.</div>'
+    :'';
+  box.querySelectorAll('[data-goto]').forEach(a=>a.onclick=e=>{e.preventDefault();weekISO=a.dataset.goto;renderWeek();});
+}
+function renderWeek(){
+  const me=DB.currentUser;
+  const mon=ymd(weekISO),fri=addDays(mon,4);
+  document.getElementById('w_lab').textContent='Week of '+weekISO+' ('+fmtD(mon)+' – '+fmtD(fri)+')';
+  if(!me){document.getElementById('ts').innerHTML='<tr><td class="empty">Log in to fill your hours.</td></tr>';return;}
+  const w=weekWorkInfo(weekISO,me.id);
+  const t=tsFor(me.id,weekISO);
+  const manual=t?Object.assign({},t.hours):{};
+  const sum=Object.values(manual).reduce((a,v)=>a+(+v||0),0);
+  const remaining=Math.round((w.toAllocate-sum)*100)/100;
+  const over=remaining<-0.01, exact=Math.abs(remaining)<0.01;
+  document.getElementById('chips').innerHTML=
+    '<span class="chipbox">Required<b>'+fmtH(w.required)+' h</b></span>'+
+    (w.fest>0?'<span class="chipbox" title="'+w.festNames.join(', ')+'">00. Festivos (auto)<b>'+fmtH(w.fest)+' h</b></span>':'')+
+    (w.vac>0?'<span class="chipbox">04. Vacaciones (auto)<b>'+fmtH(w.vac)+' h</b></span>':'')+
+    (w.leave>0?'<span class="chipbox">On leave (auto)<b>'+fmtH(w.leave)+' h</b></span>':'')+
+    '<span class="chipbox">To allocate<b>'+fmtH(w.toAllocate)+' h</b></span>'+
+    '<span class="chipbox '+(exact?'good':'bad')+'" id="remChip">'+(over?'⚠ Over by':'Remaining')+'<b>'+(exact?'✓ 0':fmtH(Math.abs(remaining))+' h')+'</b></span>';
+  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  const autos=[];
+  if(w.fest>0&&fp)autos.push('<b>'+fp.label+'</b> '+fmtH(w.fest)+' h <span class="code">('+w.festNames.join(', ')+')</span>');
+  if(w.vac>0&&vp)autos.push('<b>'+vp.label+'</b> '+fmtH(w.vac)+' h <span class="code">(approved holidays)</span>');
+  let h=autos.length?'<div class="autoline">Auto-filled for you: '+autos.join(' &nbsp;·&nbsp; ')+'</div>':'';
+  h+='<div class="agrid">'+activeProjects().map(p=>
+      '<label class="acell" title="'+p.label+(p.code?' ('+p.code+')':'')+'"><span class="alab">'+p.label+(p.code?' <span class="code">('+p.code+')</span>':'')+'</span>'+
+      '<input class="hrs" type="number" min="0" step="0.25" data-pid="'+p.id+'" value="'+(manual[p.id]!=null?manual[p.id]:'')+'" placeholder="0"></label>').join('')+'</div>';
+  h+='<div class="atot"><span>Total (with auto-filled lines)</span><span class="num" id="tsTotal">'+fmtH(sum+w.fest+w.vac)+' / '+fmtH(w.required)+' h</span></div>';
+  document.getElementById('ts').innerHTML=h;
+  document.querySelectorAll('#ts input').forEach(inp=>inp.oninput=()=>{
+    let s=0;document.querySelectorAll('#ts input').forEach(i=>s+=(+i.value||0));
+    document.getElementById('tsTotal').textContent=fmtH(s+w.fest+w.vac)+' / '+fmtH(w.required)+' h';
+    const rem=Math.round((w.toAllocate-s)*100)/100,ov=rem<-0.01,ex=Math.abs(rem)<0.01;
+    const chip=document.getElementById('remChip');
+    chip.className='chipbox '+(ex?'good':'bad');
+    chip.innerHTML=(ov?'⚠ Over by':'Remaining')+'<b>'+(ex?'✓ 0':fmtH(Math.abs(rem))+' h')+'</b>';
+    const tot=document.getElementById('tsTotal');tot.style.color=ov?'var(--red)':'';
+  });
+}
+function saveWeek(){
+  const me=DB.currentUser;if(!me){alert('Log in first.');return;}
+  const hours={};
+  document.querySelectorAll('#ts input').forEach(i=>{const v=+i.value;if(v>0)hours[i.dataset.pid]=v;});
+  const w=weekWorkInfo(weekISO,me.id);
+  const sum=Object.values(hours).reduce((a,v)=>a+(+v||0),0);
+  if(sum-w.toAllocate>0.01){ // the week can't hold more than it has — block it
+    alert('You have allocated '+fmtH(sum)+' h but this week only has '+fmtH(w.toAllocate)+' h to allocate'+
+      ((w.fest||w.vac)?' (bank holidays / holidays already take the rest)':'')+'.\n\nPlease take '+fmtH(sum-w.toAllocate)+' h off before saving.');
+    return;
+  }
+  let t=tsFor(me.id,weekISO);
+  if(t)t.hours=hours;else DB.timesheets.push({id:DB.newId(),personId:me.id,week:weekISO,hours});
+  DB.save();
+  const m=document.getElementById('w_msg');
+  m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
+  m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
+  setTimeout(()=>m.textContent='',5000);
+  renderAllocAlarm();renderWeek();renderAlarms();
+}
+
+/* ================= 🔔 needs you: alarms + holiday decisions ================= */
+function renderAlarms(){
+  const me=DB.currentUser,box=document.getElementById('alarmPanel');if(!box)return;
+  const a=[];
+  if(DB.hrReady()){
+    const ap=DB.holidays.filter(holActsOnMe).length;
+    if(ap)a.push({t:ap+' holiday '+(ap===1?'request':'requests')+' waiting for your decision — just below',scroll:'decidebox'});
+    const mw=missingWeeks(me.id).length;
+    if(mw)a.push({t:mw+' week'+(mw===1?'':'s')+' without your hours filled in',scroll:'allocPanel'});
+  }
+  if(DB.tcReady()){
+    const mp=tcMissingDays(me.id).length;
+    if(mp)a.push({t:mp+' day'+(mp===1?'':'s')+' with no clock punches — report what happened',fold:'reportFold'});
+    const ot=tcOvertimeWeeks(me.id).length;
+    if(ot)a.push({t:ot+' week'+(ot===1?'':'s')+' over the allowed hours — please balance it',fold:'monthFold'});
+    if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',href:'hr.html#timeclock'});}
+  }
+  const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
+  box.innerHTML='<h3>🔔 Needs you</h3>'+
+    (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+(x.href||'#')+'"'+(x.fold?' data-openfold="'+x.fold+'"':'')+(x.scroll?' data-scrollto="'+x.scroll+'"':'')+'>'+x.t+'</a></div>').join('')
+      :'<div class="allgood">✓ All caught up — nothing waiting on you.</div>')+
+    (myOpenTasks?'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">You have <b>'+myOpenTasks+'</b> open task'+(myOpenTasks===1?'':'s')+' (bottom of the page).</div>':'')+
+    '<div id="decidebox"></div>';
+  box.querySelectorAll('[data-openfold]').forEach(el=>el.onclick=e=>{e.preventDefault();openFold(el.dataset.openfold);});
+  box.querySelectorAll('[data-scrollto]').forEach(el=>el.onclick=e=>{e.preventDefault();const t2=document.getElementById(el.dataset.scrollto);if(t2)t2.scrollIntoView({block:'start',behavior:'smooth'});});
+  renderDecide();
+}
+/* --- shared holiday helpers (ported from hr.html) --- */
+function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
+function isExemptDay(iso){ // periods where team overlaps are normal: August, Christmas, Easter week
+  const d=ymd(iso),m=d.getMonth(),day=d.getDate();
+  if(m===7)return true;
+  if((m===11&&day>=22)||(m===0&&day<=6))return true;
+  const e=easter(d.getFullYear());
+  return d>=addDays(e,-7)&&d<=addDays(e,1);
+}
+function overlapDays(aF,aT,bF,bT){ // shared NON-EXEMPT working days of two ranges
+  const from=aF>bF?aF:bF,to=aT<bT?aT:bT,out=[];
+  if(from>to)return out;
+  for(let d=ymd(from);toISO(d)<=to;d=addDays(d,1)){const iso=toISO(d);
+    if(d.getDay()===0||d.getDay()===6||madHol(iso))continue;
+    if(!isExemptDay(iso))out.push(iso);}
+  return out;
+}
+function reqAlarms(r){ // ⚠ strings for one request (used at request time AND in the approval panel)
+  const p=DB.person(r.personId),alarms=[];if(!p)return alarms;
+  if(r.type==='remote'){
+    const yr=r.dateFrom.slice(0,4);
+    const used=remoteDaysUsed(r.personId,yr)+(r.id?0:(+r.workDays||0));
+    if(used>REMOTE_MAX_DAYS)alarms.push('Office days: '+used+' of '+REMOTE_MAX_DAYS+' in '+yr+' — over the 8-day yearly limit.');
+    return alarms;
+  }
+  DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId!=r.personId
+    &&DB.person(o.personId)&&DB.person(o.personId).role===p.role).forEach(o=>{
+    const ov=overlapDays(r.dateFrom,r.dateTo,o.dateFrom,o.dateTo);
+    if(ov.length)alarms.push('Team overlap: '+DB.personName(o.personId)+' is also off '+ov.length+' of these working day'+(ov.length===1?'':'s')+' (outside Xmas / Easter / August).');
+  });
+  DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId==r.personId&&o.id!=r.replaces).forEach(o=>{
+    let gap=null;
+    if(o.dateTo<r.dateFrom)gap=workingDaysBetween(toISO(addDays(ymd(o.dateTo),1)),toISO(addDays(ymd(r.dateFrom),-1)));
+    else if(r.dateTo<o.dateFrom)gap=workingDaysBetween(toISO(addDays(ymd(r.dateTo),1)),toISO(addDays(ymd(o.dateFrom),-1)));
+    if(gap!=null&&gap>0&&gap<=5)alarms.push('Broken-up holidays: only '+gap+' working day'+(gap===1?'':'s')+' in the office between this and '+fmtRange(o)+' — something is not quite right.');
+  });
+  return alarms;
+}
+function typeChip(r){const ty=r.type||'vacation';if(ty==='vacation')return '';
+  const col=ty==='remote'?'var(--blue)':'var(--amber)';
+  return '<span class="chip" style="background:'+col+'">'+TYPE_LABEL[ty]+'</span> ';}
+function statusChip(h){
+  if(h.status==='approved')return '<span class="chip" style="background:var(--green)">Approved</span>';
+  if(h.status==='denied')return '<span class="chip" style="background:var(--red)">Denied</span>';
+  if(h.status==='cancelled')return '<span class="chip" style="background:#9AA0A8">Cancelled</span>';
+  return '<span class="chip" style="background:var(--amber)">'+holStageLabel(h)+'</span>';
+}
+function changeAdvice(r){ // what a change request means for the final holiday
+  if(!r.replaces)return null;
+  const o=DB.holidays.find(x=>x.id==r.replaces);if(!o)return null;
+  const net=(+r.workDays||0)-(+o.workDays||0);
+  return 'CHANGE of '+fmtRange(o)+' ('+o.workDays+'d) → '+fmtRange(r)+' ('+r.workDays+'d) · net '+(net>0?'+':'')+net+' day'+(Math.abs(net)===1?'':'s')+' on the balance.';
+}
+function esc2(s){return (s||'').replace(/"/g,'&quot;');}
+/* the approval chain of one pending request, e.g. "✓ Carlos approved 12/07 → ● YOUR TURN → then HR" */
+function chainHtml(r){
+  const p=DB.person(r.personId);if(!p)return '';
+  const chain=holChain(p);
+  const approvals=(r.log||[]).filter(l=>/^approved/.test(l.action||''));
+  let curIdx=chain.findIndex(s=>s.key===r.status);if(curIdx<0)curIdx=chain.length;
+  const fmtAt=at=>{if(!at)return '';const d=new Date(at);return isNaN(+d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');};
+  const parts=chain.map((s,i)=>{
+    const name=s.key==='hr'?'HR':(s.who?s.who.name.split(' ')[0]:'?');
+    if(i<curIdx){const ap=approvals[i];
+      return '<span style="color:var(--green);font-weight:700">✓ '+esc(ap?ap.by.split(' ')[0]:name)+' approved'+(ap&&fmtAt(ap.at)?' '+fmtAt(ap.at):'')+'</span>';}
+    if(i===curIdx)return '<span style="color:var(--orange);font-weight:800">● YOUR TURN</span>';
+    return '<span style="color:var(--muted)">then '+esc(name)+'</span>';
+  });
+  return '<div style="font-size:11.5px;margin:6px 0 2px">'+parts.join(' <span style="color:var(--muted)">→</span> ')+'</div>';
+}
+function renderDecide(){
+  const box=document.getElementById('decidebox');if(!box)return;
+  if(!DB.hrReady()){box.innerHTML='';return;}
+  const list=DB.holidays.filter(holActsOnMe);
+  if(!list.length){box.innerHTML='';return;}
+  let h='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:12px 0 6px">⏰ Needs your decision</div>';
+  list.forEach(r=>{
+    const p=DB.person(r.personId);
+    const flags=reqAlarms(r);
+    const adv=changeAdvice(r);
+    h+='<div class="decidecard">'+
+      '<div style="font-size:13px"><b style="color:var(--charcoal)">'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span> · '+(r.type==='remote'?'Office day':'Holidays')+' · <b>'+fmtRange(r)+'</b> · '+(r.workDays||'?')+'d</div>'+
+      (r.note?'<div style="font-size:12px;color:var(--muted);margin-top:2px">“'+esc(r.note)+'”</div>':'')+
+      chainHtml(r)+
+      (adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
+      flags.map(f=>'<div class="flag">⚠ '+f+'</div>').join('')+
+      '<div style="margin-top:8px"><button class="btn ok" data-ap="'+r.id+'">Approve</button> <button class="btn no" data-dn="'+r.id+'">Deny</button></div></div>';
+  });
+  box.innerHTML=h;
+  box.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,true));
+  box.querySelectorAll('[data-dn]').forEach(b=>b.onclick=()=>decide(b.dataset.dn,false));
+}
+function decide(id,ok){
+  const r=DB.holidays.find(x=>x.id==id);if(!r)return;
+  const me=DB.currentUser;
+  let note='';
+  if(!ok){note=prompt('Reason for denying (shown to '+DB.personName(r.personId)+'):')||'';}
+  r.log=(r.log||[]).concat([{by:me.name,at:new Date().toISOString(),action:(ok?'approved ('+r.status+' step)':'denied'),note}]);
+  r.status=ok?holNextStatus(r):'denied';
+  /* a fully approved CHANGE releases the holiday it replaces (kept visible as cancelled) */
+  if(r.status==='approved'&&r.replaces){
+    const o=DB.holidays.find(x=>x.id==r.replaces);
+    if(o&&o.status!=='cancelled'){o.status='cancelled';
+      o.log=(o.log||[]).concat([{by:me.name,at:new Date().toISOString(),action:'cancelled — replaced by the approved change to '+fmtRange(r)}]);}
+  }
+  DB.save();
+  try{ // tell the requester what happened (🔔 inbox); silently no-ops if the inbox table isn't there yet
+    let txt='Your time-off '+r.dateFrom+'→'+r.dateTo+' was '+(ok?'approved':'denied')+' by '+me.name;
+    if(ok&&r.status!=='approved')txt+=' — next: '+holStageLabel(r);
+    notifySend(r.personId,'holiday',txt,'home.html');
+  }catch(e){}
+  render();
+}
+
+/* ================= 📝 to-do (personal, NEW) ================= */
+function renderTodo(){
+  const me=DB.currentUser,box=document.getElementById('todoPanel');if(!box)return;
+  let h='<h3>📝 To-do'+visBadge('only you')+'</h3>';
+  if(!DB.todoReady()){
+    box.innerHTML=h+'<p class="hint">Not active yet — run <b>dispatch_me_inbox.sql</b> in Supabase, then reload. Your private list will live here.</p>';
+    return;
+  }
   const today=toISO(new Date());
-  const ready=DB.eventReady();
-  const mine=ready?DB.eventaway.filter(e=>e.personId==me.id).sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||'')):[];
-  const current=mine.find(e=>(e.dateFrom||'')<=today&&(e.dateTo||'')>=today);
-  const upcoming=mine.filter(e=>(e.dateFrom||'')>today).length;
-  const head='<div id="awHead" style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:24px">'+
-    '<h3 style="margin:0">📣 At an event?</h3>'+
-    (current?'<span style="font-size:12px;color:#185FA5;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· now: '+esc(current.title||'Event')+'</span>'
-      :(upcoming?'<span style="font-size:12px;color:var(--muted)">· '+upcoming+' upcoming</span>':''))+
-    '<span style="margin-left:auto;color:var(--muted);font-size:12px;white-space:nowrap">'+(awayOpen?'▲ hide':'▼ flag days')+'</span></div>';
-  if(!awayOpen){
-    box.style.padding='11px 18px';
-    box.innerHTML=head;
-    document.getElementById('awHead').onclick=()=>{awayOpen=true;renderAway();};
+  const mine=DB.todos.filter(t=>t.personId==me.id);
+  const open=mine.filter(t=>!t.done).sort((a,b)=>(''+(a.due||'9999-99-99')).localeCompare(''+(b.due||'9999-99-99'))||(''+(a.created||'')).localeCompare(''+(b.created||'')));
+  const done=mine.filter(t=>t.done).sort((a,b)=>(''+(b.doneAt||'')).localeCompare(''+(a.doneAt||''))).slice(0,15);
+  const dueChip=t=>{
+    if(!t.due)return '';
+    let lab=t.due;try{lab=fmtD(ymd(t.due));}catch(e){}
+    const late=!t.done&&t.due<today;
+    return '<span class="duechip'+(late?' late':'')+'" title="due '+esc2(t.due)+'">'+(late?'⚠ ':'')+esc(lab)+'</span> ';
+  };
+  h+='<p class="hint">Your private list — nobody else sees it.</p>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<input id="td_text" placeholder="Add something to do…" style="flex:1 1 150px;min-width:0">'+
+      '<input type="date" id="td_due" title="Due date (optional)" style="flex:0 0 auto">'+
+      '<button class="btn primary" id="td_add">Add</button>'+
+    '</div>'+
+    '<div class="td2">'+
+      '<div class="tdcol"><h4>To do'+(open.length?' ('+open.length+')':'')+'</h4>'+
+        (open.length?open.map(t=>'<div class="tditem">'+
+          '<button data-tdone="'+t.id+'" title="Mark done" style="color:var(--green);font-weight:700">✓</button>'+
+          '<span class="tdtxt">'+dueChip(t)+esc(t.text)+'</span>'+
+          '<button data-tdel="'+t.id+'" title="Delete" style="color:#A32D2D">×</button></div>').join('')
+        :'<p class="empty" style="font-size:12.5px">Nothing pending — add one above.</p>')+'</div>'+
+      '<div class="tdcol"><h4>Done</h4>'+
+        (done.length?done.map(t=>'<div class="tditem" style="opacity:.75">'+
+          '<button data-tback="'+t.id+'" title="Bring back">↩</button>'+
+          '<span class="tdtxt" style="text-decoration:line-through;color:var(--muted)">'+dueChip(t)+esc(t.text)+'</span>'+
+          '<button data-tdel="'+t.id+'" title="Delete" style="color:#A32D2D">×</button></div>').join('')
+        :'<p class="empty" style="font-size:12.5px">Nothing done yet.</p>')+'</div>'+
+    '</div>';
+  box.innerHTML=h;
+  const add=()=>{
+    const inp=document.getElementById('td_text'),text=inp.value.trim();
+    if(!text)return;
+    const due=document.getElementById('td_due').value||null;
+    DB.data.todos=DB.data.todos||[];
+    DB.todos.push({id:DB.newId(),personId:me.id,text,due,done:false,doneAt:null,sort:Date.now(),created:new Date().toISOString()});
+    DB.save();renderTodo();
+    const ni=document.getElementById('td_text');if(ni)ni.focus();
+  };
+  document.getElementById('td_add').onclick=add;
+  document.getElementById('td_text').addEventListener('keydown',e=>{if(e.key==='Enter')add();});
+  box.querySelectorAll('[data-tdone]').forEach(b=>b.onclick=()=>{
+    const t=DB.todos.find(x=>x.id==b.dataset.tdone);if(!t)return;
+    t.done=true;t.doneAt=new Date().toISOString();DB.save();renderTodo();});
+  box.querySelectorAll('[data-tback]').forEach(b=>b.onclick=()=>{
+    const t=DB.todos.find(x=>x.id==b.dataset.tback);if(!t)return;
+    t.done=false;t.doneAt=null;DB.save();renderTodo();});
+  box.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{
+    const i=DB.data.todos.findIndex(x=>x.id==b.dataset.tdel);if(i<0)return;
+    DB.data.todos.splice(i,1);DB.save();renderTodo();});
+}
+
+/* ================= 🌴 my holidays: balance + my requests + collapsed request form ================= */
+function renderHolPanel(){
+  const me=DB.currentUser,box=document.getElementById('holPanel');if(!box)return;
+  const yr=new Date().getFullYear();
+  let h='<h3>🌴 My holidays'+visBadge('you + approvers')+'</h3>';
+  if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
+  const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
+  h+='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
+    '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 10px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(yr)+'.</div>'+
+    '<table id="mine"></table>'+
+    '<div style="margin-top:12px">'+foldHtml('holFold','🌴 Request time off')+'</div>';
+  box.innerHTML=h;
+  const fb=document.getElementById('holFoldBody');
+  fb.innerHTML=
+    '<p class="hint" style="margin-top:2px">Your request goes to <span id="chainTxt"></span>. Office days: up to '+REMOTE_MAX_DAYS+' days per year. Approved holidays can be changed — use “Request change” next to them.</p>'+
+    '<div id="chgBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12.5px;padding:8px 12px;border-radius:8px;margin-bottom:10px"></div>'+
+    '<div class="frm">'+
+    '<label>Type<select id="r_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
+    '<label>From<input type="date" id="r_from"></label>'+
+    '<label>To (inclusive)<input type="date" id="r_to"></label>'+
+    '<div class="days" id="r_days">&nbsp;</div><div class="flags" id="r_flags"></div>'+
+    '<label>Note (optional)<input id="r_note" placeholder="e.g. family trip"></label></div>'+
+    '<button class="btn primary" id="r_send">Send request</button>'+
+    '<span id="r_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>';
+  document.getElementById('chainTxt').textContent=holChain(me).map(s=>s.key==='hr'?'HR':s.who.name).join(' → ');
+  renderMine();wireForm();
+}
+function renderMine(){
+  const me=DB.currentUser;const tbl=document.getElementById('mine');if(!tbl)return;
+  const mine=DB.holidays.filter(x=>x.personId==me.id&&(x.type||'vacation')!=='adjust').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
+  let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
+  if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
+  mine.forEach(r=>{
+    const deny=(r.log||[]).filter(l=>l.action==='denied').map(l=>l.note).filter(Boolean).join('; ');
+    const pending=['manager','belen','hr'].includes(r.status);
+    const hrLeave=LEAVE_TYPES.includes(r.type); // sick/mat/pat added by HR — not self-cancellable
+    const chg=r.replaces?' <span style="color:var(--muted);font-size:11px" title="'+esc2(changeAdvice(r)||'')+'">🔁 change</span>':'';
+    h+='<tr><td>'+typeChip(r)+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
+      '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+esc(deny)+'</span>':'')+'</td>'+
+      '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
+      (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
+  });
+  tbl.innerHTML=h;
+  tbl.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{
+    if(!confirm('Withdraw this request?'))return;
+    DB.data.holidays=DB.holidays.filter(x=>x.id!=b.dataset.cx);DB.save();render();});
+  tbl.querySelectorAll('[data-chg]').forEach(b=>b.onclick=()=>startChange(+b.dataset.chg));
+}
+function startChange(id){
+  const o=DB.holidays.find(x=>x.id==id);if(!o)return;
+  changeOf=id;
+  openFold('holFold');
+  const ban=document.getElementById('chgBanner');
+  ban.style.display='block';
+  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'office days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
+  document.getElementById('chgOff').onclick=e=>{e.preventDefault();changeOf=null;ban.style.display='none';const ty2=document.getElementById('r_type');if(ty2)ty2.disabled=false;};
+  const ty=document.getElementById('r_type');ty.value=o.type||'vacation';ty.disabled=true;
+  ban.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function wireForm(){
+  const f=document.getElementById('r_from'),t=document.getElementById('r_to'),ty=document.getElementById('r_type');
+  if(!f)return;
+  const upd=()=>{
+    const days=document.getElementById('r_days'),fl=document.getElementById('r_flags');
+    if(!f.value||!t.value||t.value<f.value){days.innerHTML='&nbsp;';fl.innerHTML='';return;}
+    const wd=workingDaysBetween(f.value,t.value);
+    const hols=[];for(let d=ymd(f.value);toISO(d)<=t.value;d=addDays(d,1)){const n=madHol(toISO(d));if(n&&d.getDay()!==0&&d.getDay()!==6)hols.push(toISO(d).slice(5)+' '+n);}
+    days.textContent=wd+' working day'+(wd===1?'':'s')+(hols.length?' — bank holidays not counted: '+hols.join(', '):'');
+    const fake={id:null,personId:DB.currentUser.id,dateFrom:f.value,dateTo:t.value,type:ty.value,workDays:wd,replaces:changeOf};
+    fl.innerHTML=reqAlarms(fake).map(a=>'<div>⚠ '+a+'</div>').join('');
+  };
+  f.onchange=upd;t.onchange=upd;ty.onchange=upd;
+  document.getElementById('r_send').onclick=()=>{
+    const me=DB.currentUser;if(!me){alert('Log in first.');return;}
+    if(!f.value||!t.value||t.value<f.value){alert('Pick a valid date range.');return;}
+    const wd=workingDaysBetween(f.value,t.value);
+    if(wd<=0){alert('That range has no working days (weekend / bank holidays).');return;}
+    if(ty.value==='remote'&&remoteDaysUsed(me.id,f.value.slice(0,4))+wd>REMOTE_MAX_DAYS){
+      alert('That would exceed the office-days limit of '+REMOTE_MAX_DAYS+' days this year.');return;}
+    const chain=holChain(me);
+    const orig=changeOf?DB.holidays.find(x=>x.id==changeOf):null;
+    DB.holidays.push({id:DB.newId(),personId:me.id,dateFrom:f.value,dateTo:t.value,workDays:wd,type:ty.value,
+      replaces:orig?orig.id:null,
+      note:document.getElementById('r_note').value.trim(),status:chain[0].key,
+      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'office days':'holidays'))}]});
+    DB.save();
+    changeOf=null;document.getElementById('chgBanner').style.display='none';ty.disabled=false;
+    f.value='';t.value='';document.getElementById('r_note').value='';upd();
+    const m=document.getElementById('r_msg');m.textContent='Sent — '+(chain[0].key==='hr'?'HR':chain[0].who.name)+' has been flagged.';
+    setTimeout(()=>{const m2=document.getElementById('r_msg');if(m2)m2.textContent='';},4000);
+    render();
+  };
+}
+
+/* ================= 📅 my events & tasks (everyone-visible work) ================= */
+function renderEvents(){
+  const me=DB.currentUser,box=document.getElementById('evPanel');if(!box)return;
+  const myTasks=DB.tasksOf(me.id);
+  const evIds=new Set(myTasks.map(t=>t.eventId));
+  DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==me.id))evIds.add(ev.id);});
+  if(me.access==='admin')DB.events.forEach(e=>evIds.add(e.id));
+  const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
+  let h='<h3>📅 My events &amp; tasks'+visBadge('everyone')+'</h3>';
+  if(!events.length){box.innerHTML=h+'<p class="empty">No events assigned to you yet.</p>';return;}
+  h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
+  const openT=myTasks.filter(t=>t.status!=='Done').sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
+  h+='<table style="margin-top:10px"><tr><th>Task</th><th>Event</th><th>When</th><th>Status</th></tr>';
+  if(!openT.length)h+='<tr><td colspan="4" class="empty">No open tasks — all done. 🎉</td></tr>';
+  openT.slice(0,18).forEach(t=>{const e=DB.event(t.eventId);
+    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(t.title)+'</td><td>'+esc(e?e.name:'—')+'</td>'+
+      '<td>'+(t.deadline?('due '+t.deadline):('wk '+fmtD(taskDate(t))))+'</td>'+
+      '<td><span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+t.status+'</span></td></tr>';});
+  h+='</table>'+(openT.length>18?'<p class="hint" style="margin-top:6px">Showing 18 of '+openT.length+' — <a href="person.html?id='+me.id+'">see all →</a></p>':'');
+  box.innerHTML=h;
+}
+
+/* ================= 📣 at an event (fold; logic ported from the old renderAway) ================= */
+function renderAwayFold(){
+  const me=DB.currentUser,box=document.getElementById('awayFoldBody');if(!box)return;
+  const today=toISO(new Date());
+  if(!DB.eventReady()){
+    box.innerHTML='<p class="hint" style="margin-top:8px">This turns on once the events update is run in Supabase. It lets you flag days you’re away at an event so the team knows you’re out of the office.</p>';
     return;
   }
-  box.style.padding='';
-  if(!ready){
-    box.innerHTML=head+'<p class="hint" style="margin-top:8px">This turns on once the events update is run in Supabase. It lets you flag days you’re away at an event so the team knows you’re out of the office.</p>';
-    document.getElementById('awHead').onclick=()=>{awayOpen=false;renderAway();};
-    return;
-  }
+  const mine=DB.eventaway.filter(e=>e.personId==me.id).sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||''));
   const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const d2=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()];};
   const rng=e=>e.dateFrom===e.dateTo?d2(e.dateFrom):d2(e.dateFrom)+'–'+d2(e.dateTo);
-  box.innerHTML=head+
+  box.innerHTML=
     '<p class="hint" style="margin-top:8px">Attending an event — ours or someone else’s? Flag the days here so the team sees you’re out of the office and less available. You still clock in and out as normal.</p>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">'+
       '<label style="font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:2px;flex:1 1 180px">Event<input id="aw_title" placeholder="e.g. RENMAD Storage Madrid" style="border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit"></label>'+
@@ -173,52 +653,121 @@ function renderAway(){
         '<span style="flex:1"><b style="color:var(--charcoal)">'+esc(e.title||'Event')+'</b> <span style="color:var(--muted)">· '+rng(e)+(cur?' <span style="color:#185FA5;font-weight:700">· now</span>':'')+'</span></span>'+
         '<button class="btn" data-awdel="'+e.id+'" style="font-size:11px;padding:2px 8px;color:#A32D2D;border-color:#f0c4c4">Remove</button></div>';}).join('')
       :'<p class="empty" style="font-size:12.5px;color:var(--muted)">No event days flagged.</p>');
-  document.getElementById('awHead').onclick=()=>{awayOpen=false;renderAway();};
   document.getElementById('aw_add').onclick=()=>{
     const title=document.getElementById('aw_title').value.trim();
     const from=document.getElementById('aw_from').value,to=document.getElementById('aw_to').value;
     if(!from||!to){alert('Pick the dates.');return;}
     if(to<from){alert('The “to” date is before the “from” date.');return;}
     DB.eventaway.push({id:DB.newId(),personId:me.id,dateFrom:from,dateTo:to,title:title||'Event',note:''});
-    DB.save();renderAway();
+    DB.save();render();
   };
-  box.querySelectorAll('[data-awdel]').forEach(b=>b.onclick=()=>{DB.data.eventaway=DB.eventaway.filter(x=>x.id!=b.dataset.awdel);DB.save();renderAway();});
-}
-/* ---- alarms ---- */
-function renderAlarms(){
-  const me=DB.currentUser,box=document.getElementById('alarmPanel'),a=[];
-  if(DB.hrReady()){
-    const ap=DB.holidays.filter(holActsOnMe).length;
-    if(ap)a.push({t:ap+' holiday '+(ap===1?'request':'requests')+' waiting for your decision',l:'hr.html#holidays'});
-    const mw=missingWeeks(me.id).length;
-    if(mw)a.push({t:mw+' week'+(mw===1?'':'s')+' without your hours filled in',l:'hr.html#allocation'});
-  }
-  if(DB.tcReady()){
-    const mp=tcMissingDays(me.id).length;
-    if(mp)a.push({t:mp+' day'+(mp===1?'':'s')+' with no clock punches',l:'hr.html#timeclock'});
-    const ot=tcOvertimeWeeks(me.id).length;
-    if(ot)a.push({t:ot+' week'+(ot===1?'':'s')+' over the allowed hours — please balance it',l:'hr.html#timeclock'});
-    if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',l:'hr.html#timeclock'});}
-  }
-  const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
-  box.innerHTML='<h3>🔔 Needs you</h3>'+
-    (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+x.l+'">'+x.t+'</a></div>').join('')
-      :'<div class="allgood">✓ All caught up — nothing waiting on you.</div>')+
-    (myOpenTasks?'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">You have <b>'+myOpenTasks+'</b> open task'+(myOpenTasks===1?'':'s')+' (below).</div>':'');
+  box.querySelectorAll('[data-awdel]').forEach(b=>b.onclick=()=>{DB.data.eventaway=DB.eventaway.filter(x=>x.id!=b.dataset.awdel);DB.save();render();});
 }
 
-/* ---- profile (self-service photo + phone) ---- */
-function renderProfile(){
-  const me=DB.currentUser,box=document.getElementById('profPanel');
-  const yr=new Date().getFullYear();
-  let balHtml='';
-  if(DB.hrReady()){
-    const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
-    balHtml='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' used · '+rem+' left'+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
-      '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 2px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(yr)+'.</div>';
+/* ================= 🛠 report a clock mistake (fold; ported from hr.html) ================= */
+const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
+function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');}
+function renderReportFold(){
+  const box=document.getElementById('reportFoldBody');if(!box)return;
+  if(!DB.tcReady()){box.innerHTML='<p class="hint" style="margin-top:8px">Not active yet — run dispatch_hr3.sql in Supabase, then reload.</p>';return;}
+  box.innerHTML=
+    '<p class="hint" style="margin-top:8px">Forgot to clock, or a punch is wrong? Say what happened — it opens a message thread with HR (Belén / Jesús), who make the correction. Everything is logged.</p>'+
+    '<div class="frm"><label>Day<input type="date" id="tr_day" value="'+toISO(new Date())+'"></label>'+
+    '<label>Punch concerned (optional)<select id="tr_entry"></select></label>'+
+    '<label>What happened<input id="tr_text" placeholder="e.g. I forgot to clock out yesterday — I left at 18:15"></label></div>'+
+    '<button class="btn primary" id="tr_send">Send to HR</button><span id="tr_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>'+
+    '<div id="myReports" style="margin-top:14px"></div>';
+  wireReport();renderMyReports();
+}
+function wireReport(){
+  const me=DB.currentUser;
+  const daySel=document.getElementById('tr_day'),entSel=document.getElementById('tr_entry');
+  if(!daySel)return;
+  const fill=()=>{const es=me?tcEffective(me.id,daySel.value):[];
+    entSel.innerHTML='<option value="">— whole day / forgot to clock —</option>'+es.map(e=>'<option value="'+e.id+'">'+entryLabel(e)+'</option>').join('');};
+  daySel.onchange=fill;fill();
+  document.getElementById('tr_send').onclick=()=>{
+    if(!me){alert('Log in first.');return;}
+    const txt=document.getElementById('tr_text').value.trim();
+    if(!txt){alert('Say what happened — HR needs it to correct the record.');return;}
+    DB.tcreports.push({id:DB.newId(),personId:me.id,day:daySel.value,entryId:entSel.value?+entSel.value:null,
+      thread:[{by:me.name,at:new Date().toISOString(),text:txt}],status:'open'});
+    DB.save();
+    document.getElementById('tr_text').value='';
+    const m=document.getElementById('tr_msg');m.textContent='Sent — HR has been flagged.';setTimeout(()=>{const m2=document.getElementById('tr_msg');if(m2)m2.textContent='';},4000);
+    renderMyReports();
+  };
+}
+function threadHtml(r){
+  return '<div style="background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12.5px">'+
+    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
+}
+function reportChip(r){
+  return r.status==='resolved'?'<span class="chip" style="background:var(--green)">Resolved</span>'
+    :r.status==='answered'?'<span class="chip" style="background:var(--blue)">Answered</span>'
+    :'<span class="chip" style="background:var(--amber)">Open</span>';
+}
+function renderMyReports(){
+  const me=DB.currentUser,box=document.getElementById('myReports');
+  if(!me||!box)return;
+  const mine=DB.tcreports.filter(r=>r.personId==me.id).sort((a,b)=>b.id-a.id).slice(0,6);
+  if(!mine.length){box.innerHTML='';return;}
+  box.innerHTML='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">My reports</div>'+
+    mine.map(r=>'<div style="margin-bottom:10px"><b>'+(r.day||'')+'</b> '+reportChip(r)+threadHtml(r)+
+      (r.status!=='resolved'?'<input id="rr_'+r.id+'" placeholder="reply…" style="width:70%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-rr="'+r.id+'">Send</button>':'')+'</div>').join('');
+  box.querySelectorAll('[data-rr]').forEach(b=>b.onclick=()=>{
+    const r=DB.tcreports.find(x=>x.id==b.dataset.rr);const inp=document.getElementById('rr_'+r.id);
+    if(!inp.value.trim())return;
+    r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),text:inp.value.trim()}]);
+    if(r.status==='answered')r.status='open';
+    DB.save();renderMyReports();});
+}
+
+/* ================= 📆 my month (fold; ported from hr.html) ================= */
+function monthTable(personId){
+  const y=tcM.getFullYear(),m=tcM.getMonth();
+  const last=new Date(y,m+1,0).getDate(),today=toISO(new Date());
+  let h='<table><tr><th>Day</th><th>Punches</th><th class="num">Worked</th><th class="num">Expected</th><th class="num">Diff</th></tr>';
+  let wSum=0,eSum=0,any=false;
+  for(let d=1;d<=last;d++){
+    const iso=toISO(new Date(y,m,d));
+    if(iso>today)break;
+    const exp=tcExpectedDay(personId,iso);
+    const info=tcDayInfo(personId,iso);
+    if(exp<=0&&!info.entries.length)continue;
+    any=true;wSum+=info.total;eSum+=exp*60;
+    const diff=info.total-exp*60;
+    h+='<tr><td>'+iso+'</td><td>'+(info.entries.length?info.entries.map(entryLabel).join(' · '):'<span style="color:var(--red)">no punches</span>')+'</td>'+
+      '<td class="num">'+(info.total?fmtMin(info.total):'—')+'</td><td class="num">'+(exp||'—')+'</td>'+
+      '<td class="num" style="color:'+(diff<-15?'var(--red)':diff>15?'var(--green)':'var(--muted)')+'">'+(info.total?((diff>=0?'+':'−')+fmtMin(Math.abs(diff))):'')+'</td></tr>';
   }
-  box.innerHTML='<h3>👤 Me</h3>'+
-    '<div style="display:flex;gap:14px;align-items:center;margin-bottom:10px">'+avatarHtml(me,64)+
+  if(!any)h+='<tr><td colspan="5" class="empty">Nothing this month.</td></tr>';
+  h+='<tr class="total"><td>Total</td><td></td><td class="num">'+fmtMin(wSum)+'</td><td class="num">'+fmtMin(eSum)+'</td><td class="num">'+((wSum-eSum>=0?'+':'−')+fmtMin(Math.abs(wSum-eSum)))+'</td></tr>';
+  return h+'</table>';
+}
+function renderMonthFold(){
+  const box=document.getElementById('monthFoldBody');if(!box)return;
+  if(!DB.tcReady()){box.innerHTML='<p class="hint" style="margin-top:8px">Not active yet — run dispatch_hr3.sql in Supabase, then reload.</p>';return;}
+  box.innerHTML=
+    '<div class="mnav" style="margin-top:8px"><button class="btn" id="tm_prev">‹</button><b id="tm_lab"></b><button class="btn" id="tm_next">›</button></div>'+
+    '<div class="mx" id="myMonth"></div>'+
+    '<p class="hint" style="margin-top:8px">* = entry added afterwards. Amended punches stop counting but stay in the permanent archive with who/when/why.</p>';
+  renderMyMonth();
+  document.getElementById('tm_prev').onclick=()=>{tcM.setMonth(tcM.getMonth()-1);renderMyMonth();};
+  document.getElementById('tm_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderMyMonth();};
+}
+function renderMyMonth(){
+  const me=DB.currentUser;if(!me)return;
+  const lab=['January','February','March','April','May','June','July','August','September','October','November','December'][tcM.getMonth()]+' '+tcM.getFullYear();
+  const el=document.getElementById('tm_lab');if(el)el.textContent=lab;
+  const mm=document.getElementById('myMonth');if(mm)mm.innerHTML=monthTable(me.id);
+}
+
+/* ================= 👤 my profile (fold; photo / phone / password) ================= */
+function renderProfFold(){
+  const me=DB.currentUser,box=document.getElementById('profFoldBody');if(!box)return;
+  box.innerHTML=
+    '<div style="display:flex;gap:14px;align-items:center;margin:8px 0 10px">'+avatarHtml(me,64)+
       '<div><div style="font-weight:700;font-size:15px;color:var(--charcoal)">'+esc(me.name)+'</div>'+
       '<label class="btn" style="font-size:11px;padding:3px 8px;cursor:pointer;display:inline-block;margin-top:4px">Change photo<input type="file" id="pf_photo" accept="image/*" style="display:none"></label>'+
       (me.photo?' <button class="btn" id="pf_rmphoto" style="font-size:11px;padding:3px 8px">Remove</button>':'')+
@@ -227,40 +776,16 @@ function renderProfile(){
     '<div class="kv"><span class="k">Access</span><span class="v">'+(ACCESS_LABEL[me.access||'member']||me.access)+'</span></div>'+
     '<div class="kv"><span class="k">Email</span><span class="v">'+(me.email||'—')+'</span></div>'+
     '<div class="kv"><span class="k">Work phone</span><span class="v"><input id="pf_phone" value="'+(me.phone||'').replace(/"/g,'&quot;')+'" placeholder="add your work phone" style="border:1px solid var(--line);border-radius:6px;padding:3px 7px;font:inherit;text-align:right;width:150px"> <button class="btn" id="pf_savephone" style="font-size:11px;padding:3px 8px">Save</button></span></div>'+
-    balHtml+
-    '<div class="prof-actions">'+
-    '<a class="btn" href="hr.html#holidays" style="font-weight:600">🌴 Request time off</a>'+
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
     '<a class="btn" href="person.html?id='+me.id+'">My full timeline</a>'+
     (typeof changePasswordUI==='function'&&USE_SUPABASE?'<button class="btn" id="cpw">Change password</button>':'')+
     '</div>';
   const cp=document.getElementById('cpw');if(cp)cp.onclick=()=>changePasswordUI();
   document.getElementById('pf_photo').onchange=e=>{const f=e.target.files[0];if(!f)return;
-    resizeImage(f,url=>{if(!url){alert('Could not read that image.');return;}me.photo=url;DB.save();renderProfile();});};
-  const rmp=document.getElementById('pf_rmphoto');if(rmp)rmp.onclick=()=>{me.photo=null;DB.save();renderProfile();};
+    resizeImage(f,url=>{if(!url){alert('Could not read that image.');return;}me.photo=url;DB.save();renderProfFold();});};
+  const rmp=document.getElementById('pf_rmphoto');if(rmp)rmp.onclick=()=>{me.photo=null;DB.save();renderProfFold();};
   document.getElementById('pf_savephone').onclick=()=>{me.phone=document.getElementById('pf_phone').value.trim();DB.save();
-    const m=document.getElementById('pf_pmsg');/* reuse */ document.getElementById('pf_savephone').textContent='Saved ✓';setTimeout(()=>{const b=document.getElementById('pf_savephone');if(b)b.textContent='Save';},2000);};
-}
-
-/* ---- my events & tasks ---- */
-function renderEvents(){
-  const me=DB.currentUser,box=document.getElementById('evPanel');
-  const myTasks=DB.tasksOf(me.id);
-  const evIds=new Set(myTasks.map(t=>t.eventId));
-  DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==me.id))evIds.add(ev.id);});
-  if(me.access==='admin')DB.events.forEach(e=>evIds.add(e.id));
-  const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
-  let h='<h3>📅 My events &amp; tasks</h3>';
-  if(!events.length){box.innerHTML=h+'<p class="empty">No events assigned to you yet.</p>';return;}
-  h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
-  const openT=myTasks.filter(t=>t.status!=='Done').sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
-  h+='<table style="margin-top:10px"><tr><th>Task</th><th>Event</th><th>When</th><th>Status</th></tr>';
-  if(!openT.length)h+='<tr><td colspan="4" class="empty">No open tasks — all done. 🎉</td></tr>';
-  openT.slice(0,18).forEach(t=>{const e=DB.event(t.eventId);
-    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(t.title)+'</td><td>'+esc(e?e.name:'—')+'</td>'+
-      '<td>'+(t.deadline?('due '+t.deadline):('wk '+fmtD(taskDate(t))))+'</td>'+
-      '<td><span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+t.status+'</span></td></tr>';});
-  h+='</table>'+(openT.length>18?'<p class="hint" style="margin-top:6px">Showing 18 of '+openT.length+' — <a href="person.html?id='+me.id+'">see all →</a></p>':'');
-  box.innerHTML=h;
+    document.getElementById('pf_savephone').textContent='Saved ✓';setTimeout(()=>{const b=document.getElementById('pf_savephone');if(b)b.textContent='Save';},2000);};
 }
 
 boot(render);

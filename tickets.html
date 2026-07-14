@@ -130,7 +130,8 @@ function renderBody(t,p){
   if(adm){
     h+='<div class="admin"><label>Status<select id="st_'+t.id+'">'+Object.keys(TICKET_STATUS).map(k=>'<option value="'+k+'" '+(k===t.status?'selected':'')+'>'+TICKET_STATUS[k].label+'</option>').join('')+'</select></label>'
       +'<label>Priority<select id="pr_'+t.id+'"><option value="">—</option>'+Object.keys(TICKET_PRIORITY).map(k=>'<option value="'+k+'" '+(k===t.priority?'selected':'')+'>'+TICKET_PRIORITY[k].label+'</option>').join('')+'</select></label>'
-      +'<button class="btn primary" data-adm="'+t.id+'">Save triage</button></div>';
+      +'<button class="btn primary" data-adm="'+t.id+'">Save triage</button>'
+      +'<label style="flex-direction:row;align-items:center;gap:5px;text-transform:none;letter-spacing:0;font-size:12px;cursor:pointer" title="Sends a 🔔 notification to everyone — use it when a fix or change affects the whole team"><input type="checkbox" id="nt_'+t.id+'"> 📣 also notify the whole team</label></div>';
   }else if(mine&&['new','planned','inprogress'].includes(t.status)){
     h+='<div class="admin"><button class="btn" data-close="'+t.id+'">✓ Close my request (solved / no longer needed)</button></div>';
   }
