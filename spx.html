@@ -758,11 +758,28 @@ function openPanel(id){
   b+='<div class="kv"><span class="k">Value</span><b>'+money(propValue(p))+'</b></div>';
   b+='<div class="kv"><span class="k">Created</span><span>'+esc((p.createdAt||'').slice(0,16).replace('T',' '))+(p.createdBy?' · '+esc(p.createdBy):'')+'</span></div>';
   b+='</div>';
-  // events / lines
+  // events / lines — editable proposals can edit each line's amount AND add lines (multi-event)
   b+='<div class="sec"><h5>Events</h5>';
   if(p.isGeneral)b+='<div class="ro-note">General (whole-portfolio) proposal — no specific event.</div>';
-  else if(ls.length)b+=ls.map(l=>'<div class="kv"><span class="k">'+esc(shortEvent(l))+'</span><span><b>'+money(l.valueEur)+'</b>'+(editable?' <button class="lnk" style="color:#A32D2D;text-decoration:none" title="Delete this event line" onclick="deleteLine('+l.id+')">✕</button>':'')+'</span></div>').join('');
-  else b+='<div class="ro-note">No event lines.</div>';
+  else{
+    if(ls.length)b+=ls.map(l=>'<div class="kv"><span class="k">'+esc(shortEvent(l))+'</span><span>'
+      +(editable
+        ?'<input type="number" step="any" value="'+(+l.valueEur||0)+'" title="Amount for this event" style="width:92px;padding:4px 6px;border:1px solid var(--line);border-radius:7px;text-align:right" onchange="panelLineVal('+l.id+',this.value)"> €'
+        :'<b>'+money(l.valueEur)+'</b>')
+      +(editable?' <button class="lnk" style="color:#A32D2D;text-decoration:none" title="Delete this event line" onclick="deleteLine('+l.id+')">✕</button>':'')
+      +'</span></div>').join('');
+    else b+='<div class="ro-note">No event lines'+(editable?' — add the event(s) below.':'.')+'</div>';
+    if(editable){
+      const evsAll=spxEvents(),curE=evsAll.filter(evCurrent),oldE=evsAll.filter(e=>!evCurrent(e));
+      const op=e=>'<option value="'+esc(e.key)+'">'+esc(e.name)+'</option>';
+      b+='<div style="display:flex;gap:5px;margin-top:8px;align-items:center">'
+        +'<select id="pl_ev" style="flex:1;padding:6px;border:1px solid var(--line);border-radius:7px"><option value="">— pick event —</option>'
+        +curE.map(op).join('')+(oldE.length?'<optgroup label="Before (closed events)">'+oldE.map(op).join('')+'</optgroup>':'')+'</select>'
+        +'<input id="pl_val" type="number" step="any" placeholder="€" style="width:84px;padding:6px;border:1px solid var(--line);border-radius:7px">'
+        +'<button class="btn" onclick="panelAddLine('+p.id+')">+ Add</button></div>'
+        +'<div class="ro-note">One line per event, each with its own amount — several lines make the proposal multi-event.</div>';
+    }
+  }
   b+='</div>';
   // fields
   if(editable){
@@ -917,6 +934,27 @@ function saveNew(){
     isGeneral:general,mode:general?'general':(lines.length>1?'multi':'single'),active:true,superseded:false});
   lines.forEach(l=>DB.spxLines.push(l));
   DB.save();closePanel();render();
+}
+/* ---------- event lines on an existing proposal (multi-event) ---------- */
+function panelAddLine(pid){
+  const p=DB.spxProps.find(x=>x.id==pid);if(!p)return;
+  if(!DB.canEditProp(p)){alert('You can only edit your own proposals (the sales lead and Belén can edit any).');return;}
+  const sel=document.getElementById('pl_ev'),key=sel?sel.value:'';
+  const val=+((document.getElementById('pl_val')||{}).value)||0;
+  if(!key){if(sel)sel.style.borderColor='#A32D2D';return;}
+  const e=spxEvents().find(x=>x.key===key);
+  DB.spxLines.push({id:DB.newId(),parentId:p.id,eventId:e&&e.financeId!=null?e.financeId:null,eventKey:key,eventName:e?e.name:'',valueEur:val,valueEdited:true,contents:''});
+  p.valueEur=propValue(p);p.valueEdited=true;
+  p.mode=(DB.spxLinesFor(p.id).length>1?'multi':'single');
+  DB.save();render();openPanel(p.id);
+}
+function panelLineVal(lineId,v){
+  const l=DB.spxLines.find(x=>x.id==lineId);if(!l)return;
+  const p=DB.spxProps.find(x=>x.id==l.parentId);
+  if(p&&!DB.canEditProp(p))return;
+  l.valueEur=(v===''?0:+v)||0;l.valueEdited=true;
+  if(p){p.valueEur=propValue(p);p.valueEdited=true;}
+  DB.save();render();   // board updates live; the panel's header total refreshes next open
 }
 /* ---------- delete ---------- */
 function deleteProposal(id){
