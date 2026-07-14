@@ -452,8 +452,8 @@ function moneyCell(id,kind,v,editable){
 function contactCell(p){
   const c=(p.contacts||[]);if(!c.length)return '<span style="color:var(--muted)">—</span>';
   const first=c[0];const name=((first.first||'')+' '+(first.last||'')).trim()||first.email||'—';
-  const tip=c.map(x=>(((x.first||'')+' '+(x.last||'')).trim()||'—')+(x.email?' · '+x.email:'')+(x.phone?' · '+x.phone:'')).join('\n');
-  return '<span title="'+esc(tip)+'">'+esc(name)+(c.length>1?' <span style="color:var(--muted)">+'+(c.length-1)+'</span>':'')+'</span>';
+  const tip=c.map((x,i)=>(i===0?'★ main: ':'')+(((x.first||'')+' '+(x.last||'')).trim()||'—')+(x.email?' · '+x.email:'')+(x.phone?' · '+x.phone:'')).join('\n');
+  return '<span title="'+esc(tip)+'"><span style="color:#FF4A00">★</span> '+esc(name)+(c.length>1?' <span style="color:var(--muted)">+'+(c.length-1)+'</span>':'')+'</span>';
 }
 
 /* ----- proposals interactions ----- */
@@ -813,15 +813,16 @@ function openPanel(id){
   if(editable){
     b+='<div class="sec"><h5>Contacts</h5>';
     for(let i=0;i<3;i++){const c=(p.contacts||[])[i]||{};
-      b+='<div style="display:flex;gap:5px;margin-bottom:4px">'
+      b+='<div style="display:flex;gap:5px;margin-bottom:4px;align-items:center">'
+        +(i===0?'<span style="width:14px;color:#FF4A00;font-weight:700" title="Main contact — the one the builder requires; direct communications here">★</span>':'<span style="width:14px"></span>')
         +'<input data-ci="'+i+'" data-ck="first" placeholder="first name" value="'+esc(c.first||'')+'" style="flex:1;min-width:66px;padding:6px;border:1px solid var(--line);border-radius:7px">'
         +'<input data-ci="'+i+'" data-ck="last" placeholder="surname" value="'+esc(c.last||'')+'" style="flex:1;min-width:66px;padding:6px;border:1px solid var(--line);border-radius:7px">'
         +'<input data-ci="'+i+'" data-ck="email" placeholder="email" value="'+esc(c.email||'')+'" style="flex:1.5;min-width:110px;padding:6px;border:1px solid var(--line);border-radius:7px">'
         +'<input data-ci="'+i+'" data-ck="phone" placeholder="phone" value="'+esc(c.phone||'')+'" style="flex:.9;min-width:76px;padding:6px;border:1px solid var(--line);border-radius:7px">'
         +'</div>';}
-    b+='<div class="ro-note">Up to 3 contacts — saved with the Save button above.</div></div>';
+    b+='<div class="ro-note">Up to 3 contacts — <span style="color:#FF4A00">★</span> row 1 = the main contact (who to direct to). Saved with the Save button above.</div></div>';
   }else{
-    b+='<div class="sec"><h5>Contacts</h5>'+((p.contacts&&p.contacts.length)?p.contacts.map(c=>'<div class="kv"><span>'+esc(((c.first||'')+' '+(c.last||'')).trim()||'—')+'</span><span class="k">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</span></div>').join(''):'<div class="ro-note">none</div>')+'</div>';
+    b+='<div class="sec"><h5>Contacts</h5>'+((p.contacts&&p.contacts.length)?p.contacts.map((c,i)=>'<div class="kv"><span>'+(i===0?'<span style="color:#FF4A00" title="Main contact — direct communications here">★</span> ':'')+esc(((c.first||'')+' '+(c.last||'')).trim()||'—')+'</span><span class="k">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</span></div>').join(''):'<div class="ro-note">none</div>')+'</div>';
   }
   panelShell(p.company||'Proposal',esc(p.responsableName||p.responsable||'')+(p.fileName?' · '+esc(p.fileName):''),b);
 }
@@ -877,8 +878,10 @@ function openCreate(){
       +'<div id="nc_lines"></div><button class="lnk" onclick="addNcLine()">+ add event</button></div>'
     +'<div id="nc_genwrap" style="display:none"><div class="fld"><label>Value € (General)</label><input id="nc_genval" type="number" value="4000"></div></div>'
     +'<div class="fld"><label>Included in proposal / contents</label><textarea id="nc_contents"></textarea></div>'
-    +'<div class="fld"><label>Contacts (up to 3) — first name / surname / email / phone</label>'
-      +[0,1,2].map(i=>'<span style="display:flex;gap:5px;margin-bottom:4px"><input id="nc_cf'+i+'" placeholder="first name"><input id="nc_cl'+i+'" placeholder="surname"><input id="nc_ce'+i+'" placeholder="email"><input id="nc_cp'+i+'" placeholder="phone"></span>').join('')+'</div>'
+    +'<div class="fld"><label>Contacts (up to 3) — <span style="color:#FF4A00">★</span> row 1 = main contact · first name / surname / email / phone</label>'
+      +[0,1,2].map(i=>'<span style="display:flex;gap:5px;margin-bottom:4px;align-items:center">'
+        +(i===0?'<span style="width:14px;color:#FF4A00;font-weight:700" title="Main contact — direct communications here">★</span>':'<span style="width:14px"></span>')
+        +'<input id="nc_cf'+i+'" placeholder="first name"><input id="nc_cl'+i+'" placeholder="surname"><input id="nc_ce'+i+'" placeholder="email"><input id="nc_cp'+i+'" placeholder="phone"></span>').join('')+'</div>'
     +'<div class="fld"><label>Sent date</label><input id="nc_envio" type="date" value="'+toISO(new Date())+'"></div>'
     +'<div class="fld"><label>Follow up date (next touchpoint)</label><input id="nc_fu" type="date"></div>'
     +'<div class="fld"><label>Notes</label><textarea id="nc_notas"></textarea></div>'
