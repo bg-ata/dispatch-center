@@ -179,8 +179,8 @@ function filtered(){
   }).sort((a,b)=>((a.fecha||'').localeCompare(b.fecha||''))||((a.numero_factura||'').localeCompare(b.numero_factura||'',undefined,{numeric:true})));
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Contract (SPX)</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
-  if(!rows.length)h+='<tr><td colspan="14" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Contract (SPX) <span class="hint" style="text-transform:none">optional</span></th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -198,6 +198,7 @@ function renderTable(rows){
       '<td>'+(i.status==='cancelado'?'':(cobrado(i)?eurF(cobrado(i)):'<span class="hint">—</span>'))+'</td>'+
       '<td>'+(i.responsable_comercial?esc(DB.personName(i.responsable_comercial)):'—')+'</td>'+
       '<td style="white-space:normal">'+contractCell(i)+'</td>'+
+      '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td>'+esc(i.entered_by||'')+'</td>'+
       '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
@@ -225,17 +226,30 @@ function renderTable(rows){
   });
 }
 
-/* the Contract (SPX) cell: linked → the contract's company + owner; a sponsorship/
-   upgrade invoice with no link gets a soft nudge (click opens the edit modal) */
+/* the Contract (SPX) cell: linked → the contract's company; a sponsorship/upgrade
+   invoice with no link gets a soft OPTIONAL nudge (click opens the edit modal) */
 function contractCell(i){
   if(i.spxProposalId){
     const p=(DB.spxProps||[]).find(x=>x.id==i.spxProposalId);
-    if(p)return '🔗 '+esc(p.company||'?')+' <span class="hint">('+esc(p.responsableName||p.responsable||'')+')</span>';
+    if(p)return '🔗 '+esc(p.company||'?');
     return '🔗 <span class="hint">#'+esc(''+i.spxProposalId)+'</span>';
   }
   if((i.producto==='sponsorship'||i.producto==='upgrade')&&i.status!=='cancelado')
-    return '<button class="btn sm" data-ctr="'+i.id+'" title="Link this invoice to the contract the salesperson sent" style="color:#C77800">link contract</button>';
+    return '<button class="btn sm" data-ctr="'+i.id+'" title="Optional — link this invoice to the contract the salesperson sent (SPX Invoiced/Paid follows it)" style="color:#C77800">link contract</button>';
   return '<span class="hint">—</span>';
+}
+/* the contract's salesperson, for double-checking against the invoice's own Sales
+   rep column — a mismatch turns orange, it never blocks anything */
+function contractOwnerCell(i){
+  if(!i.spxProposalId)return '<span class="hint">—</span>';
+  const p=(DB.spxProps||[]).find(x=>x.id==i.spxProposalId);
+  if(!p)return '<span class="hint">?</span>';
+  const owner=p.responsableName||p.responsable||'';
+  if(!owner)return '<span class="hint">—</span>';
+  const rep=i.responsable_comercial?(DB.personName(i.responsable_comercial)||''):'';
+  if(rep&&rep.trim().toLowerCase()!==owner.trim().toLowerCase())
+    return '<span style="color:#C77800;font-weight:700" title="Does not match the invoice Sales rep ('+esc(rep)+') — double-check">⚠ '+esc(owner)+'</span>';
+  return esc(owner);
 }
 
 /* ---------- códigos contables (mini-BD, hand-maintained) ---------- */
