@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -105,18 +105,32 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=54"></script>
+<script src="store.js?v=55"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
 /* ---------- constants & small helpers ---------- */
-const SALES_STATUSES=['Sent','Confirmed','Lost'];
-const ST_ES={Sent:'Enviada',Confirmed:'Aprobada',Lost:'Perdida'};
+const SALES_STATUSES=['Sent','Confirmed','Lost'];   // derived axis — Health-Check / Reporting / Invoiced-Paid all key on this
+const ST_EN={Sent:'Sent',Confirmed:'Won',Lost:'Lost'};
 const ST_CLASS={Sent:'st-sent',Confirmed:'st-approved',Lost:'st-lost'};
+/* ---- Zoho-mirrored picklists (2026-07-14 — the SPX team's Zoho CRM options,
+   translated to English). The Stage picklist is the primary status; the legacy
+   salesStatus is DERIVED from it (Sent-* → Sent, Won → Confirmed, Lost → Lost)
+   so Health-Check, Reporting and Invoiced/Paid keep working unchanged.
+   Historical "Sent" proposals keep a BLANK stage — sales fill it by hand. */
+const SPX_STAGES=['Sent - Just email','Sent - 1st call','Sent - 2nd call','Sent - Initial negotiation','Sent - Final negotiation','Won','Lost'];
+const STAGE_PROB={'Sent - Just email':.15,'Sent - 1st call':.2,'Sent - 2nd call':.3,'Sent - Initial negotiation':.4,'Sent - Final negotiation':.7,'Won':1,'Lost':0};
+const ACCOUNT_TYPES=['New Account','Transferred account','Existing Account'];
+const SOURCES=['Apollo','External Events','Inbound','LinkedHelper','AC brochure','AC webinar','Past delegate 2026','Past sponsor 2026','Past sponsor previous','Past delegate previous','Referral','Outreach'];
+const PRODUCT_PACKAGES=['Only Sponsorship Pack','Only Ticket','Only Content package','Bundle'];
+const PACKAGE_TIERS=['Multi-event','General','Diamond','Gold','Silver','Bronze','Standard panel','Standard stand'];
+const LOSS_REASONS=['No Budget','No Response','Timing','Not Relevant','Already Committed','Wrong Contact'];
+function statusOfStage(st){return st==='Won'?'Confirmed':st==='Lost'?'Lost':st?'Sent':null;}
+function stageClass(st){return st==='Won'?'st-approved':st==='Lost'?'st-lost':'st-sent';}
 const ACC={none:{cls:'acc-none',txt:'not invoiced'},invoiced:{cls:'acc-invoiced',txt:'✓ invoiced'},paid:{cls:'acc-paid',txt:'✓ paid'}};
 const money=n=>finFmt(n==null?0:n);
 const pct=x=>(x==null?'—':(Math.round(x*1000)/10)+'%');
-function stLabel(s){return ST_ES[s]||s||'—';}
+function stLabel(s){return ST_EN[s]||s||'—';}
 /* company-name normalisation: uppercase, strip accents + punctuation + legal suffixes.
    (Fresh implementation — the CRM had no shared helper to reuse.) */
 const LEGAL_SUFFIX={SAU:1,SLU:1,SASU:1,SARL:1,UNIPESSOAL:1,LDA:1,SA:1,SL:1,SRL:1,SAS:1,SPA:1,GMBH:1,AG:1,NV:1,BV:1,AS:1,OY:1,AB:1,PLC:1,LTD:1,LLC:1,INC:1,APS:1};
@@ -136,7 +150,7 @@ const TABLIST=[['proposals','Proposals'],['before','Before'],['health','Health-C
 function activeTab(){const h=location.hash.replace('#','');return TABLIST.some(t=>t[0]===h)?h:'proposals';}
 let TAB=activeTab();
 let VIEW='general';                  // 'general' (parent rows) | 'event' (child rows)
-let flt={event:'',sales:'',status:'',origen:'',from:'',to:'',q:''};
+let flt={event:'',sales:'',stage:'',accountType:'',source:'',productPackage:'',packageTier:'',reasonForLoss:'',from:'',to:'',q:''};
 let HC=null;                         // dc_finance id selected for Health-Check
 
 /* ---------- charts ---------- */
@@ -219,13 +233,18 @@ function accountingFor(p){
 /* ---------- filtering ---------- */
 function liveProps(){return DB.spxProps.filter(p=>p.active!==false&&!p.superseded);}
 function passFilters(p){
+  const blankOr=(f,v)=>!f||(f==='(blank)'?!(v||''):(v||'')===f);   // every picklist filter also offers "(blank)" = needs filling in
   if(flt.sales&&(p.responsable!==flt.sales&&p.responsableName!==flt.sales))return false;
-  if(flt.status&&p.salesStatus!==flt.status)return false;
-  if(flt.origen&&(p.origen||'')!==flt.origen)return false;
+  if(!blankOr(flt.stage,p.stage))return false;
+  if(!blankOr(flt.accountType,p.accountType))return false;
+  if(!blankOr(flt.source,p.source))return false;
+  if(!blankOr(flt.productPackage,p.productPackage))return false;
+  if(!blankOr(flt.packageTier,p.packageTier))return false;
+  if(!blankOr(flt.reasonForLoss,p.reasonForLoss))return false;
   if(flt.from&&(p.fechaEnvio||p.createdAt||'')<flt.from)return false;
   if(flt.to&&(p.fechaEnvio||p.createdAt||'').slice(0,10)>flt.to)return false;
   if(flt.event){const has=DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===flt.event);if(!has)return false;}
-  if(flt.q){const q=flt.q.toLowerCase();const hay=[p.company,p.responsableName,p.contents,p.notas,p.origen].join(' ').toLowerCase();if(!hay.includes(q))return false;}
+  if(flt.q){const q=flt.q.toLowerCase();const hay=[p.company,p.responsableName,p.contents,p.notas,p.source,p.accountType,p.productPackage,p.packageTier,p.reasonForLoss,p.origen].join(' ').toLowerCase();if(!hay.includes(q))return false;}
   return true;
 }
 
@@ -264,19 +283,18 @@ function renderProposals(app,scope){
   const pctT=tgt?firmado/tgt:null,pctS=str?firmado/str:null;
 
   const salespeople=distinctList(DB.spxProps.map(p=>p.responsableName||p.responsable));
-  const origens=distinctList(DB.spxProps.map(p=>p.origen));
   const scopeEvents=evObjs.filter(e=>scope==='before'?!evCurrent(e):evCurrent(e));
 
   let h='';
   if(scope==='before')h+='<p class="lead">Events where selling is finished — nothing left in the pipeline. Kept for the record; the events you\'re selling now are on the <b>Proposals</b> tab.</p>';
   h+='<div class="tiles">'
-    +tile('Enviado',money(enviado),props.filter(p=>p.salesStatus==='Sent').length+' props')
-    +tile('Firmado',money(firmado),props.filter(p=>p.salesStatus==='Confirmed').length+' props')
-    +tile('Perdido',money(perdido),props.filter(p=>p.salesStatus==='Lost').length+' props')
-    +tile('Firmado + en proceso',money(proceso),'')
+    +tile('Sent',money(enviado),props.filter(p=>p.salesStatus==='Sent').length+' props')
+    +tile('Won',money(firmado),props.filter(p=>p.salesStatus==='Confirmed').length+' props')
+    +tile('Lost',money(perdido),props.filter(p=>p.salesStatus==='Lost').length+' props')
+    +tile('Won + pipeline',money(proceso),'')
     +tile('Target (sponsorship)',tgt?money(tgt):'—','where set in Money')
-    +tile('% a target',pctT==null?'—':pct(pctT),'')
-    +tile('% a stretch',pctS==null?'—':pct(pctS),'')
+    +tile('% to target',pctT==null?'—':pct(pctT),'')
+    +tile('% to stretch',pctS==null?'—':pct(pctS),'')
     +'</div>';
 
   if(scope!=='before'&&(DB.isSales()||DB.canSalesLead())){
@@ -290,14 +308,19 @@ function renderProposals(app,scope){
   h+='<div class="filters">';
   h+='<span class="seg"><button class="'+(VIEW==='general'?'on':'')+'" onclick="setView(\'general\')">General level</button>'
     +'<button class="'+(VIEW==='event'?'on':'')+'" onclick="setView(\'event\')">By event</button></span>';
+  const pick=(id,label,list,cur)=>sel(id,label,list.map(s=>[s,s]).concat([['(blank)','(blank — to fill in)']]),cur);
   h+=sel('f_event','Event',scopeEvents.map(e=>[e.key,e.name]),flt.event);
   h+=sel('f_sales','Salesperson',salespeople.map(s=>[s,s]),flt.sales);
-  h+=sel('f_status','Status',SALES_STATUSES.map(s=>[s,stLabel(s)]),flt.status);
-  h+=sel('f_origen','Origen / source',origens.map(s=>[s,s]),flt.origen);
-  h+='<input type="date" id="f_from" value="'+esc(flt.from)+'" title="from (fecha envío)">';
-  h+='<input type="date" id="f_to" value="'+esc(flt.to)+'" title="to (fecha envío)">';
+  h+=pick('f_stage','Stage',SPX_STAGES,flt.stage);
+  h+=pick('f_atype','Account type',ACCOUNT_TYPES,flt.accountType);
+  h+=pick('f_source','Source',SOURCES,flt.source);
+  h+=pick('f_ppack','Product/Package',PRODUCT_PACKAGES,flt.productPackage);
+  h+=pick('f_ptier','Package',PACKAGE_TIERS,flt.packageTier);
+  h+=pick('f_loss','Reason for loss',LOSS_REASONS,flt.reasonForLoss);
+  h+='<input type="date" id="f_from" value="'+esc(flt.from)+'" title="from (sent date)">';
+  h+='<input type="date" id="f_to" value="'+esc(flt.to)+'" title="to (sent date)">';
   h+='<input type="text" id="f_q" placeholder="search company / contact…" value="'+esc(flt.q)+'" style="min-width:150px">';
-  if(flt.event||flt.sales||flt.status||flt.origen||flt.from||flt.to||flt.q)
+  if(flt.event||flt.sales||flt.stage||flt.accountType||flt.source||flt.productPackage||flt.packageTier||flt.reasonForLoss||flt.from||flt.to||flt.q)
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
   h+='</div>';
 
@@ -318,10 +341,10 @@ function sel(id,label,opts,cur){
 }
 function proposalsTableGeneral(props){
   let h='<div class="tablewrap"><table><thead><tr>'
-    +'<th>Empresa</th><th>Responsable</th><th>Origen</th><th>Events</th><th>Status</th>'
-    +'<th>Included in proposal</th><th class="num">Valor €</th><th>Fecha envío</th><th>Seguim.</th><th>Contacto</th>'
+    +'<th>Company</th><th>Owner</th><th>Account type</th><th>Source</th><th>Events</th><th>Stage</th><th class="num">Prob.</th>'
+    +'<th>Included in proposal</th><th class="num">Value €</th><th>Sent date</th><th>Follow up</th><th>Contact</th>'
     +'</tr></thead><tbody>';
-  if(!props.length)h+='<tr><td colspan="10" style="color:var(--muted)">No proposals'+(DB.spxProps.length?' under these filters.':' yet — they appear here automatically when the Proposal Builder generates a deck.')+'</td></tr>';
+  if(!props.length)h+='<tr><td colspan="12" style="color:var(--muted)">No proposals'+(DB.spxProps.length?' under these filters.':' yet — they appear here automatically when the Proposal Builder generates a deck.')+'</td></tr>';
   props.slice().sort((a,b)=>(''+(b.createdAt||'')).localeCompare(''+(a.createdAt||''))).forEach(p=>{
     const ls=DB.spxLinesFor(p.id);
     const evs=(p.isGeneral?'<span style="color:var(--muted)">General</span>':(ls.length?ls.map(l=>esc(shortEvent(l))).join(', '):'—'))+(propHasUnreg(p)?unregChip():'');
@@ -333,13 +356,15 @@ function proposalsTableGeneral(props){
     h+='<tr class="prow" data-id="'+p.id+'">'
       +'<td><b>'+esc(p.company||'—')+'</b>'+(p.isGeneral?' <span class="accb acc-none">general</span>':'')+'</td>'
       +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
-      +'<td>'+esc(p.origen||'—')+'</td>'
+      +'<td>'+esc(p.accountType||'—')+'</td>'
+      +'<td>'+esc(p.source||'—')+'</td>'
       +'<td>'+evs+'</td>'
-      +'<td>'+statusCell(p,editable)+accBadge(p)+'</td>'
+      +'<td>'+stageCell(p,editable)+accBadge(p)+'</td>'
+      +'<td class="num">'+probCell(p)+'</td>'
       +'<td><span class="clip" title="'+esc(p.contents||'')+'">'+esc(p.contents||'—')+'</span></td>'
       +'<td class="num">'+valCell+'</td>'
       +'<td>'+esc((p.fechaEnvio||'').slice(0,10)||'—')+'</td>'
-      +'<td>'+esc((p.fechaSeguimiento||'').slice(0,10)||'—')+'</td>'
+      +'<td>'+fuCell(p)+'</td>'
       +'<td>'+contactCell(p)+'</td>'
       +'</tr>';
   });
@@ -356,10 +381,10 @@ function proposalsTableByEvent(props){
     ls.forEach(l=>{if(flt.event&&lineEvKey(l)!==flt.event)return;rows.push({p,l});});
   });
   let h='<div class="tablewrap"><table><thead><tr>'
-    +'<th>Event</th><th>Empresa</th><th>Responsable</th><th>Origen</th><th>Status</th>'
-    +'<th>Included</th><th class="num">Valor €</th><th>Contacto</th>'
+    +'<th>Event</th><th>Company</th><th>Owner</th><th>Source</th><th>Stage</th>'
+    +'<th>Included</th><th class="num">Value €</th><th>Follow up</th><th>Contact</th>'
     +'</tr></thead><tbody>';
-  if(!rows.length)h+='<tr><td colspan="8" style="color:var(--muted)">No lines under these filters.</td></tr>';
+  if(!rows.length)h+='<tr><td colspan="9" style="color:var(--muted)">No lines under these filters.</td></tr>';
   rows.forEach(({p,l})=>{
     const editable=DB.canEditProp(p);
     const ev=l?eventLineCell(l,editable):(p.isGeneral?'<span style="color:var(--muted)">General (no event)</span>':'—');
@@ -369,10 +394,11 @@ function proposalsTableByEvent(props){
       +'<td>'+ev+'</td>'
       +'<td><b>'+esc(p.company||'—')+'</b></td>'
       +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
-      +'<td>'+esc(p.origen||'—')+'</td>'
-      +'<td>'+statusCell(p,editable)+accBadge(p)+'</td>'
+      +'<td>'+esc(p.source||'—')+'</td>'
+      +'<td>'+stageCell(p,editable)+accBadge(p)+'</td>'
       +'<td><span class="clip" title="'+esc(l?(l.contents||''):(p.contents||''))+'">'+esc((l?l.contents:p.contents)||'—')+'</span></td>'
       +'<td class="num">'+valCell+'</td>'
+      +'<td>'+fuCell(p)+'</td>'
       +'<td>'+contactCell(p)+'</td>'
       +'</tr>';
   });
@@ -386,9 +412,23 @@ function eventLineCell(l,editable){
   const canLink=editable||DB.canSalesLead();
   return esc(l.eventName||l.eventKey||'?')+reg+(canLink?' <span class="warnpill" data-linkline="'+l.id+'" title="This event isn\'t linked to a Money row yet — click to link">⚠ link</span>':' <span class="warnpill" title="not linked to a Money row">⚠</span>');
 }
-function statusCell(p,editable){
-  if(!editable)return '<span class="stbadge '+ST_CLASS[p.salesStatus]+'">'+esc(stLabel(p.salesStatus))+'</span>';
-  return '<select class="stsel" data-stid="'+p.id+'">'+SALES_STATUSES.map(s=>'<option value="'+s+'"'+(p.salesStatus===s?' selected':'')+'>'+esc(stLabel(s))+'</option>').join('')+'</select>';
+function stageCell(p,editable){
+  if(!editable){
+    if(!p.stage)return '<span class="stbadge '+ST_CLASS[p.salesStatus]+'" title="stage not set yet — legacy '+esc(stLabel(p.salesStatus))+' proposal">'+esc(stLabel(p.salesStatus))+' · stage?</span>';
+    return '<span class="stbadge '+stageClass(p.stage)+'">'+esc(p.stage)+'</span>';
+  }
+  return '<select class="stsel" data-stid="'+p.id+'">'
+    +'<option value=""'+(p.stage?'':' selected')+'>'+(p.stage?'—':esc(stLabel(p.salesStatus))+' · stage?')+'</option>'
+    +SPX_STAGES.map(s=>'<option value="'+s+'"'+(p.stage===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select>';
+}
+function probCell(p){const pr=STAGE_PROB[p.stage];return pr==null?'<span style="color:var(--muted)">—</span>':pct(pr);}
+/* Follow up date — red + ⏰ once the next touchpoint has expired on a live deal */
+function fuCell(p){
+  const d=(p.fechaSeguimiento||'').slice(0,10);
+  if(!d)return '<span style="color:var(--muted)">—</span>';
+  if(p.salesStatus==='Sent'&&d<toISO(new Date()))
+    return '<span style="color:#D32230;font-weight:700" title="Next touchpoint expired — time to follow up!">⏰ '+esc(d)+'</span>';
+  return esc(d);
 }
 function accBadge(p){const a=accountingFor(p);
   if(a.noEvent)return ' <span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>';
@@ -405,10 +445,11 @@ function contactCell(p){
 
 /* ----- proposals interactions ----- */
 function setView(v){VIEW=v;render();}
-function clearFilters(){flt={event:'',sales:'',status:'',origen:'',from:'',to:'',q:''};render();}
+function clearFilters(){flt={event:'',sales:'',stage:'',accountType:'',source:'',productPackage:'',packageTier:'',reasonForLoss:'',from:'',to:'',q:''};render();}
 function wireFilters(){
   const bind=(id,key)=>{const e=document.getElementById(id);if(e)e.onchange=()=>{flt[key]=e.value;render();};};
-  bind('f_event','event');bind('f_sales','sales');bind('f_status','status');bind('f_origen','origen');bind('f_from','from');bind('f_to','to');
+  bind('f_event','event');bind('f_sales','sales');bind('f_stage','stage');bind('f_atype','accountType');bind('f_source','source');
+  bind('f_ppack','productPackage');bind('f_ptier','packageTier');bind('f_loss','reasonForLoss');bind('f_from','from');bind('f_to','to');
   const q=document.getElementById('f_q');if(q)q.oninput=()=>{flt.q=q.value;clearTimeout(q._t);q._t=setTimeout(render,250);};
 }
 function wireProposalTable(){
@@ -421,7 +462,12 @@ function wireProposalTable(){
   document.querySelectorAll('.stsel').forEach(s=>s.onclick=e=>e.stopPropagation());
   document.querySelectorAll('.stsel').forEach(s=>s.onchange=()=>{
     const p=DB.spxProps.find(x=>x.id==s.dataset.stid);if(!p)return;
-    const prev=p.salesStatus;p.salesStatus=s.value;askLegalOnSigned(p,prev);DB.save();render();
+    const prev=p.salesStatus;
+    p.stage=s.value||null;
+    const st=statusOfStage(p.stage);if(st)p.salesStatus=st;   // blank stage → salesStatus keeps its legacy value
+    askLegalOnSigned(p,prev);DB.save();
+    if(p.stage==='Lost'&&!p.reasonForLoss){render();openPanel(p.id);return;}   // pick the reason for loss in the panel
+    render();
   });
   // money inline
   document.querySelectorAll('.mval[data-mid]').forEach(sp=>sp.onclick=e=>{
@@ -764,7 +810,11 @@ function openPanel(id){
   const a=accountingFor(p);
   let b='';
   b+='<div class="sec"><h5>Status</h5>';
-  b+='<div class="kv"><span class="k">Sales</span><span class="stbadge '+ST_CLASS[p.salesStatus]+'">'+esc(stLabel(p.salesStatus))+'</span></div>';
+  b+='<div class="kv"><span class="k">Stage</span>'+(p.stage
+    ?'<span class="stbadge '+stageClass(p.stage)+'">'+esc(p.stage)+'</span>'
+    :'<span class="stbadge '+ST_CLASS[p.salesStatus]+'" title="pre-Zoho proposal — pick its stage below">'+esc(stLabel(p.salesStatus))+' · stage to fill in</span>')+'</div>';
+  if(STAGE_PROB[p.stage]!=null)b+='<div class="kv"><span class="k">Probability</span><span>'+pct(STAGE_PROB[p.stage])+'</span></div>';
+  if(p.stage==='Lost')b+='<div class="kv"><span class="k">Reason for loss</span><span>'+esc(p.reasonForLoss||'—')+'</span></div>';
   b+='<div class="kv"><span class="k">Accounting (derived)</span>'+(a.noEvent?'<span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>':'<span class="accb '+ACC[a.state].cls+'">'+ACC[a.state].txt+'</span>')+'</div>';
   b+='<div class="kv"><span class="k">Value</span><b>'+money(propValue(p))+'</b></div>';
   b+='<div class="kv"><span class="k">Created</span><span>'+esc((p.createdAt||'').slice(0,16).replace('T',' '))+(p.createdBy?' · '+esc(p.createdBy):'')+'</span></div>';
@@ -778,22 +828,27 @@ function openPanel(id){
   // fields
   if(editable){
     b+='<div class="sec"><h5>Edit</h5>'
-      +fld('Empresa (marketing)','company',p.company,'text')
-      +fld('Source of lead','source',p.source,'text')
-      +fld('Origen','origen',p.origen,'text')
-      +'<div class="fld"><label>Sales status</label><select data-pf="salesStatus">'+SALES_STATUSES.map(s=>'<option value="'+s+'"'+(p.salesStatus===s?' selected':'')+'>'+esc(stLabel(s))+'</option>').join('')+'</select></div>'
-      +fld('Fecha envío','fechaEnvio',(p.fechaEnvio||'').slice(0,10),'date')
-      +fld('Fecha seguimiento','fechaSeguimiento',(p.fechaSeguimiento||'').slice(0,10),'date')
+      +fld('Company (marketing)','company',p.company,'text')
+      +fldSel('Account type','accountType',p.accountType,ACCOUNT_TYPES)
+      +fldSel('Source','source',p.source,SOURCES)
+      +fldSel('Stage','stage',p.stage,SPX_STAGES,p.stage?'':'to fill in — status is still '+stLabel(p.salesStatus))
+      +fldSel('Reason for loss (when Lost)','reasonForLoss',p.reasonForLoss,LOSS_REASONS)
+      +fldSel('Product/Package','productPackage',p.productPackage,PRODUCT_PACKAGES)
+      +fldSel('Package','packageTier',p.packageTier,PACKAGE_TIERS)
+      +fld('Sent date','fechaEnvio',(p.fechaEnvio||'').slice(0,10),'date')
+      +fld('Follow up date (next touchpoint)','fechaSeguimiento',(p.fechaSeguimiento||'').slice(0,10),'date')
       +fldArea('Included in proposal','contents',p.contents)
-      +fldArea('Notas','notas',p.notas)
+      +fldArea('Notes','notas',p.notas)
       +fld('Link to sent deck (URL)','sentLink',p.sentLink,'text')
       +'<button class="btn p" onclick="savePanel('+id+')">Save</button> <button class="btn" onclick="closePanel()">Close</button>'
       +' <button class="btn" style="color:#A32D2D;border-color:#f0c4c4;float:right" onclick="deleteProposal('+id+')">Delete proposal</button>'
       +'</div>';
   }else{
     b+='<div class="sec"><h5>Details</h5>'
-      +kv('Empresa',p.company)+kv('Responsable',p.responsableName||p.responsable)+kv('Source',p.source)+kv('Origen',p.origen)
-      +kv('Fecha envío',(p.fechaEnvio||'').slice(0,10))+kv('Seguimiento',(p.fechaSeguimiento||'').slice(0,10))
+      +kv('Company',p.company)+kv('Owner',p.responsableName||p.responsable)
+      +kv('Account type',p.accountType)+kv('Source',p.source)
+      +kv('Product/Package',p.productPackage)+kv('Package',p.packageTier)
+      +kv('Sent date',(p.fechaEnvio||'').slice(0,10))+kv('Follow up',(p.fechaSeguimiento||'').slice(0,10))
       +'<div class="kv"><span class="k">Included</span></div><div class="msgbox" style="white-space:pre-wrap;background:#fbfaf8;border:1px dashed var(--line);border-radius:9px;padding:10px;margin-top:4px">'+esc(p.contents||'—')+'</div>'
       +(p.notas?'<div class="kv" style="margin-top:8px"><span class="k">Notas</span></div><div class="ro-note">'+esc(p.notas)+'</div>':'')
       +'<p class="ro-note" style="margin-top:10px">Read-only — this is '+esc(p.responsableName||'someone else')+'\'s proposal. The sales lead and Belén can edit any.</p></div>';
@@ -803,12 +858,22 @@ function openPanel(id){
   panelShell(p.company||'Proposal',esc(p.responsableName||p.responsable||'')+(p.fileName?' · '+esc(p.fileName):''),b);
 }
 function fld(label,f,v,type){return '<div class="fld"><label>'+esc(label)+'</label><input data-pf="'+f+'" type="'+type+'" value="'+esc(v==null?'':v)+'"></div>';}
+/* picklist field — blank allowed ("to fill in by hand"); an off-list legacy value stays selectable so saving never wipes it */
+function fldSel(label,f,v,opts,hint){
+  const list=opts.slice();if(v&&list.indexOf(v)<0)list.unshift(v);
+  return '<div class="fld"><label>'+esc(label)+'</label><select data-pf="'+f+'">'
+    +'<option value=""'+(v?'':' selected')+'>—'+(hint?' ('+esc(hint)+')':'')+'</option>'
+    +list.map(o=>'<option value="'+esc(o)+'"'+(o===v?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>';
+}
 function fldArea(label,f,v){return '<div class="fld"><label>'+esc(label)+'</label><textarea data-pf="'+f+'">'+esc(v==null?'':v)+'</textarea></div>';}
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span>'+esc(v||'—')+'</span></div>';}
 function savePanel(id){
   const p=DB.spxProps.find(x=>x.id==id);if(!p)return;
   const prev=p.salesStatus;
-  document.querySelectorAll('#panel [data-pf]').forEach(e=>{const f=e.dataset.pf;let v=e.value;if((f==='fechaEnvio'||f==='fechaSeguimiento')&&v==='')v=null;p[f]=v;});
+  const NULLABLE={fechaEnvio:1,fechaSeguimiento:1,stage:1,accountType:1,source:1,productPackage:1,packageTier:1,reasonForLoss:1};
+  document.querySelectorAll('#panel [data-pf]').forEach(e=>{const f=e.dataset.pf;let v=e.value;if(NULLABLE[f]&&v==='')v=null;p[f]=v;});
+  const st=statusOfStage(p.stage);if(st)p.salesStatus=st;   // stage drives the derived status; blank stage keeps the legacy one
+  if(p.stage!=='Lost')p.reasonForLoss=null;                 // a reason only makes sense on a lost deal
   askLegalOnSigned(p,prev);
   DB.save();closePanel();render();
 }
@@ -823,20 +888,24 @@ function openCreate(){
   if(!DB.isSales()){alert('Only sales, the sales lead or an admin can add proposals.');return;}
   const evs=spxEvents().filter(evCurrent);   // the events being sold now
   window._ncEvOpts='<option value="">— pick event —</option>'+evs.map(e=>'<option value="'+esc(e.key)+'">'+esc(e.name)+'</option>').join('');
+  const zoho=(id,opts,selDefault)=>'<select id="'+id+'"><option value=""'+(selDefault?'':' selected')+'>—</option>'+opts.map(o=>'<option value="'+esc(o)+'"'+(o===selDefault?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
   const b='<div class="sec"><h5>New proposal</h5>'
-    +'<div class="fld"><label>Empresa (marketing name) *</label><input id="nc_company"></div>'
-    +'<div class="fld"><label>Responsable</label><select id="nc_resp">'+salespeopleOpts()+'</select></div>'
-    +'<div class="fld"><label>Source of lead</label><input id="nc_source" placeholder="Sponsor 2026 / New / Hot lead…"></div>'
-    +'<div class="fld"><label>Origen</label><select id="nc_origen"><option>Sponsor (prior year)</option><option>New</option></select></div>'
-    +'<div class="fld"><label>Sales status</label><select id="nc_status">'+SALES_STATUSES.map(s=>'<option value="'+s+'">'+esc(stLabel(s))+'</option>').join('')+'</select></div>'
+    +'<div class="fld"><label>Company (marketing name) *</label><input id="nc_company"></div>'
+    +'<div class="fld"><label>Owner</label><select id="nc_resp">'+salespeopleOpts()+'</select></div>'
+    +'<div class="fld"><label>Account type</label>'+zoho('nc_atype',ACCOUNT_TYPES)+'</div>'
+    +'<div class="fld"><label>Source</label>'+zoho('nc_source',SOURCES)+'</div>'
+    +'<div class="fld"><label>Stage</label>'+zoho('nc_stage',SPX_STAGES,'Sent - Just email')+'</div>'
+    +'<div class="fld"><label>Product/Package</label>'+zoho('nc_ppack',PRODUCT_PACKAGES)+'</div>'
+    +'<div class="fld"><label>Package</label>'+zoho('nc_ptier',PACKAGE_TIERS)+'</div>'
     +'<div class="fld"><label><input type="checkbox" id="nc_general" onchange="toggleGeneral()"> General proposal (no specific event)</label></div>'
     +'<div id="nc_events"><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">Events &amp; value</label>'
       +'<div id="nc_lines"></div><button class="lnk" onclick="addNcLine()">+ add event</button></div>'
     +'<div id="nc_genwrap" style="display:none"><div class="fld"><label>Value € (General)</label><input id="nc_genval" type="number" value="4000"></div></div>'
     +'<div class="fld"><label>Included in proposal / contents</label><textarea id="nc_contents"></textarea></div>'
-    +'<div class="fld"><label>Contact — first / last / email</label><span style="display:flex;gap:5px"><input id="nc_cf" placeholder="first"><input id="nc_cl" placeholder="last"><input id="nc_ce" placeholder="email"></span></div>'
-    +'<div class="fld"><label>Fecha envío</label><input id="nc_envio" type="date" value="'+toISO(new Date())+'"></div>'
-    +'<div class="fld"><label>Notas</label><textarea id="nc_notas"></textarea></div>'
+    +'<div class="fld"><label>Contact — first name / surname / email</label><span style="display:flex;gap:5px"><input id="nc_cf" placeholder="first name"><input id="nc_cl" placeholder="surname"><input id="nc_ce" placeholder="email"></span></div>'
+    +'<div class="fld"><label>Sent date</label><input id="nc_envio" type="date" value="'+toISO(new Date())+'"></div>'
+    +'<div class="fld"><label>Follow up date (next touchpoint)</label><input id="nc_fu" type="date"></div>'
+    +'<div class="fld"><label>Notes</label><textarea id="nc_notas"></textarea></div>'
     +'<button class="btn p" onclick="saveNew()">Create proposal</button> <button class="btn" onclick="closePanel()">Cancel</button></div>';
   panelShell('New proposal','added by hand',b);
   addNcLine();
@@ -871,12 +940,18 @@ function saveNew(){
     if(noEvent){alert('Pick an event for every line that has a value or contents (or remove the line).');return;}
     if(!lines.length){alert('Add at least one event line, or tick “General proposal”.');return;}
   }
+  const stage=document.getElementById('nc_stage').value||null;
   DB.spxProps.push({id:pid,createdAt:new Date().toISOString(),createdBy:(me&&me.email)||'',
     responsable:respName,responsableName:respName,responsableEmail:respEmail,company:company,companyId:null,
-    source:document.getElementById('nc_source').value.trim(),origen:document.getElementById('nc_origen').value,
-    salesStatus:document.getElementById('nc_status').value,
+    source:document.getElementById('nc_source').value||null,origen:null,
+    accountType:document.getElementById('nc_atype').value||null,
+    stage:stage,salesStatus:statusOfStage(stage)||'Sent',
+    productPackage:document.getElementById('nc_ppack').value||null,
+    packageTier:document.getElementById('nc_ptier').value||null,
+    reasonForLoss:null,
     contents:document.getElementById('nc_contents').value.trim()||(general?'General':''),
-    valueEur:value,valueEdited:false,fechaEnvio:document.getElementById('nc_envio').value||null,fechaSeguimiento:null,
+    valueEur:value,valueEdited:false,fechaEnvio:document.getElementById('nc_envio').value||null,
+    fechaSeguimiento:document.getElementById('nc_fu').value||null,
     notas:document.getElementById('nc_notas').value.trim(),contacts:contacts,fileName:null,sentLink:null,
     isGeneral:general,mode:general?'general':(lines.length>1?'multi':'single'),active:true,superseded:false});
   lines.forEach(l=>DB.spxLines.push(l));

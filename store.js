@@ -557,7 +557,8 @@ function decorateNav(){
 /* ================= notifications inbox (🔔) ================= */
 const INBOX_KINDS={ticket:{label:'Request update',icon:'💡',color:'#185FA5'},
   notice:{label:'Team notice',icon:'📢',color:'#FF4A00'},
-  holiday:{label:'Time off',icon:'🌴',color:'#3E8C28'}};
+  holiday:{label:'Time off',icon:'🌴',color:'#3E8C28'},
+  alarm:{label:'Follow-up alarm',icon:'⏰',color:'#D32230'}};
 /* send a notification. to = personId | [personIds] | 'all' (whole roster except team
    accounts and the sender). Silently no-ops if the inbox table isn't created yet. */
 function notifySend(to,kind,text,link){
@@ -577,6 +578,28 @@ function notifySend(to,kind,text,link){
 }
 function inboxMine(){const me=DB.currentUser;return me?DB.inbox.filter(m=>m.personId==me.id):[];}
 function inboxUnread(){return inboxMine().filter(m=>!m.isRead).length;}
+
+/* ⏰ SPX follow-up alarms: when one of MY live proposals has a next-touchpoint
+   (fechaSeguimiento) in the past, drop an alarm in my own inbox — once per
+   proposal+date (deduped on the link key; RLS only lets me read my own inbox,
+   which is exactly the set the dedupe needs). Won/Lost never alarm. */
+function spxTouchpointAlarms(){
+  const me=DB.currentUser;
+  if(!me||!me.email||!DB.inboxReady()||!DB.spxReady())return 0;
+  const today=toISO(new Date());
+  let sent=0;
+  (DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded
+      &&p.salesStatus==='Sent'
+      &&(''+(p.responsableEmail||'')).toLowerCase()===(''+me.email).toLowerCase()
+      &&p.fechaSeguimiento&&(''+p.fechaSeguimiento).slice(0,10)<today)
+    .forEach(p=>{
+      const due=(''+p.fechaSeguimiento).slice(0,10);
+      const key='spx.html?fu='+p.id+':'+due;
+      if((DB.inbox||[]).some(m=>m.personId==me.id&&m.link===key))return;   // already alarmed for this date
+      sent+=notifySend(me.id,'alarm','⏰ Follow-up overdue: '+(p.company||'proposal')+' — next touchpoint was '+due+'. Time to chase.',key);
+    });
+  return sent;
+}
 
 /* ================= team request box (💡 Requests) ================= */
 const TICKET_TYPES={bug:{label:'Bug — something is broken',short:'Bug',color:'#D32230'},
@@ -852,7 +875,8 @@ const COLS={
   /* SPX sales module. camelCase keys map 1:1 to the quoted columns in dispatch_spx.sql.
      Server-managed (updated_at/by, deleted) never pushed; createdAt/createdBy are set on
      insert (by the Proposal Builder or the app) and echoed unchanged on edits. */
-  spxProps:['id','createdAt','createdBy','responsable','responsableName','responsableEmail','company','companyId','source','origen','salesStatus','contents','valueEur','valueEdited','fechaEnvio','fechaSeguimiento','notas','contacts','fileName','sentLink','isGeneral','mode','active','superseded','supersededBy'],
+  spxProps:['id','createdAt','createdBy','responsable','responsableName','responsableEmail','company','companyId','source','origen','salesStatus','contents','valueEur','valueEdited','fechaEnvio','fechaSeguimiento','notas','contacts','fileName','sentLink','isGeneral','mode','active','superseded','supersededBy',
+    'accountType','stage','productPackage','packageTier','reasonForLoss'], // Zoho-mirrored fields (dispatch_spx_zoho.sql) — salesStatus stays derived from stage
   spxLines:['id','parentId','eventId','eventKey','eventName','valueEur','valueEdited','contents'],
   spxTargets:['id','eventId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus'],
   companyMap:['id','canonicalName','marketingAliases','legalAliases','emailDomains','invoiceClientKey','confirmedBy','confirmedAt','status'],
@@ -1253,6 +1277,7 @@ async function boot(renderFn){
   try{recordLogin();}catch(e){} // device-visibility row (1/person/device/day, Belén-only read)
   try{renderPunchBanner();flushPendingPunches();}catch(e){} // recover punches that failed to save last time
   try{if(_breakTimer)clearInterval(_breakTimer);breakReminderTick();_breakTimer=setInterval(breakReminderTick,60000);}catch(e){} // break nudge on any page
+  try{spxTouchpointAlarms();}catch(e){} // ⏰ my overdue SPX touchpoints → my inbox (any page)
 }
 function rosterBanner(em){
   const b=document.createElement('div');
