@@ -40,10 +40,10 @@
   .head .edit:hover{color:var(--orange)}
   .prov{background:#fff7d6;color:#7a5b00;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600}
   .corner{flex:0 0 200px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
-  .hbody{position:relative}
+  .hbody{position:relative;z-index:1} /* own stacking context so todaylab etc never paint over the sticky corner */
   .mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}
   .wtick{position:absolute;top:20px;height:14px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #efece5}
-  .body{position:relative;flex:1 1 auto}
+  .body{position:relative;flex:1 1 auto;z-index:1} /* own stacking context: +/- buttons, chips & today line stay UNDER the frozen name column when scrolling sideways */
   .gridbg{position:absolute;inset:0;z-index:0}
   .band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.16) 0 5px,rgba(150,147,140,0) 5px 10px)}
   .band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.28) 0 5px,rgba(120,118,112,.05) 5px 10px)}
