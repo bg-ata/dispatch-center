@@ -106,7 +106,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=55"></script>
+<script src="store.js?v=56"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -147,7 +147,7 @@ function normCompany(s){
 function domainOf(email){const m=(''+(email||'')).split('@');return m.length===2?m[1].toLowerCase().trim():'';}
 
 /* ---------- tab routing ---------- */
-const TABLIST=[['proposals','Proposals'],['before','Before'],['health','Health-Check'],['report','Reporting']];
+const TABLIST=[['proposals','Proposals'],['health','Health-Check'],['report','Reporting'],['before','Before']]; // Before parked at the end — empty until the first event closes
 function activeTab(){const h=location.hash.replace('#','');return TABLIST.some(t=>t[0]===h)?h:'proposals';}
 let TAB=activeTab();
 let VIEW='general';                  // 'general' (parent rows) | 'event' (child rows)
@@ -228,6 +228,14 @@ function invMatches(cm,eventId){
     &&DB.invoiceAllocs.some(a=>a.invoice_id==inv.id&&a.eventId==eventId));
 }
 function accountingFor(p){
+  // 1) the explicit invoice ↔ contract link Jesús sets in Facturación — authoritative
+  const direct=DB.invoices.filter(i=>i.spxProposalId==p.id&&i.status!=='cancelado');
+  if(direct.length){
+    const paid=direct.some(i=>i.status==='pagado'||i.fecha_cobro);
+    return {state:paid?'paid':'invoiced',linked:true};
+  }
+  // 2) fallback: the company-name crosswalk (filled silently when a salesperson
+  //    types the legal name at Won) — kept so pre-link history still derives
   const cm=canonicalFor(p.company);
   if(!cm)return {state:'none',linked:false};
   const scope=DB.spxLinesFor(p.id).map(l=>l.eventId).filter(x=>x!=null);   // ONLY event-linked lines — never [null]
@@ -330,9 +338,6 @@ function renderProposals(app,scope){
   if(flt.event||flt.sales||flt.stage||flt.accountType||flt.source||flt.productPackage||flt.packageTier||flt.reasonForLoss||flt.from||flt.to||flt.q)
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
   h+='</div>';
-
-  // company crosswalk — compact bar (opens the list on demand)
-  if(scope!=='before')h+=linkingBar();
 
   // table
   if(VIEW==='general')h+=proposalsTableGeneral(props);
@@ -512,91 +517,17 @@ function doLinkEvent(lineId){
   closePanel();render();
 }
 
-/* ----- needs-linking tray (company crosswalk marketing → legal) ----- */
-function unlinkedCompanies(){
-  const seen={},out=[];
-  liveProps().forEach(p=>{if(!p.company)return;const n=normCompany(p.company);if(seen[n])return;seen[n]=1;if(!canonicalFor(p.company))out.push(p);});
-  return out;
-}
-/* compact one-line bar — the full list opens on demand (no more wall of chips) */
-function linkingBar(){
-  if(!DB.spxReady())return '';
-  const n=unlinkedCompanies().length;
-  if(!n)return '';
-  const canLink=DB.canSalesLead()||DB.canFinance();
-  return '<div class="infobanner" style="display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:12px">'
-    +'<span>🔗 <b>'+n+'</b> compan'+(n===1?'y is':'ies are')+' not yet linked to an invoicing (legal) name — needed before Invoiced/Paid can show.</span>'
-    +(canLink?'<button class="btn" onclick="openLinkingList()">Link companies</button>':'<span class="ro-note">Cintia or Belén can link them.</span>')
-    +'</div>';
-}
-function linkListHtml(list){return list.map(p=>'<div class="kv lkrow" data-name="'+esc((p.company||'').toLowerCase())+'"><button class="lnk" onclick="openLink('+p.id+')">🔗 '+esc(p.company)+'</button></div>').join('')||'<div class="ro-note">All linked 🎉</div>';}
-function openLinkingList(){
-  const ul=unlinkedCompanies();
-  const body='<div class="sec"><h5>Companies to link ('+ul.length+')</h5>'
-    +'<input id="lk_search" placeholder="search company…" oninput="filterLinkList()" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;font:inherit">'
-    +'<div id="lk_list">'+linkListHtml(ul)+'</div>'
-    +'<p class="ro-note">Click a company to match it to its legal invoicing name — once, then it\'s remembered forever.</p></div>';
-  panelShell('Link companies','marketing → legal invoicing name',body);
-}
-function filterLinkList(){const q=(document.getElementById('lk_search').value||'').toLowerCase();document.querySelectorAll('#lk_list .lkrow').forEach(r=>{r.style.display=r.dataset.name.indexOf(q)>=0?'':'none';});}
-function openLink(propId){
-  const p=DB.spxProps.find(x=>x.id==propId);if(!p)return;
-  const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
-  // distinct legal names from invoices, ranked
-  const legals=distinctList(DB.invoices.map(i=>i.razon_social));
-  const nc=normCompany(p.company);
-  const scored=legals.map(rs=>{
-    const nr=normCompany(rs);let s=0;
-    if(nr===nc)s+=5;
-    const toks=nc.split(' ').filter(t=>t.length>2);
-    toks.forEach(t=>{if(nr.includes(t))s+=1;});
-    // domain signal: an invoice with this razon_social whose event also has a delegate on this domain
-    if(dom){const invs=DB.invoices.filter(i=>i.razon_social===rs);invs.forEach(i=>{DB.delegates.forEach(d=>{if(d.invoice_id==i.id&&domainOf(d.email)===dom)s+=3;});});}
-    return {rs,s};
-  }).sort((a,b)=>b.s-a.s);
-  // pre-select ONLY on an exact normalized match — a fuzzy score alone must not pick for you
-  const exact=nc?scored.find(x=>normCompany(x.rs)===nc):null;
-  const best=exact?exact.rs:'';
-  const opts='<option value=""'+(best?'':' selected')+'>— pick — (or type a custom legal name below)</option>'+scored.map(x=>'<option value="'+esc(x.rs)+'"'+(x.rs===best?' selected':'')+'>'+esc(x.rs)+(x.s>0?'  ·  match '+x.s:'')+'</option>').join('');
-  const cm=canonicalFor(p.company);
-  const curLink=cm?('<p class="ro-note">currently linked to <b>'+esc(cm.invoiceClientKey||(cm.legalAliases&&cm.legalAliases[0])||'?')+'</b> <button class="lnk" style="color:#A32D2D;text-decoration:none" onclick="unlinkCompany('+propId+')">✕ unlink</button></p>'):'';
-  panelShell('Link company','“'+esc(p.company)+'” (marketing) → legal invoicing name',
-    '<div class="sec">'
-    +curLink
-    +'<div class="fld"><label>Legal name on invoices (razón social)</label><select id="lk_legal">'+opts+'</select></div>'
-    +'<div class="fld"><label>…or type it</label><input id="lk_custom" placeholder="e.g. European Energy A/S"></div>'
-    +(dom?'<p class="ro-note">Contact domain: <b>'+esc(dom)+'</b> — used as a match signal.</p>':'')
-    +'<button class="btn p" onclick="confirmLink('+propId+')">Confirm match</button> <button class="btn" onclick="closePanel()">Cancel</button>'
-    +'<p class="ro-note">Stored once in the company ledger. Invoiced/Paid then derives automatically for this company on every event.</p></div>');
-}
-function confirmLink(propId){
-  const p=DB.spxProps.find(x=>x.id==propId);if(!p)return;
-  const legal=(document.getElementById('lk_custom').value.trim())||document.getElementById('lk_legal').value;
-  if(!legal){alert('Pick or type a legal name.');return;}
-  const me=DB.currentUser;const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
-  const row={id:DB.newId(),canonicalName:p.company,marketingAliases:[p.company],legalAliases:[legal],
-    emailDomains:dom?[dom]:[],invoiceClientKey:legal,confirmedBy:(me&&me.email)||'',confirmedAt:new Date().toISOString(),status:'confirmed'};
-  DB.companyMap.push(row);
-  // link any live proposals with the same marketing name
-  const n=normCompany(p.company);
-  liveProps().forEach(q=>{if(normCompany(q.company)===n)q.companyId=row.id;});
-  DB.save();closePanel();render();
-}
-function unlinkCompany(propId){
-  const p=DB.spxProps.find(x=>x.id==propId);if(!p)return;
-  const cm=canonicalFor(p.company);if(!cm)return;
-  if(!confirm('Unlink “'+(p.company||'')+'” from “'+(cm.invoiceClientKey||'')+'”? Invoiced/Paid will stop deriving for this company until it\'s linked again.'))return;
-  DB.data.companyMap=DB.companyMap.filter(m=>m.id!=cm.id);
-  liveProps().forEach(q=>{if(q.companyId==cm.id)q.companyId=null;});
-  DB.save();openLink(propId);render();
-}
+/* The bulk "Link companies" tray is GONE (2026-07-14): the legal name now comes
+   from the salesperson at the moment a deal is Won (askLegalOnSigned below), and
+   Jesús links each invoice to its contract in Facturación (invoice.spxProposalId),
+   which accountingFor() reads first. The crosswalk table stays as silent fallback. */
 /* when a deal turns Firmado, capture the contract's razón social so it matches its invoice.
    Cancel = the status still changes, nothing is written to the ledger. */
 function askLegalOnSigned(p,prevStatus){
   if(!p||p.salesStatus!=='Confirmed'||prevStatus==='Confirmed')return;
   const cm=canonicalFor(p.company);
   const pre=cm?(cm.invoiceClientKey||(Array.isArray(cm.legalAliases)&&cm.legalAliases[0])||''):'';
-  const ans=prompt('Contract signed 🎉 — what is the client\'s LEGAL entity (razón social) on the contract? It matches the deal to its invoice and payment.',pre);
+  const ans=prompt('Contract signed 🎉 — type the client\'s FULL LEGAL NAME (razón social) exactly as it appears on the contract. Required: it is what invoicing uses to bill the deal.',pre);
   if(ans==null)return;
   const legal=ans.trim();if(!legal)return;
   const me=DB.currentUser;
@@ -1045,12 +976,9 @@ function saveChipInit(){
 }
 // expose handlers used by inline onclick
 window.setView=setView;window.clearFilters=clearFilters;window.closePanel=closePanel;
-window.openLink=openLink;window.confirmLink=confirmLink;window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
+window.doLinkEvent=doLinkEvent;window.savePanel=savePanel;
 window.openCreate=openCreate;window.addNcLine=addNcLine;window.toggleGeneral=toggleGeneral;window.saveNew=saveNew;window.deleteProposal=deleteProposal;window.deleteLine=deleteLine;
-window.openLinkingList=openLinkingList;window.filterLinkList=filterLinkList;window.unlinkCompany=unlinkCompany;
 window.openManageEvents=openManageEvents;window.addMevRow=addMevRow;window.saveManageEvents=saveManageEvents;
-// chip clicks in the linking tray
-document.addEventListener('click',e=>{const b=e.target.closest('[data-link]');if(b&&!b.disabled)openLink(+b.dataset.link);});
 </script>
 </body>
 </html>

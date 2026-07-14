@@ -862,7 +862,8 @@ const COLS={
   eventaway:['id','personId','dateFrom','dateTo','title','note'], // "at an event" — away from the office
   /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
      row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
-  invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by'],
+  invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by',
+    'spxProposalId'], // invoice ↔ contract link, set by Jesús in Facturación (dispatch_invoice_contract.sql)
   invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId'],
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
   /* códigos = the item↔código-contable master Jesús maintains (item name + accounting

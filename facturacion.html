@@ -73,7 +73,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=55"></script>
+<script src="store.js?v=56"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={ev:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
@@ -179,8 +179,8 @@ function filtered(){
   }).sort((a,b)=>((a.fecha||'').localeCompare(b.fecha||''))||((a.numero_factura||'').localeCompare(b.numero_factura||'',undefined,{numeric:true})));
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
-  if(!rows.length)h+='<tr><td colspan="13" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Contract (SPX)</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  if(!rows.length)h+='<tr><td colspan="14" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -197,12 +197,14 @@ function renderTable(rows){
       '<td>'+stSel+'</td>'+
       '<td>'+(i.status==='cancelado'?'':(cobrado(i)?eurF(cobrado(i)):'<span class="hint">—</span>'))+'</td>'+
       '<td>'+(i.responsable_comercial?esc(DB.personName(i.responsable_comercial)):'—')+'</td>'+
+      '<td style="white-space:normal">'+contractCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td>'+esc(i.entered_by||'')+'</td>'+
       '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
   });
   document.getElementById('itbl').innerHTML=h;
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(DB.invoice(b.dataset.edit)));
+  document.querySelectorAll('[data-ctr]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openModal(DB.invoice(b.dataset.ctr));};});
   document.querySelectorAll('[data-st]').forEach(s=>s.onchange=()=>{
     const i=DB.invoice(s.dataset.st);if(!i)return;
     if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — edit the invoice.');s.value=i.status;return;}
@@ -221,6 +223,19 @@ function renderTable(rows){
     DB.data.delegates=DB.delegates.filter(d=>d.invoice_id!=i.id);
     DB.save();render();
   });
+}
+
+/* the Contract (SPX) cell: linked → the contract's company + owner; a sponsorship/
+   upgrade invoice with no link gets a soft nudge (click opens the edit modal) */
+function contractCell(i){
+  if(i.spxProposalId){
+    const p=(DB.spxProps||[]).find(x=>x.id==i.spxProposalId);
+    if(p)return '🔗 '+esc(p.company||'?')+' <span class="hint">('+esc(p.responsableName||p.responsable||'')+')</span>';
+    return '🔗 <span class="hint">#'+esc(''+i.spxProposalId)+'</span>';
+  }
+  if((i.producto==='sponsorship'||i.producto==='upgrade')&&i.status!=='cancelado')
+    return '<button class="btn sm" data-ctr="'+i.id+'" title="Link this invoice to the contract the salesperson sent" style="color:#C77800">link contract</button>';
+  return '<span class="hint">—</span>';
 }
 
 /* ---------- códigos contables (mini-BD, hand-maintained) ---------- */
@@ -245,6 +260,14 @@ function wireCodigos(){
 }
 
 /* ---------- add / edit modal ---------- */
+/* contracts Jesús can link an invoice to = live WON proposals (the one already
+   linked stays listed even if its status later changes, so edits never wipe it) */
+function spxContractOpts(sel){
+  const won=(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded&&(p.salesStatus==='Confirmed'||(sel&&p.id==sel)))
+    .sort((a,b)=>(''+(a.company||'')).localeCompare(''+(b.company||'')));
+  return '<option value="">— none —</option>'+won.map(p=>'<option value="'+p.id+'" '+(sel&&p.id==sel?'selected':'')+'>'
+    +esc(p.company||'?')+' · '+esc(p.responsableName||p.responsable||'')+' · '+finFmt(+p.valueEur||0)+'</option>').join('');
+}
 function openModal(inv){
   editingId=inv?inv.id:null;
   allocRows=inv?DB.allocsFor(inv.id).map(a=>{let cid=a.codigoId,cod=a.codigo;
@@ -267,6 +290,7 @@ function openModal(inv){
     '<label id="l_pasec" style="display:none">Nº of packs<input id="m_pasec" type="number" min="1" step="1" value="'+(i.pase_cantidad!=null?i.pase_cantidad:1)+'" title="e.g. 2 × Single = 2 packs of Single"></label>'+
     '<label id="l_pedido" style="display:none">Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'" placeholder="tickets only"></label>'+
     '<label id="l_resp" style="display:none">Sales rep<select id="m_resp">'+pOpts(i.responsable_comercial)+'</select></label>'+
+    '<label class="w2" id="l_contract" style="display:none">Contract (SPX proposal) <span class="hint" style="text-transform:none;font-weight:400">— link this invoice to the contract the salesperson sent; SPX Invoiced/Paid follows it</span><select id="m_spx">'+spxContractOpts(i.spxProposalId)+'</select></label>'+
     '<div class="sect">Amounts</div>'+
     '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— enter both the EUR and the USD amount by hand (accounting sets them)</span></label>'+
     '<label>Subtotal € *<input id="m_base" type="number" step="any" value="'+(i.importe_base!=null?i.importe_base:'')+'"></label>'+
@@ -325,6 +349,7 @@ function wireModal(i){
     const prod=$('m_prod').value;
     showIf('l_pase',prod==='tickets');showIf('l_pasec',prod==='tickets');showIf('l_pedido',prod==='tickets');
     showIf('l_resp',prod==='sponsorship'); // sólo SPX — the commission hook
+    showIf('l_contract',prod==='sponsorship'||prod==='upgrade'); // invoice ↔ contract link (Jesús)
     showIf('l_motivo',$('m_iva').value==='0');
     showIf('l_abde',$('m_st').value==='abono'||prod==='abono');
     document.querySelectorAll('.usdf').forEach(el=>el.style.display=$('m_usd').checked?'':'none');
@@ -398,6 +423,7 @@ function saveInvoice(){
     pedido:prod==='tickets'?($('m_pedido').value.trim()||''):'N/A',
     vencimiento:$('m_venc').value||todayISO(),
     responsable_comercial:prod==='sponsorship'&&$('m_resp').value?+$('m_resp').value:null,
+    spxProposalId:(prod==='sponsorship'||prod==='upgrade')&&$('m_spx').value?+$('m_spx').value:null,
     razon_social:$('m_rs').value.trim(),importe_base:base,
     en_usd:$('m_usd').checked,
     importe_usd:$('m_usd').checked&&$('m_usdi').value!==''?+$('m_usdi').value:null,
