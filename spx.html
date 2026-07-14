@@ -35,6 +35,7 @@
   .card{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:14px}
   .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
   .filters select,.filters input{padding:6px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
+  tr.byhand td{background:#efeeea}   /* grey = added by hand on the board, not from the Proposal Builder */
   .chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
@@ -163,6 +164,12 @@ function eventLabel(l){ // l = a line
   return l.eventName||l.eventKey||'—';
 }
 function propEvents(p){return DB.spxLinesFor(p.id);}
+/* hand-added rows (board "+ New proposal") are greyed so the team can tell them from
+   Builder-fed ones. Builder rows always carry the deck fileName; the 2026-07-13
+   sheet import has its own createdBy marker and stays normal. */
+function byHand(p){return !p.fileName&&p.createdBy!=='spx-import-2026-07-13';}
+function rowCls(p){return 'prow'+(byHand(p)?' byhand':'');}
+function rowTitle(p){return byHand(p)?' title="Added by hand on the board — not from the Proposal Builder"':'';}
 /* the authoritative value of a proposal = Σ its children, or its own value when it has none (General/single-with-value) */
 function propValue(p){const ls=DB.spxLinesFor(p.id);if(ls.length)return ls.reduce((s,l)=>s+(+l.valueEur||0),0);return +p.valueEur||0;}
 function distinctList(arr){return Array.from(new Set(arr.filter(x=>x!=null&&x!=='')));}
@@ -353,7 +360,7 @@ function proposalsTableGeneral(props){
     if(ls.length>1)valCell='<span class="mval ro" title="Edit per event in the By-event view">'+money(propValue(p))+'</span>';
     else if(ls.length===1)valCell=moneyCell(ls[0].id,'line',propValue(p),editable);   // single-event → edit its child line
     else valCell=moneyCell(p.id,'prop',propValue(p),editable);                          // General → edit the parent value
-    h+='<tr class="prow" data-id="'+p.id+'">'
+    h+='<tr class="'+rowCls(p)+'"'+rowTitle(p)+' data-id="'+p.id+'">'
       +'<td><b>'+esc(p.company||'—')+'</b>'+(p.isGeneral?' <span class="accb acc-none">general</span>':'')+'</td>'
       +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
       +'<td>'+esc(p.accountType||'—')+'</td>'
@@ -369,7 +376,7 @@ function proposalsTableGeneral(props){
       +'</tr>';
   });
   h+='</tbody></table></div>';
-  h+='<p class="ro-note" style="margin-top:8px">'+props.length+' proposal'+(props.length===1?'':'s')+' · click a row to open & edit details. Valor is click-to-edit for your own proposals.</p>';
+  h+='<p class="ro-note" style="margin-top:8px">'+props.length+' proposal'+(props.length===1?'':'s')+' · click a row to open & edit details. Value is click-to-edit for your own proposals. <span style="background:#efeeea;border:1px solid var(--line);border-radius:4px;padding:1px 6px">grey</span> = added by hand, not from the Proposal Builder.</p>';
   return h;
 }
 function proposalsTableByEvent(props){
@@ -390,7 +397,7 @@ function proposalsTableByEvent(props){
     const ev=l?eventLineCell(l,editable):(p.isGeneral?'<span style="color:var(--muted)">General (no event)</span>':'—');
     const value=l?(+l.valueEur||0):propValue(p);
     const valCell=l?moneyCell(l.id,'line',value,editable):moneyCell(p.id,'prop',value,editable);
-    h+='<tr class="prow" data-id="'+p.id+'">'
+    h+='<tr class="'+rowCls(p)+'"'+rowTitle(p)+' data-id="'+p.id+'">'
       +'<td>'+ev+'</td>'
       +'<td><b>'+esc(p.company||'—')+'</b></td>'
       +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
