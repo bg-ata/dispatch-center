@@ -384,6 +384,24 @@ function holRowsFor(personId,year,type){
 function holUsed(personId,year){return holRowsFor(personId,year).reduce((a,h)=>a+(+h.workDays||0),0);}
 function holAdjust(personId,year){return holRowsFor(personId,year,'adjust').reduce((a,h)=>a+(+h.workDays||0),0);}
 function holRemaining(personId,year){const p=DB.person(personId);return holAllowance(p)+holAdjust(personId,year)-holUsed(personId,year);}
+/* The Maria lesson (15 Jul 2026): a balance the reader cannot re-derive gets disputed.
+   So split the count into days already TAKEN and days BOOKED ahead (approved but still
+   in the future — including next-January bookings, which charge back to this year), and
+   print the whole sum wherever a balance appears. Nobody should ever have to ask where
+   a number came from again. */
+function holBreakdown(personId,year){
+  const today=toISO(new Date());let taken=0,booked=0;
+  holRowsFor(personId,year).forEach(h=>{if((h.dateFrom||'')>today)booked+=(+h.workDays||0);else taken+=(+h.workDays||0);});
+  const p=DB.person(personId),allow=holAllowance(p),adj=holAdjust(personId,year);
+  return {allow:allow,adj:adj,taken:taken,booked:booked,rem:allow+adj-taken-booked};
+}
+function holFormulaHtml(personId,year){
+  const b=holBreakdown(personId,year);
+  return b.allow+(b.adj?' '+(b.adj>0?'+':'−')+Math.abs(b.adj)+' carry':'')
+    +(b.taken?' − '+b.taken+' taken':'')
+    +(b.booked?' − '+b.booked+' booked':'')
+    +' = <b>'+b.rem+'</b>';
+}
 function holDeadlineText(year){return 'enjoy them before 28 Feb '+(year+1);}
 /* ---- mini calendar ----
    A range of ISO dates tells you nothing about what it LOOKS like. This draws the month(s)

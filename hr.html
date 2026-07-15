@@ -77,7 +77,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=60"></script>
+<script src="store.js?v=61"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -273,7 +273,8 @@ function renderBalances(){
     const open=balOpen==r.p.id;
     h+='<tr style="cursor:pointer" data-bal="'+r.p.id+'" title="Show every holiday day"><td>'+
       '<span style="display:inline-block;width:12px;color:var(--muted)">'+(open?'▾':'▸')+'</span>'+
-      '<b>'+esc(r.p.name)+'</b> <span class="code">'+esc(r.p.role)+'</span>'+carry+'</td>'+
+      '<b>'+esc(r.p.name)+'</b> <span class="code">'+esc(r.p.role)+'</span>'+carry+
+      '<div style="font-size:10px;color:var(--muted);margin-top:1px">'+holFormulaHtml(r.p.id,y)+'</div></td>'+
       '<td class="num">'+r.allow+(r.adj?' <span style="color:#29ACE3">('+(r.adj>0?'+':'')+r.adj+')</span>':'')+'</td>'+
       '<td class="num">'+r.used+'</td>'+
       '<td class="num">'+(r.pending?'<span style="color:#C77800">+'+r.pending+'</span>':'—')+'</td>'+
