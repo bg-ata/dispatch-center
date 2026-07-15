@@ -93,12 +93,13 @@
     <label>Photo<span style="display:flex;gap:10px;align-items:center"><span id="m_avatar"></span><input type="file" id="m_photo" accept="image/*" style="font-size:12px"><button type="button" class="btn" id="m_photo_clear" style="font-size:11px;padding:3px 8px">Remove</button></span></label>
     <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="m_fin" style="width:auto"> Finance editor — can add € figures (the accountant)</label>
     <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="m_hr" style="width:auto"> HR — final step of the holiday approval chain</label>
-    <label>Holiday allowance (working days / year)<input id="m_days" type="number" min="0" step="0.5" placeholder="23"></label>
+    <label>Start date (first working day — drives the pro-rated allowance)<input id="m_start" type="date"></label>
+    <label>Holiday allowance (working days / year)<input id="m_days" type="number" min="0" step="0.5" placeholder="23"><span id="m_dayshint" style="font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;margin-top:3px"></span></label>
   </div>
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=59"></script>
+<script src="store.js?v=60"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -152,7 +153,25 @@ function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'
   editingPhoto=(p.photo||null);
   document.getElementById('m_avatar').innerHTML=avatarHtml({id:idv||0,name:p.name,photo:editingPhoto},40);
   document.getElementById('m_days').value=(p.holidayDays!=null?p.holidayDays:23);
+  document.getElementById('m_start').value=(p.startDate||'');
+  updDaysHint();
   document.getElementById('m_del').style.display=idv?'inline-block':'none';modal.classList.add('on');}
+/* live suggestion: full year = 23; started mid-year = pro-rated by calendar days.
+   Never overwrites the field on its own — HR clicks "apply" (she corrects if needed). */
+function updDaysHint(){
+  const s=document.getElementById('m_start').value,el=document.getElementById('m_dayshint');
+  if(!el)return;
+  if(!s){el.innerHTML='No start date — assumes a full year (23 days).';return;}
+  const y=new Date().getFullYear();
+  const sug=holSuggestedAllowance(s,y);
+  const cur=+document.getElementById('m_days').value;
+  el.innerHTML='Suggested for '+y+': <b>'+sug+' days</b> (pro-rated from '+esc(s)+')'+
+    (cur===sug?' — matches ✓':' · <a href="#" id="m_applysug" style="color:var(--orange)">apply '+sug+'</a>');
+  const a=document.getElementById('m_applysug');
+  if(a)a.onclick=e=>{e.preventDefault();document.getElementById('m_days').value=sug;updDaysHint();};
+}
+document.getElementById('m_start').onchange=updDaysHint;
+document.getElementById('m_days').oninput=updDaysHint;
 let editingPhoto=null;
 document.getElementById('m_photo').onchange=e=>{const f=e.target.files[0];if(!f)return;
   resizeImage(f,url=>{if(!url){alert('Could not read that image.');return;}editingPhoto=url;
@@ -163,7 +182,7 @@ document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_del').onclick=()=>{const p=DB.person(editingId);if(!confirm('Remove '+(p?p.name:'this person')+' from the team? Their tasks become unassigned. (recoverable from the audit log)'))return;DB.tasks.forEach(t=>{if(t.assignee==editingId)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!==editingId);DB.save();modal.classList.remove('on');render();};
-document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim(),finance:document.getElementById('m_fin').checked,hr:document.getElementById('m_hr').checked,holidayDays:(+document.getElementById('m_days').value||23),phone:document.getElementById('m_phone').value.trim(),photo:editingPhoto};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||'New person',role:document.getElementById('m_role').value,access:document.getElementById('m_access').value,email:m_email.value.trim(),finance:document.getElementById('m_fin').checked,hr:document.getElementById('m_hr').checked,holidayDays:(+document.getElementById('m_days').value||23),phone:document.getElementById('m_phone').value.trim(),startDate:(document.getElementById('m_start').value||null),photo:editingPhoto};
   if(editingId)Object.assign(DB.person(editingId),d);else DB.people.push({id:DB.newId(),...d});DB.save();modal.classList.remove('on');render();};
 document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx',[
   {name:'People',rows:DB.people.map(p=>({Name:p.name,Role:p.role,Access:ACCESS_LABEL[p.access||'member']||p.access,Email:p.email,Tasks:DB.tasksOf(p.id).length}))},

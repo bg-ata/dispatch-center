@@ -356,6 +356,22 @@ function holStraddles(h){
   return inSpillWindow(h.dateFrom)&&!inSpillWindow(h.dateTo)
     &&h.dateFrom.slice(0,4)===h.dateTo.slice(0,4);
 }
+/* Pro-rated holiday allowance from a start date (Belén's ask 15 Jul: "depending when
+   somebody starts working I need to calculate how many days they are due — automatically,
+   and let me correct it"). Spanish practice: the annual allowance accrues by calendar
+   days employed in the year. This produces a SUGGESTION shown in the Personnel modal —
+   the stored, editable holidayDays remains the single source of truth for all balances. */
+const HOL_BASE_ALLOWANCE=23;
+function holSuggestedAllowance(startDate,year){
+  const y=+(year||new Date().getFullYear());
+  const from=new Date(y,0,1),to=new Date(y,11,31);
+  const s=startDate?ymd(startDate):null;
+  if(s&&s>to)return 0;                                 // starts after this year ends
+  const eff=(s&&s>from)?s:from;
+  const days=Math.round((to-eff)/86400000)+1;
+  const total=Math.round((to-from)/86400000)+1;
+  return Math.round(HOL_BASE_ALLOWANCE*days/total*2)/2; // half-day precision
+}
 /* Belén is outside the allowance policy — her days are recorded and shown on the calendar,
    but no allowance, carry-over or 28-Feb maths applies to her. */
 function holExempt(p){return isBelenP(p);}
@@ -1245,7 +1261,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
-  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone'],
+  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -1313,6 +1329,10 @@ const DB={
       if(this.data.events.length && !('kind' in this.data.events[0])){
         window._extColsMissing=true;
         ['kind','lanes'].forEach(c=>{const i2=COLS.events.indexOf(c);if(i2>=0)COLS.events.splice(i2,1);});
+      }
+      /* startDate on people is tolerant the same way (1-line SQL adds it) */
+      if(this.data.people.length && !('startDate' in this.data.people[0])){
+        const i3=COLS.people.indexOf('startDate');if(i3>=0)COLS.people.splice(i3,1);
       }
       /* claims are tolerant too: until dispatch_hr11_claims.sql runs, never push
          claim/ratify (PostgREST rejects unknowns) and fall back to the old report
