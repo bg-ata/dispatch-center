@@ -326,6 +326,12 @@ function personStatusNow(p){
        next year's allowance in January, or days borrowed in advance)
    'adjust' rows are the exception: HR stamps them on 1 Jan of the year they apply to, so
    they always mean that calendar year. */
+/* The first holiday year the system tracks. Records start 2026-01-01, so the Jan/Feb
+   spill rule must not reach back past it: without this floor, the team's real Jan/Feb
+   2026 days (45 of them) fell into a "2025" year nobody can see and every 2026 balance
+   inflated — Cintia 0→5, Carlos 4→9… (Belén caught it live, 15 Jul 2026). In the first
+   tracked year the allowance simply covers Jan 2026 through Feb 2027. */
+const HOL_YEAR_MIN=2026;
 const HOL_SPILL_END_MD='02-28';   // last day of the spill window
 const HOL_DEADLINE_MD='02-28';    // (kept: carry-over must be enjoyed before end of February)
 function holYearOf(h){
@@ -334,10 +340,10 @@ function holYearOf(h){
   const iso=h.dateFrom||'';if(iso.length<7)return null;
   const y=+iso.slice(0,4),m=+iso.slice(5,7);
   if(h.type==='adjust')return y;                 // stamped on 1 Jan of the year it belongs to
-  return m<=2?y-1:y;                             // Jan & Feb belong to last year's count
+  return m<=2?Math.max(y-1,HOL_YEAR_MIN):y;      // Jan & Feb belong to last year's count (never before the first tracked year)
 }
 /* the charge year a NEW request would default to (shown in the form so nobody is surprised) */
-function holYearOfDate(iso){const m=+(iso||'').slice(5,7);const y=+(iso||'').slice(0,4);return m<=2?y-1:y;}
+function holYearOfDate(iso){const m=+(iso||'').slice(5,7);const y=+(iso||'').slice(0,4);return m<=2?Math.max(y-1,HOL_YEAR_MIN):y;}
 function inSpillWindow(iso){const m=+(iso||'').slice(5,7);return m<=2;}
 /* A range that starts inside the spill window (Jan/Feb) and ends outside it straddles two
    holiday years — e.g. 27 Feb to 2 Mar is one day of last year's and one of this year's.
