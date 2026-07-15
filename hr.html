@@ -323,6 +323,19 @@ function ledgerHtml(r,y){
   h+='<tr><td><b>Taken</b></td><td class="num"><b>'+r.used+'</b></td><td colspan="2"></td></tr>';
   h+='<tr><td><b>Left</b> <span style="color:var(--muted);font-size:11px">'+r.allow+(r.adj?(r.adj>0?' + '+r.adj:' − '+Math.abs(r.adj)):'')+' − '+r.used+'</span></td>'+
     '<td class="num"><b style="font-size:15px'+(r.rem<0?';color:#B00020':'')+'">'+r.rem+'</b></td><td colspan="2"></td></tr>';
+  /* Office (remote) days are a SEPARATE entitlement — 8 a year, and they never touch the
+     holiday allowance. Shown here, below the line, because the question keeps being asked. */
+  const rmt=DB.holidays.filter(x=>x.personId==r.p.id&&x.type==='remote'&&x.status!=='denied'&&x.status!=='cancelled'
+      &&(x.dateFrom||'').slice(0,4)===String(y))
+    .sort((a,b)=>(a.dateFrom||'').localeCompare(b.dateFrom||''));
+  const rmtN=rmt.reduce((a,x)=>a+(+x.workDays||0),0);
+  h+='<tr><td colspan="4" style="padding-top:10px;border-top:2px solid var(--line)">'+
+     '<b>🏢 Office days '+y+'</b> <span style="color:var(--muted);font-size:11px">'+rmtN+' of '+REMOTE_MAX_DAYS+
+     ' used — a separate entitlement, counted apart from the '+r.allow+' holiday days above</span></td></tr>';
+  rmt.forEach(x=>{h+='<tr><td style="padding-left:14px;color:var(--muted)">'+fmtRange(x)+'</td>'+
+    '<td class="num" style="color:var(--muted)">'+x.workDays+'</td>'+
+    '<td><span class="chip" style="background:#29ACE3">office day</span></td><td style="color:var(--muted)">'+esc(x.note||'')+'</td></tr>';});
+  if(!rmt.length)h+='<tr><td colspan="4" style="padding-left:14px;color:var(--muted);font-style:italic">None this year.</td></tr>';
   return h+'</table>';
 }
 /* ================= TAB 2: ALLOCATION (Jesús's whole view) ================= */
@@ -385,6 +398,18 @@ function renderMgr(){
     h+='<tr class="total"><td>Total</td><td></td><td class="num">'+fmtH(allT)+'</td><td></td></tr></table>'+
       '<div style="margin-top:10px"><button class="btn" id="xlsBtn">⬇ Excel (all allocations)</button></div>';
     h+='</div>';
+    /* ---- ⬇ allocation download station: pick the period, the people and the projects ---- */
+    h+='<div class="panel"><h3>⬇ Allocation download station'+visBadge('Belén + HR + Jesús')+'</h3>'+
+      '<p class="hint">Any stretch of weeks, one person or everybody, one project or all of them — with the accounting codes. '+
+      'Three sheets: every line, a per-project total and a per-person total. Auto-filled bank holidays and holidays are included so the hours reconcile.</p>'+
+      '<div class="padd">'+
+        '<label>From<input type="date" id="al_from"></label>'+
+        '<label>To<input type="date" id="al_to"></label>'+
+        '<label>Who<select id="al_who"></select></label>'+
+        '<label>Project<select id="al_proj"></select></label>'+
+        '<button class="btn primary" id="al_go">⬇ Download</button>'+
+        '<button class="btn" id="al_y" style="font-size:12px" title="This year so far, everybody, every project">This year</button>'+
+      '</div><div id="al_msg" style="font-size:12px;color:var(--muted);margin-top:8px"></div></div>';
   }
   // Project numbers: created / retired ONLY by Belén, Carlos and Jesús (accounting).
   // They follow an order — new event codes continue the running accounting sequence.
@@ -402,6 +427,7 @@ function renderMgr(){
   box.innerHTML=h;
   const xb=document.getElementById('xlsBtn');
   if(xb)xb.onclick=exportHours;
+  wireAllocStation();
   box.querySelectorAll('[data-tgl]').forEach(b=>b.onclick=()=>{
     if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can retire project numbers.');return;}
     const p=DB.projects.find(x=>x.id==b.dataset.tgl);if(!p)return;
@@ -417,6 +443,76 @@ function renderMgr(){
     DB.projects.push({id:DB.newId(),label:l,code:code,kind:null,
       sort:Math.max(0,...DB.projects.map(p=>p.sort||0))+1,active:true});
     DB.save();renderMgr();};
+}
+/* ---- allocation download station ---- */
+function wireAllocStation(){
+  const f=document.getElementById('al_from'),t=document.getElementById('al_to'),
+        w=document.getElementById('al_who'),pr=document.getElementById('al_proj');
+  if(!f)return;
+  w.innerHTML='<option value="">— Everybody —</option>'+
+    DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name))
+      .map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  pr.innerHTML='<option value="">— All projects —</option>'+
+    DB.projects.slice().sort(projCmp).map(p=>'<option value="'+p.id+'">'+esc(p.label)+(p.code?' ('+p.code+')':'')+'</option>').join('');
+  f.value=HR_START; t.value=toISO(new Date());
+  const run=()=>{
+    if(!f.value||!t.value||t.value<f.value){alert('Pick a valid date range — the "to" date cannot be before the "from" date.');return;}
+    exportAllocRange(f.value,t.value,w.value?+w.value:null,pr.value||null);
+  };
+  document.getElementById('al_go').onclick=run;
+  document.getElementById('al_y').onclick=()=>{f.value=new Date().getFullYear()+'-01-01';t.value=toISO(new Date());w.value='';pr.value='';run();};
+}
+/* Weeks are the unit of allocation, so a date range is read as "every week that starts
+   inside it". The auto-filled Festivos / Vacaciones lines are included: without them the
+   hours don't add up to the week and the export can't be reconciled. */
+function exportAllocRange(fromISO,toISO_,personId,projId){
+  const people=DB.people.filter(p=>!isTeamAccount(p)&&(personId==null||p.id==personId));
+  const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  const wantProj=id=>projId==null||String(id)===String(projId);
+  const lines=[];
+  const firstMon=toISO(monday(ymd(fromISO)));
+  people.forEach(p=>{
+    for(let m=ymd(firstMon);toISO(m)<=toISO_;m=addDays(m,7)){
+      const wk=toISO(m);
+      if(wk<fromISO)continue;                       // week starts before the window
+      const t=tsFor(p.id,wk),info=weekWorkInfo(wk,p.id);
+      const add=(proj,code,hrs,auto)=>{
+        if(!hrs)return;
+        lines.push({Person:p.name,Role:p.role,Week:wk,'Week of':fmtHumanShort(wk),
+          Project:proj,Code:code||'',Hours:Math.round(hrs*100)/100,Source:auto?'auto':'entered'});
+      };
+      Object.keys((t&&t.hours)||{}).forEach(pid=>{
+        if(!wantProj(pid))return;
+        const proj=DB.projects.find(x=>x.id==pid);
+        add(proj?proj.label:pid,proj&&proj.code,+t.hours[pid]||0,false);
+      });
+      if(fp&&wantProj(fp.id))add(fp.label,fp.code,info.fest,true);
+      if(vp&&wantProj(vp.id))add(vp.label,vp.code,info.vac,true);
+    }
+  });
+  lines.sort((a,b)=>a.Week===b.Week?(a.Person===b.Person?String(a.Project).localeCompare(String(b.Project)):a.Person.localeCompare(b.Person)):a.Week.localeCompare(b.Week));
+  /* per-project and per-person totals — the two questions actually asked of this data */
+  const byProj={},byPers={};
+  lines.forEach(l=>{
+    const k=l.Project+'||'+l.Code;
+    byProj[k]=(byProj[k]||0)+l.Hours;
+    byPers[l.Person]=(byPers[l.Person]||0)+l.Hours;
+  });
+  const total=lines.reduce((a,l)=>a+l.Hours,0);
+  const projRows=Object.keys(byProj).sort().map(k=>({Project:k.split('||')[0],Code:k.split('||')[1],
+    Hours:Math.round(byProj[k]*100)/100,Share:total?Math.round(100*byProj[k]/total)+' %':'—'}));
+  const persRows=Object.keys(byPers).sort().map(n=>({Person:n,Hours:Math.round(byPers[n]*100)/100,
+    Share:total?Math.round(100*byPers[n]/total)+' %':'—'}));
+  const who=personId==null?'everybody':DB.personName(personId).replace(/\s+/g,'_');
+  const pj=projId==null?'all-projects':String((DB.projects.find(x=>String(x.id)===String(projId))||{}).label||projId).replace(/[^\w]+/g,'_');
+  const msg=document.getElementById('al_msg');
+  if(!lines.length){if(msg)msg.textContent='Nothing allocated in that range for that selection.';return;}
+  exportXLSX('RENMAD_allocations_'+who+'_'+pj+'_'+fromISO+'_to_'+toISO_+'.xlsx',
+    [{name:'Lines',rows:lines},{name:'By project',rows:projRows},{name:'By person',rows:persRows}]);
+  if(msg)msg.textContent='Downloaded '+lines.length+' line'+(lines.length===1?'':'s')+' · '+fmtH(total)+' h · '+
+    (personId==null?people.length+' people':DB.personName(personId))+' · '+
+    (projId==null?'all projects':(DB.projects.find(x=>String(x.id)===String(projId))||{}).label)+' · '+
+    fmtHumanShort(fromISO)+' to '+fmtHumanShort(toISO_)+'.';
 }
 function exportHours(){
   const rows=[];
@@ -452,6 +548,17 @@ function renderTimeclock(){
     '<div class="panel"><h3>🕵 Person history'+visBadge('Belén + HR')+'</h3><p class="hint">One person at a time: their punches this month plus the devices they’ve logged in from over the last 30 days.</p>'+
     '<div class="mnav"><select id="ph_who"></select></div><div class="mx" id="phMonth"></div><div id="phDev" style="margin-top:12px"></div></div>'+
     '<div class="panel decide"><h3>🛠 Corrections queue'+visBadge('Belén + HR')+'</h3><p class="hint">Workers report (from 🙋 Me), you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
+    '<div class="panel"><h3>⬇ Download station'+visBadge('Belén + HR')+'</h3>'+
+    '<p class="hint">Any stretch of dates, one person or everybody. Two sheets: a day-by-day summary and every individual punch with its hash-chain fields, which is the format an inspection asks for.</p>'+
+    '<div class="padd">'+
+      '<label>From<input type="date" id="dl_from"></label>'+
+      '<label>To<input type="date" id="dl_to"></label>'+
+      '<label>Who<select id="dl_who"></select></label>'+
+      '<button class="btn primary" id="dl_go">⬇ Download</button>'+
+      '<button class="btn" id="dl_m" style="font-size:12px" title="This calendar month, everyone">This month</button>'+
+      '<button class="btn" id="dl_q" style="font-size:12px" title="The last 90 days, everyone">Last 90 days</button>'+
+      '<button class="btn" id="dl_y" style="font-size:12px" title="This year so far, everyone">This year</button>'+
+    '</div><div id="dl_msg" style="font-size:12px;color:var(--muted);margin-top:8px"></div></div>'+
     '<div class="panel"><h3>Team time sheet'+visBadge('Belén + HR')+'</h3><div class="mnav"><select id="tw_who"></select><button class="btn" id="tw_prev">‹</button><b id="tw_lab"></b><button class="btn" id="tw_next">›</button>'+
     '<button class="btn" id="tcXlsM" style="font-size:12px">⬇ Month, everyone</button><button class="btn" id="tcXlsA" style="font-size:12px">⬇ Full archive (hash-chained)</button></div>'+
     '<div class="mx" id="teamMonth"></div>'+
@@ -465,7 +572,58 @@ function renderTimeclock(){
   document.getElementById('tw_next').onclick=()=>{tcM.setMonth(tcM.getMonth()+1);renderTeamMonth();};
   document.getElementById('tcXlsM').onclick=exportTcMonth;
   document.getElementById('tcXlsA').onclick=exportTcArchive;
+  wireDownloadStation();
   renderAttendance();renderPersonHistory();renderTcQueue();renderTeamMonth();renderEventAway();
+}
+/* ---- ⬇ download station: any dates, one person or everybody ---- */
+function wireDownloadStation(){
+  const f=document.getElementById('dl_from'),t=document.getElementById('dl_to'),w=document.getElementById('dl_who');
+  if(!f)return;
+  w.innerHTML='<option value="">— Everybody —</option>'+
+    DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name))
+      .map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+  const now=new Date();
+  f.value=toISO(new Date(now.getFullYear(),now.getMonth(),1));
+  t.value=toISO(now);
+  const run=()=>{
+    if(!f.value||!t.value||t.value<f.value){alert('Pick a valid date range — the "to" date cannot be before the "from" date.');return;}
+    exportTimeclockRange(f.value,t.value,w.value?+w.value:null);
+  };
+  document.getElementById('dl_go').onclick=run;
+  const preset=(from,to)=>{f.value=from;t.value=to;w.value='';run();};
+  document.getElementById('dl_m').onclick=()=>preset(toISO(new Date(now.getFullYear(),now.getMonth(),1)),toISO(new Date()));
+  document.getElementById('dl_q').onclick=()=>preset(toISO(addDays(new Date(),-90)),toISO(new Date()));
+  document.getElementById('dl_y').onclick=()=>preset(new Date().getFullYear()+'-01-01',toISO(new Date()));
+}
+function exportTimeclockRange(fromISO,toISO_,personId){
+  const people=DB.people.filter(p=>!isTeamAccount(p)&&(personId==null||p.id==personId))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  const today=toISO(new Date());
+  const days=[],punches=[];
+  people.forEach(p=>{
+    for(let d=ymd(fromISO);toISO(d)<=toISO_;d=addDays(d,1)){
+      const iso=toISO(d);
+      if(iso>today)break;
+      const exp=tcExpectedDay(p.id,iso),info=tcDayInfo(p.id,iso);
+      if(exp<=0&&!info.entries.length)continue;   // weekend/bank holiday with nothing on it
+      const worked=Math.round(info.total/60*100)/100;
+      days.push({Person:p.name,Role:p.role,Date:iso,Weekday:fmtHuman(iso).split(' ')[0],
+        Punches:info.entries.map(entryLabel).join(' · '),
+        'Worked (h)':worked,'Expected (h)':exp,'Diff (h)':Math.round((worked-exp)*100)/100,
+        Note:madHol(iso)?('Bank holiday — '+madHol(iso)):(currentLeave(p.id,iso)?TYPE_LABEL[currentLeave(p.id,iso).type]:'')});
+      info.entries.forEach(e=>punches.push({Person:p.name,Date:e.day,Time:e.time,Kind:e.kind,
+        'Added afterwards':e.manual?'yes':'',Amends:e.amends||'',Reason:e.reason||'',
+        RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
+    }
+  });
+  days.sort((a,b)=>a.Date===b.Date?a.Person.localeCompare(b.Person):a.Date.localeCompare(b.Date));
+  const who=personId==null?'everybody':DB.personName(personId).replace(/\s+/g,'_');
+  const msg=document.getElementById('dl_msg');
+  if(!days.length){if(msg)msg.textContent='Nothing recorded in that range.';return;}
+  exportXLSX('RENMAD_timeclock_'+who+'_'+fromISO+'_to_'+toISO_+'.xlsx',
+    [{name:'Days',rows:days},{name:'Punches',rows:punches}]);
+  if(msg)msg.textContent='Downloaded '+days.length+' day'+(days.length===1?'':'s')+' · '+punches.length+' punch'+(punches.length===1?'':'es')+' · '+
+    (personId==null?people.length+' people':DB.personName(personId))+' · '+fmtHumanShort(fromISO)+' to '+fmtHumanShort(toISO_)+'.';
 }
 /* HR-admin board: who is in / on a break / off / at an event right now — with today's devices */
 function renderAttendance(){

@@ -209,6 +209,11 @@ function bankHols(mon,cc){const out=[],fixed=HOL[cc]||[],mov=MOV[cc]||[],sun=add
    verify against the BOCM each year and correct via MAD_OVR if needed. */
 const MAD_FIX=[['01-01','Año Nuevo'],['01-06','Reyes'],['05-01','Fiesta del Trabajo'],['05-02','Comunidad de Madrid'],['05-15','San Isidro'],['08-15','Asunción'],['10-12','Fiesta Nacional'],['11-01','Todos los Santos'],['11-09','La Almudena'],['12-06','Constitución'],['12-08','Inmaculada'],['12-25','Navidad']];
 const MAD_OVR={}; // per-year corrections from the official BOCM calendar, e.g. {2027:{'2027-05-17':'San Isidro (traslado)'}}
+/* Days the COMPANY gives everybody on top of the official calendar. They behave exactly
+   like a bank holiday: they cost nobody a holiday day, nothing is expected on the clock,
+   and the allocation auto-fills them as Festivos. Christmas Eve and New Year's Eve are
+   given every year (skipped automatically when they fall at a weekend). */
+const COMPANY_DAYS=[['12-24','Nochebuena (día de empresa)'],['12-31','Nochevieja (día de empresa)']];
 const _madCache={};
 function madridHolidays(y){
   if(_madCache[y])return _madCache[y];
@@ -219,8 +224,19 @@ function madridHolidays(y){
   const e=easter(y);
   out[toISO(addDays(e,-3))]='Jueves Santo';
   out[toISO(addDays(e,-2))]='Viernes Santo';
+  /* company days: no traslado — if it lands on a weekend it is simply already free */
+  COMPANY_DAYS.forEach(([md,n])=>{
+    const d=new Date(y,+md.slice(0,2)-1,+md.slice(3));
+    if(d.getDay()===0||d.getDay()===6)return;
+    if(!out[toISO(d)])out[toISO(d)]=n;   // never mask a real bank holiday
+  });
   Object.assign(out,MAD_OVR[y]||{});
   return _madCache[y]=out;
+}
+/* is this one of the company's own gift days (vs the official calendar)? */
+function isCompanyDay(iso){
+  const md=(iso||'').slice(5);
+  return COMPANY_DAYS.some(([m])=>m===md)&&!!madHol(iso);
 }
 function madHol(iso){return madridHolidays(+iso.slice(0,4))[iso]||null;}
 /* Legal working pattern: Mon–Thu 8 h + Fri 5.5 h (= 37.5); July & August 7 h every day (= 35).
@@ -1052,7 +1068,10 @@ function buildSeed(){
    {id:15,label:'05. Desarrollo/Comercial',code:null,kind:null,sort:14,active:true},
    {id:16,label:'06. ATA Renewables',code:null,kind:null,sort:15,active:true},
   ];
-  people.find(p=>p.name==='Jesús Jiménez').hr=true; // local demo mirrors the SQL seed
+  /* Jesús is finance-only: he reports on allocations but is NOT in the HR seat — the
+     HR/reporting unbundle (dispatch_hr10_alloc_unbundle.sql) set his hr flag false live.
+     This used to say .hr=true "to mirror the SQL seed" and never caught up, which made the
+     local demo grant him HR powers he does not have in production. */
   {const c=people.find(p=>p.name==='Cintia Hernández');if(c)c.salesLead=true;} // local demo mirrors dispatch_spx.sql
   /* Facturación códigos-contables master (mirrors dispatch_facturacion_codigos.sql).
      eventId links an item to its dc_finance row so RENMAD lines still feed the € Dashboard;

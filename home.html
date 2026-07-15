@@ -87,6 +87,18 @@
   .fold>.fbody{display:none;padding:0 16px 14px}
   .fold.open>.fbody{display:block}
   .fold .arr{float:right;color:var(--muted);font-size:12px}
+  /* quick bar: the four occasional actions as small pills near the top, instead of
+     four big cards buried at the bottom. The open one widens to a full row in place. */
+  .qbar{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;margin:0 0 14px}
+  .qbar .fold{flex:0 0 auto;margin:0;background:none;border:none;border-radius:0}
+  .qbar .fold>button.fhead{width:auto;padding:5px 12px;font-size:12.5px;font-weight:600;
+    color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;white-space:nowrap}
+  .qbar .fold>button.fhead:hover{border-color:var(--orange);color:var(--charcoal)}
+  .qbar .fold.open{flex:1 1 100%}
+  .qbar .fold.open>button.fhead{color:#8a4a12;background:#FFF3E8;border-color:#F3C49B}
+  .qbar .fold>.fbody{padding:10px 2px 2px}
+  .qbar .fold .arr{float:none;margin-left:4px}
+  .qbar .vis{font-size:10px;margin-left:3px;opacity:.65}
   /* phones */
   @media(max-width:680px){
     h1{font-size:19px}
@@ -96,6 +108,9 @@
     #clockPanel #liveWorked{font-size:34px}
     .frm input,.frm select{width:100%}
     .acell input.hrs{width:62px}
+    /* the pills stay small, but not smaller than a thumb */
+    .qbar{gap:5px}
+    .qbar .fold>button.fhead{padding:11px 12px;font-size:12.5px}
   }
 </style>
 </head>
@@ -116,6 +131,10 @@ const _open={};                           // fold open/closed state (survives re
 
 /* tiny visibility chip next to panel titles — who can see this information */
 function visBadge(t){const pub=t==='everyone';return '<span title="'+(pub?'Visible to the whole team':'Private — '+t)+'" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:'+(pub?'#E9F0FB':'#F0EEE7')+';color:'+(pub?'#185FA5':'#7c7c78')+'">'+(pub?'👁 everyone':'🔒 '+t)+'</span>'}
+/* the same idea shrunk to a single glyph, for the pills — the full badge is too big there.
+   Everyone can USE all four; this says who can see what comes out of them. */
+function visDot(t){const pub=t==='everyone';
+  return '<span class="vis" title="'+(pub?'Visible to the whole team':'Private — '+t)+'">'+(pub?'👁':'🔒')+'</span>';}
 
 function foldHtml(id,title){
   return '<div class="fold'+(_open[id]?' open':'')+'" id="'+id+'"><button class="fhead" type="button">'+title+' <span class="arr">'+(_open[id]?'▾':'▸')+'</span></button><div class="fbody" id="'+id+'Body"></div></div>';
@@ -154,15 +173,19 @@ function render(){
       (me.finance?'<span class="rolepill" style="background:#185FA5;color:#fff">€ finance</span>':'')+
       (me.hr?'<span class="rolepill" style="background:#4C3079;color:#fff">HR</span>':'')+'</h1>'+
     '<p class="sub">Your whole day in one place — clock in, plan your week, tick off your list and manage your time off.</p>'+
+    /* the four occasional actions: small pills up here rather than four big cards at the
+       bottom. Everyone gets all four; the glyph says who can see what comes out of each. */
+    '<div class="qbar">'+
+      foldHtml('awayFold','📣 At an event'+visDot('everyone')+awaySuffix)+
+      foldHtml('reportFold','🛠 Report a clock mistake'+visDot('you + HR'))+
+      foldHtml('monthFold','📆 My month'+visDot('you + HR'))+
+      foldHtml('profFold','👤 My profile'+visDot('everyone'))+
+    '</div>'+
     '<div class="grid2">'+
       '<div><div class="panel" id="clockPanel"></div><div class="panel" id="allocPanel"></div></div>'+
       '<div><div class="panel" id="alarmPanel"></div><div class="panel" id="todoPanel"></div><div class="panel" id="holPanel"></div></div>'+
     '</div>'+
-    '<div class="panel" id="evPanel"></div>'+
-    foldHtml('awayFold','📣 At an event'+awaySuffix)+
-    foldHtml('reportFold','🛠 Report a clock mistake')+
-    foldHtml('monthFold','📆 My month')+
-    foldHtml('profFold','👤 My profile'+visBadge('everyone'));
+    '<div class="panel" id="evPanel"></div>';
   renderClock();renderAllocPanel();renderAlarms();renderTodo();renderHolPanel();renderEvents();
   renderAwayFold();renderReportFold();renderMonthFold();renderProfFold();
   wireFolds();
