@@ -1352,7 +1352,24 @@ const DB={
      lose it — on failure it goes to the pending queue (banner + auto-retry). */
   async punch(kind){
     const me=this.currentUser;if(!me)return {ok:false,msg:'not logged in'};
-    const row={id:this.newId(),personId:me.id,day:toISO(new Date()),time:nowHMS(),kind,manual:false,amends:null,reason:null,note:null,reportId:null};
+    /* Guard the record before writing to it (it is append-only — a bad punch is forever).
+       A punch that lands BEFORE a punch already on the day is swallowed by the pairing and
+       does nothing, so the button never changes and people keep clicking (Andrea, 15/07:
+       an amendment filed an OUT at 15:00 on the wrong day → 12 dead clock-ins in 4 minutes).
+       Refuse it loudly and point at HR instead of silently appending junk. */
+    const _day=toISO(new Date()),_now=nowHMS(),_es=tcEffective(me.id,_day),_last=_es[_es.length-1];
+    if(_last&&(_last.time||'')>_now){
+      const msg='Your record already has a '+String(_last.kind).toUpperCase()+' at '+String(_last.time).slice(0,5)+
+        ' today — later than right now, so clocking here would change nothing. Ask HR to correct the record (Me → “a punch is wrong”).';
+      _punchAck={ok:false,kind,time:_now,msg,at:Date.now()};
+      return {ok:false,blocked:true,msg};
+    }
+    if(_last&&_last.kind===kind){
+      const msg='You are already clocked '+(kind==='in'?'in':'out')+' (since '+String(_last.time).slice(0,5)+').';
+      _punchAck={ok:false,kind,time:_now,msg,at:Date.now()};
+      return {ok:false,blocked:true,msg};
+    }
+    const row={id:this.newId(),personId:me.id,day:_day,time:_now,kind,manual:false,amends:null,reason:null,note:null,reportId:null};
     if(!USE_SUPABASE){this.timeclock.push(row);this.save();_punchAck={ok:true,kind,time:row.time,at:Date.now()};return {ok:true,row};}
     try{
       const {error}=await sb.from('dc_timeclock').insert([pickRow(row,'timeclock')]);

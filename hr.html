@@ -753,6 +753,10 @@ function renderTcQueue(){
       '<select id="qa_act_'+r.id+'" style="font-size:12px"><option value="add">add missed punch</option><option value="fix">correct a punch</option><option value="void">void a punch</option></select> '+
       '<select id="qa_ent_'+r.id+'" style="font-size:12px">'+es.map(e=>'<option value="'+e.id+'" '+(r.entryId==e.id?'selected':'')+'>'+entryLabel(e)+'</option>').join('')+'</select> '+
       '<select id="qa_kind_'+r.id+'" style="font-size:12px"><option>in</option><option>out</option></select> '+
+      /* Day of the AMENDMENT — defaults to the report's day, but people often report today
+         about yesterday ("ayer se cayó la página"), so HR must be able to redirect the fix
+         to the day it actually happened. Changing it reloads the punch list for that day. */
+      '<input id="qa_day_'+r.id+'" type="date" value="'+esc(r.day||toISO(new Date()))+'" title="Day the correction applies to — change it if the report is about another day" style="font-size:12px;padding:4px 6px"> '+
       '<input id="qa_time_'+r.id+'" type="time" style="font-size:12px;padding:4px 6px"> '+
       '<button class="btn ok" style="font-size:11px;padding:4px 10px" data-qa="'+r.id+'">Apply amendment</button> '+
       '<button class="btn" style="font-size:11px;padding:4px 10px" data-qres="'+r.id+'">Resolve without change</button>'+
@@ -767,26 +771,39 @@ function renderTcQueue(){
     const r=DB.tcreports.find(x=>x.id==b.dataset.qres);
     r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'Resolved without changes to the record.'}]);
     r.status='resolved';DB.save();renderTcQueue();});
+  /* changing the day reloads that day's punches, so "fix/void" always targets the right entry */
+  box.querySelectorAll('[id^="qa_day_"]').forEach(d=>d.onchange=()=>{
+    const rid=d.id.replace('qa_day_',''),r=DB.tcreports.find(x=>x.id==rid);if(!r)return;
+    const sel=document.getElementById('qa_ent_'+rid);if(!sel)return;
+    const es=tcEffective(r.personId,d.value);
+    sel.innerHTML=es.length?es.map(e=>'<option value="'+e.id+'">'+entryLabel(e)+'</option>').join('')
+                           :'<option value="">— no punches that day —</option>';
+  });
   box.querySelectorAll('[data-qa]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.qa);if(!r)return;
     const act=document.getElementById('qa_act_'+r.id).value;
     const entId=document.getElementById('qa_ent_'+r.id).value;
     const kind=document.getElementById('qa_kind_'+r.id).value;
     const time=document.getElementById('qa_time_'+r.id).value;
+    const day=document.getElementById('qa_day_'+r.id).value||r.day||toISO(new Date());
     if(act!=='void'&&!time){alert('Set the time for the amendment.');return;}
     if((act==='fix'||act==='void')&&!entId){alert('Pick the punch to amend.');return;}
+    /* a punch in the future silently wedges that person's clock (the day reads as already
+       closed, so the button never flips back to "Clock out") — block it at the source. */
+    if(act!=='void'&&day===toISO(new Date())&&time>nowHMS().slice(0,5)){
+      alert('That time is still in the future today ('+time+').\n\nIf this correction is for an earlier day, change the Day field first — otherwise it will stop their clock.');return;}
     const reason=prompt('Reason for the amendment (goes in the permanent record):',(r.thread[0]&&r.thread[0].text)||'');
     if(!reason){alert('A reason is mandatory for amendments.');return;}
     const me=DB.currentUser;
     const target=entId?DB.timeclock.find(x=>x.id==entId):null;
-    DB.timeclock.push({id:DB.newId(),personId:r.personId,day:r.day||toISO(new Date()),
+    DB.timeclock.push({id:DB.newId(),personId:r.personId,day:day,
       time:act==='void'?(target?target.time:'00:00'):time,
       kind:act==='void'?'void':kind,
       manual:act==='add',
       amends:act==='add'?null:+entId,
       reason,note:null,reportId:r.id});
     r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),
-      text:'✔ Amendment applied: '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
+      text:'✔ Amendment applied ('+day+'): '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
     r.status='resolved';
     DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
   });
