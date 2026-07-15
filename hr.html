@@ -530,13 +530,16 @@ function renderTcQueue(){
   box.innerHTML=list.map(r=>{
     const p=DB.person(r.personId);
     const es=tcEffective(r.personId,r.day||toISO(new Date()));
+    const dayOpen=tcDayInfo(r.personId,r.day||toISO(new Date())).open;
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">'+
       '<b>'+esc(p?p.name:'?')+'</b> · '+(r.day||'')+' '+reportChip(r)+threadHtml(r)+
       '<input id="qr_'+r.id+'" placeholder="reply…" style="width:46%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-qr="'+r.id+'">Reply</button> '+
       '<span style="margin-left:12px"></span>'+
       '<select id="qa_act_'+r.id+'" style="font-size:12px"><option value="add">add missed punch</option><option value="fix">correct a punch</option><option value="void">void a punch</option></select> '+
       '<select id="qa_ent_'+r.id+'" style="font-size:12px">'+es.map(e=>'<option value="'+e.id+'" '+(r.entryId==e.id?'selected':'')+'>'+entryLabel(e)+'</option>').join('')+'</select> '+
-      '<select id="qa_kind_'+r.id+'" style="font-size:12px"><option>in</option><option>out</option></select> '+
+      /* default to the punch that is actually missing: if their day is still open it's an OUT
+         they need, not another IN (the "in" default caused two wrong amendments on 15/07). */
+      '<select id="qa_kind_'+r.id+'" style="font-size:12px"><option value="in"'+(dayOpen?'':' selected')+'>in</option><option value="out"'+(dayOpen?' selected':'')+'>out</option></select> '+
       /* Day of the AMENDMENT — defaults to the report's day, but people often report today
          about yesterday ("ayer se cayó la página"), so HR must be able to redirect the fix
          to the day it actually happened. Changing it reloads the punch list for that day. */
@@ -576,10 +579,31 @@ function renderTcQueue(){
        closed, so the button never flips back to "Clock out") — block it at the source. */
     if(act!=='void'&&day===toISO(new Date())&&time>nowHMS().slice(0,5)){
       alert('That time is still in the future today ('+time+').\n\nIf this correction is for an earlier day, change the Day field first — otherwise it will stop their clock.');return;}
-    const reason=prompt('Reason for the amendment (goes in the permanent record):',(r.thread[0]&&r.thread[0].text)||'');
-    if(!reason){alert('A reason is mandatory for amendments.');return;}
     const me=DB.currentUser;
     const target=entId?DB.timeclock.find(x=>x.id==entId):null;
+    /* Say in plain words exactly what is about to be written, and what the day becomes.
+       The dropdowns default to "add / in", and clicking straight through has now filed
+       three wrong amendments — so nothing reaches the ledger without being read back. */
+    const _p=DB.person(r.personId),who=(_p&&_p.name)||'this person';
+    const what=act==='void' ? 'VOID the punch '+(target?entryLabel(target):'?')
+             : act==='fix'  ? 'CHANGE '+(target?entryLabel(target):'?')+' to '+kind.toUpperCase()+' '+time
+                            : 'ADD a new '+kind.toUpperCase()+' at '+time;
+    const sim=DB.timeclock.filter(x=>x.personId===r.personId&&x.day===day).map(x=>({kind:x.kind,time:x.time,id:x.id,amends:x.amends}));
+    if(act==='void')sim.forEach(x=>{if(x.id==entId)x.kind='void';});
+    else if(act==='fix'){sim.forEach(x=>{if(x.id==entId)x.kind='void';});sim.push({kind:kind,time:time});}
+    else sim.push({kind:kind,time:time});
+    let tot=0,op=null;
+    sim.filter(x=>x.kind!=='void').sort((a,b)=>(a.time||'').localeCompare(b.time||'')).forEach(x=>{
+      if(x.kind==='in'){if(op==null)op=tcMinutes(x.time);}
+      else if(x.kind==='out'&&op!=null){tot+=Math.max(0,tcMinutes(x.time)-op);op=null;}});
+    const after=op!=null?'still clocked IN (open)':(Math.floor(tot/60)+' h '+String(Math.round(tot%60)).padStart(2,'0'));
+    if(!confirm('Amend '+who+"'s legal time record?\n\n"+
+      '  Day:    '+day+'\n'+
+      '  Change: '+what+'\n\n'+
+      'Their '+day+' then reads: '+after+'\n\n'+
+      'The original entry is never deleted — this is added as a linked correction.'))return;
+    const reason=prompt('Reason for the amendment (goes in the permanent record):',(r.thread[0]&&r.thread[0].text)||'');
+    if(!reason){alert('A reason is mandatory for amendments.');return;}
     DB.timeclock.push({id:DB.newId(),personId:r.personId,day:day,
       time:act==='void'?(target?target.time:'00:00'):time,
       kind:act==='void'?'void':kind,
