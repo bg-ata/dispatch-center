@@ -104,7 +104,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=56"></script>
+<script src="store.js?v=57"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -255,7 +255,7 @@ function renderAllocAlarm(){
 function renderWeek(){
   const me=DB.currentUser;
   const mon=ymd(weekISO),fri=addDays(mon,4);
-  document.getElementById('w_lab').textContent='Week of '+weekISO+' ('+fmtD(mon)+' – '+fmtD(fri)+')';
+  document.getElementById('w_lab').textContent='Week of '+fmtHumanShort(weekISO)+' – '+fmtHumanShort(toISO(fri));
   if(!me){document.getElementById('ts').innerHTML='<tr><td class="empty">Log in to fill your hours.</td></tr>';return;}
   const w=weekWorkInfo(weekISO,me.id);
   const t=tsFor(me.id,weekISO);
@@ -303,12 +303,19 @@ function saveWeek(){
   }
   let t=tsFor(me.id,weekISO);
   if(t)t.hours=hours;else DB.timesheets.push({id:DB.newId(),personId:me.id,week:weekISO,hours});
-  DB.save();
-  const m=document.getElementById('w_msg');
-  m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
-  m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
-  setTimeout(()=>m.textContent='',5000);
-  renderAllocAlarm();renderWeek();renderAlarms();
+  /* wait for the database to actually take it before saying so — on a phone the old
+     debounced save could die when the app was backgrounded, and the week silently vanished */
+  const m=document.getElementById('w_msg'),btn=document.getElementById('saveBtn');
+  m.style.color='var(--muted)';m.textContent='Saving…';
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  DB.saveNow().then(ok=>{
+    if(btn){btn.disabled=false;btn.textContent='Save my hours';}
+    if(!ok)return; // syncNow already told them + reloaded
+    m.style.color=Math.abs(sum-w.toAllocate)<0.01?'var(--green)':'var(--amber)';
+    m.textContent=Math.abs(sum-w.toAllocate)<0.01?'Saved — week complete ✓':'Saved — '+fmtH(w.toAllocate-sum)+' h still unallocated';
+    setTimeout(()=>m.textContent='',5000);
+    renderAllocAlarm();renderWeek();renderAlarms();
+  });
 }
 
 /* ================= 🔔 needs you: alarms + holiday decisions ================= */
@@ -339,7 +346,7 @@ function renderAlarms(){
   renderDecide();
 }
 /* --- shared holiday helpers (ported from hr.html) --- */
-function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
+function fmtRange(h){return fmtHumanRange(h.dateFrom,h.dateTo);}
 function isExemptDay(iso){ // periods where team overlaps are normal: August, Christmas, Easter week
   const d=ymd(iso),m=d.getMonth(),day=d.getDate();
   if(m===7)return true;
@@ -399,14 +406,56 @@ function chainHtml(r){
   const approvals=(r.log||[]).filter(l=>/^approved/.test(l.action||''));
   let curIdx=chain.findIndex(s=>s.key===r.status);if(curIdx<0)curIdx=chain.length;
   const fmtAt=at=>{if(!at)return '';const d=new Date(at);return isNaN(+d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');};
+  const mine=holActsOnMe(r); // only say "YOUR TURN" when it actually is
   const parts=chain.map((s,i)=>{
     const name=s.key==='hr'?'HR':(s.who?s.who.name.split(' ')[0]:'?');
     if(i<curIdx){const ap=approvals[i];
       return '<span style="color:var(--green);font-weight:700">✓ '+esc(ap?ap.by.split(' ')[0]:name)+' approved'+(ap&&fmtAt(ap.at)?' '+fmtAt(ap.at):'')+'</span>';}
-    if(i===curIdx)return '<span style="color:var(--orange);font-weight:800">● YOUR TURN</span>';
+    if(i===curIdx)return mine?'<span style="color:var(--orange);font-weight:800">● YOUR TURN</span>'
+      :'<span style="color:var(--amber);font-weight:700">● with '+esc(name)+'</span>';
     return '<span style="color:var(--muted)">then '+esc(name)+'</span>';
   });
   return '<div style="font-size:11.5px;margin:6px 0 2px">'+parts.join(' <span style="color:var(--muted)">→</span> ')+'</div>';
+}
+/* the message thread on a request. Approvers see everything; the requester only ever sees
+   what was explicitly addressed to them (enforced server-side too). */
+function msgsHtml(r,opts){
+  opts=opts||{};
+  if(!DB.holmsgReady())return '';
+  const me=DB.currentUser;if(!me)return '';
+  const ms=holMsgs(r.id);
+  const amApprover=holCanApprove(me)&&r.personId!=me.id;
+  if(!ms.length&&!amApprover&&!opts.allowReply)return '';
+  const when=s=>{const d=new Date(s);return isNaN(+d)?'':String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+  let h='<div style="margin-top:8px;border-top:1px dashed var(--line);padding-top:7px">';
+  if(ms.length)h+=ms.map(m=>'<div style="font-size:12px;margin-bottom:5px;line-height:1.35">'+
+      '<b style="color:var(--charcoal)">'+esc(m.byName||'?')+'</b> '+
+      '<span style="color:var(--muted);font-size:10.5px">'+when(m.created)+'</span> '+
+      (m.toRequester?'<span class="chip" style="background:var(--blue);font-size:9.5px">to '+esc((DB.personName(r.personId)||'').split(' ')[0])+'</span>'
+                    :'<span class="chip" style="background:#9AA0A8;font-size:9.5px">approvers only</span>')+
+      '<br>'+esc(m.text)+'</div>').join('');
+  else h+='<div style="font-size:11.5px;color:var(--muted);margin-bottom:5px">No messages yet.</div>';
+  if(amApprover){
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px">'+
+      '<input id="hm_'+r.id+'" placeholder="Message about this request…" style="flex:1 1 190px;font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:7px">'+
+      '<button class="btn" style="font-size:11.5px" data-hm="'+r.id+'" data-to="0" title="Only the other approvers see this">🔒 To approvers</button>'+
+      '<button class="btn" style="font-size:11.5px" data-hm="'+r.id+'" data-to="1" title="'+esc(DB.personName(r.personId))+' will see this and get a notification">✉ Ask '+esc((DB.personName(r.personId)||'').split(' ')[0])+'</button>'+
+      '</div>';
+  }else if(opts.allowReply){
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:4px">'+
+      '<input id="hm_'+r.id+'" placeholder="Reply…" style="flex:1 1 190px;font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:7px">'+
+      '<button class="btn" style="font-size:11.5px" data-hm="'+r.id+'" data-to="1">Send</button></div>';
+  }
+  return h+'</div>';
+}
+/* shared by every panel that renders msgsHtml */
+function wireMsgs(box){
+  box.querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.hm,inp=document.getElementById('hm_'+id);
+    if(!inp||!inp.value.trim())return;
+    holMsgSend(id,inp.value.trim(),b.dataset.to==='1');
+    inp.value='';render();
+  });
 }
 function renderDecide(){
   const box=document.getElementById('decidebox');if(!box)return;
@@ -424,11 +473,14 @@ function renderDecide(){
       chainHtml(r)+
       (adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
       flags.map(f=>'<div class="flag">⚠ '+f+'</div>').join('')+
+      (r.type==='remote'?'':holMiniCal(r.dateFrom,r.dateTo,{personId:r.personId,excludeId:r.id}))+
+      msgsHtml(r)+
       '<div style="margin-top:8px"><button class="btn ok" data-ap="'+r.id+'">Approve</button> <button class="btn no" data-dn="'+r.id+'">Deny</button></div></div>';
   });
   box.innerHTML=h;
   box.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>decide(b.dataset.ap,true));
   box.querySelectorAll('[data-dn]').forEach(b=>b.onclick=()=>decide(b.dataset.dn,false));
+  wireMsgs(box);
 }
 function decide(id,ok){
   const r=DB.holidays.find(x=>x.id==id);if(!r)return;
@@ -445,7 +497,7 @@ function decide(id,ok){
   }
   DB.save();
   try{ // tell the requester what happened (🔔 inbox); silently no-ops if the inbox table isn't there yet
-    let txt='Your time-off '+r.dateFrom+'→'+r.dateTo+' was '+(ok?'approved':'denied')+' by '+me.name;
+    let txt='Your time-off ('+fmtRange(r)+') was '+(ok?'approved':'denied')+' by '+me.name;
     if(ok&&r.status!=='approved')txt+=' — next: '+holStageLabel(r);
     notifySend(r.personId,'holiday',txt,'home.html');
   }catch(e){}
@@ -519,10 +571,24 @@ function renderHolPanel(){
   const yr=new Date().getFullYear();
   let h='<h3>🌴 My holidays'+visBadge('you + approvers')+'</h3>';
   if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
-  const used=holUsed(me.id,yr),adj=holAdjust(me.id,yr),rem=holRemaining(me.id,yr);
-  h+='<div class="kv"><span class="k">Holidays '+yr+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
-    '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 10px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(yr)+'.</div>'+
-    '<table id="mine"></table>'+
+  /* the year we are SPENDING right now: in Jan/Feb that is still last year's allowance */
+  const ay=holYearOfDate(toISO(new Date()));
+  if(holExempt(me)){
+    /* Belén sits outside the allowance policy — her days are recorded, not counted down */
+    const taken=holUsed(me.id,ay);
+    h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+taken+' day'+(taken===1?'':'s')+' taken</span></div>'+
+      '<p class="hint" style="margin:6px 0 10px">The 23-day allowance and the 28 Feb carry-over deadline don’t apply to you — these are recorded so the team can see when you’re away.</p>';
+  }else{
+    const used=holUsed(me.id,ay),adj=holAdjust(me.id,ay),rem=holRemaining(me.id,ay);
+    h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
+      '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 10px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(ay)+'. Days you take in January and February still come out of your '+ay+' count.</div>';
+    /* during the spill window next year's allowance is already running too — show both */
+    if(inSpillWindow(toISO(new Date()))){
+      const ny=ay+1,nUsed=holUsed(me.id,ny),nRem=holRemaining(me.id,ny);
+      h+='<div class="kv"><span class="k">Holidays '+ny+'</span><span class="v">'+nUsed+' used · '+nRem+' left of '+holAllowance(me)+'</span></div>';
+    }
+  }
+  h+='<table id="mine"></table>'+
     '<div style="margin-top:12px">'+foldHtml('holFold','🌴 Request time off')+'</div>';
   box.innerHTML=h;
   const fb=document.getElementById('holFoldBody');
@@ -534,6 +600,7 @@ function renderHolPanel(){
     '<label>From<input type="date" id="r_from"></label>'+
     '<label>To (inclusive)<input type="date" id="r_to"></label>'+
     '<div class="days" id="r_days">&nbsp;</div><div class="flags" id="r_flags"></div>'+
+    '<div id="r_cal"></div>'+
     '<label>Note (optional)<input id="r_note" placeholder="e.g. family trip"></label></div>'+
     '<button class="btn primary" id="r_send">Send request</button>'+
     '<span id="r_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>';
@@ -554,12 +621,16 @@ function renderMine(){
       '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+esc(deny)+'</span>':'')+'</td>'+
       '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
       (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
+    /* anything an approver asked THEM, plus a reply box — only when there's something to show */
+    const qs=holMsgs(r.id);
+    if(qs.length)h+='<tr><td colspan="4" style="padding-top:0">'+msgsHtml(r,{allowReply:true})+'</td></tr>';
   });
   tbl.innerHTML=h;
   tbl.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{
     if(!confirm('Withdraw this request?'))return;
     DB.data.holidays=DB.holidays.filter(x=>x.id!=b.dataset.cx);DB.save();render();});
   tbl.querySelectorAll('[data-chg]').forEach(b=>b.onclick=()=>startChange(+b.dataset.chg));
+  wireMsgs(tbl);
 }
 function startChange(id){
   const o=DB.holidays.find(x=>x.id==id);if(!o)return;
@@ -576,13 +647,21 @@ function wireForm(){
   const f=document.getElementById('r_from'),t=document.getElementById('r_to'),ty=document.getElementById('r_type');
   if(!f)return;
   const upd=()=>{
-    const days=document.getElementById('r_days'),fl=document.getElementById('r_flags');
-    if(!f.value||!t.value||t.value<f.value){days.innerHTML='&nbsp;';fl.innerHTML='';return;}
+    const days=document.getElementById('r_days'),fl=document.getElementById('r_flags'),cal=document.getElementById('r_cal');
+    if(!f.value||!t.value||t.value<f.value){days.innerHTML='&nbsp;';fl.innerHTML='';if(cal)cal.innerHTML='';return;}
     const wd=workingDaysBetween(f.value,t.value);
-    const hols=[];for(let d=ymd(f.value);toISO(d)<=t.value;d=addDays(d,1)){const n=madHol(toISO(d));if(n&&d.getDay()!==0&&d.getDay()!==6)hols.push(toISO(d).slice(5)+' '+n);}
-    days.textContent=wd+' working day'+(wd===1?'':'s')+(hols.length?' — bank holidays not counted: '+hols.join(', '):'');
+    const hols=[];for(let d=ymd(f.value);toISO(d)<=t.value;d=addDays(d,1)){const n=madHol(toISO(d));if(n&&d.getDay()!==0&&d.getDay()!==6)hols.push(fmtD(d)+' — '+n);}
+    days.innerHTML='<b>'+fmtHumanRange(f.value,t.value)+'</b> — '+wd+' working day'+(wd===1?'':'s')+
+      (hols.length?' <span style="color:var(--muted)">(bank holidays not counted: '+esc(hols.join(', '))+')</span>':'');
     const fake={id:null,personId:DB.currentUser.id,dateFrom:f.value,dateTo:t.value,type:ty.value,workDays:wd,replaces:changeOf};
-    fl.innerHTML=reqAlarms(fake).map(a=>'<div>⚠ '+a+'</div>').join('');
+    let flags=reqAlarms(fake).map(a=>'<div>⚠ '+a+'</div>');
+    /* say out loud which year's allowance these days come out of — the Jan/Feb surprise */
+    if(ty.value==='vacation'&&!holExempt(DB.currentUser)&&inSpillWindow(f.value)){
+      flags.unshift('<div style="color:#29ACE3">ℹ These days come out of your <b>'+holYearOfDate(f.value)+
+        '</b> allowance — days taken in January and February belong to the previous year’s count.</div>');
+    }
+    fl.innerHTML=flags.join('');
+    if(cal)cal.innerHTML=ty.value==='remote'?'':holMiniCal(f.value,t.value,{personId:DB.currentUser.id,excludeId:changeOf});
   };
   f.onchange=upd;t.onchange=upd;ty.onchange=upd;
   document.getElementById('r_send').onclick=()=>{

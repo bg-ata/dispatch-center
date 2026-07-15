@@ -77,7 +77,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=56"></script>
+<script src="store.js?v=57"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -125,7 +125,7 @@ function render(){
   warn.innerHTML='';
   ({holidays:renderHolidays,allocation:renderAlloc,timeclock:renderTimeclock})[tab]();
 }
-function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
+function fmtRange(h){return fmtHumanRange(h.dateFrom,h.dateTo);}
 /* ================= TAB 1: HOLIDAYS ADMIN ================= */
 function renderHolidays(){
   document.getElementById('content').innerHTML=
@@ -228,16 +228,21 @@ function renderBackfill(){
    far into the year we are) — regular holidays have no deadline, so what matters is
    whether someone is falling behind and needs a nudge. Carry-over days (from last
    year) are the exception: they carry a hard 28-Feb deadline, flagged per person. */
+/* which person's ledger is unfolded, and which holiday year is on screen
+   (module-level so they survive a re-render / a colleague's live edit) */
+let balOpen=null,balYear=null;
 function renderBalances(){
   const box=document.getElementById('balBox');if(!box)return;
-  const now=new Date(), y=now.getFullYear();
+  const now=new Date();
+  /* the year being spent right now — in Jan/Feb that is still LAST year's allowance */
+  const y=balYear!=null?balYear:holYearOfDate(toISO(now));
   const yearFrac=(now-new Date(y,0,1))/(new Date(y+1,0,1)-new Date(y,0,1));
   const ramp=Math.max(0,Math.min(1,(yearFrac-0.25)/0.60)); // nothing "due" before ~April, full spread by ~Nov
-  const feb28=new Date(y,1,28,23,59);
+  const feb28=new Date(y+1,1,28,23,59); // the spill deadline for THIS holiday year
   // exclude the HR team login (not a person) and Belén (she tracks her own — don't nudge)
   const rows=DB.people.filter(p=>!isTeamAccount(p)&&!isBelenP(p)).map(p=>{
     const allow=holAllowance(p),used=holUsed(p.id,y),adj=holAdjust(p.id,y),rem=holRemaining(p.id,y);
-    const pending=DB.holidays.filter(h=>h.personId==p.id&&(h.type||'vacation')==='vacation'&&!['approved','denied','cancelled'].includes(h.status)&&(h.dateFrom||'').slice(0,4)===String(y)).reduce((a,h)=>a+(+h.workDays||0),0);
+    const pending=DB.holidays.filter(h=>h.personId==p.id&&(h.type||'vacation')==='vacation'&&!['approved','denied','cancelled'].includes(h.status)&&holYearOf(h)===y).reduce((a,h)=>a+(+h.workDays||0),0);
     const dueByNow=allow*ramp;
     return {p,allow,adj,used,rem,pending,dueByNow,deficit:dueByNow-used,over:rem<0};
   }).sort((a,b)=>(b.over-a.over)||b.deficit-a.deficit||b.rem-a.rem); // over-allowance first
@@ -252,18 +257,73 @@ function renderBalances(){
   let h=over.length?('<div class="alarm" style="margin-bottom:10px">⚠ <b>'+over.length+' over their holiday allowance:</b> '+
     over.map(r=>esc(r.p.name)+' (by '+Math.abs(r.rem)+' day'+(Math.abs(r.rem)===1?'':'s')+')').join(' · ')+
     ' — if any of these came from <b>last year\'s</b> allocation, add them under “Carry-over / borrowed days” in the ⚙ Admin actions fold so the balance is right.</div>'):'';
+  /* year picker + what "holiday year" means, since it is not the calendar year */
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'+
+    '<span style="font-size:12px;color:var(--muted)">Holiday year</span>'+
+    '<button class="btn" style="font-size:12px;padding:3px 9px" id="bal_prev">‹</button>'+
+    '<b style="font-size:14px">'+y+'</b>'+
+    '<button class="btn" style="font-size:12px;padding:3px 9px" id="bal_next">›</button>'+
+    '<span style="font-size:11.5px;color:var(--muted)">= days enjoyed 1 Mar '+y+' → 28 Feb '+(y+1)+
+    ' <span title="Company policy: 23 days a year, and whatever is left may be enjoyed until 28 February of the next year. So days taken in January and February count against the previous year.">ⓘ</span></span>'+
+    '<span style="flex:1"></span>'+
+    '<span style="font-size:11.5px;color:var(--muted)">Click a name to see every day</span></div>';
   h+='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Taken</th><th class="num">Pending</th><th class="num">Left</th><th style="width:210px">Pace</th></tr>';
   rows.forEach(r=>{const b=band(r),base=r.allow||1,pct=Math.max(0,Math.min(100,100*r.used/base));
-    const carry=r.adj>0?('<div style="font-size:10px;color:'+(now<=feb28?'#C77800':'#D32230')+';margin-top:1px">'+r.adj+' carry-over day'+(r.adj===1?'':'s')+' · '+(now<=feb28?'use before 28 Feb':'past 28 Feb')+'</div>'):'';
-    h+='<tr><td>'+esc(r.p.name)+' <span class="code">'+esc(r.p.role)+'</span>'+carry+'</td>'+
+    const carry=r.adj>0?('<div style="font-size:10px;color:'+(now<=feb28?'#C77800':'#D32230')+';margin-top:1px">'+r.adj+' carry-over day'+(r.adj===1?'':'s')+' · '+(now<=feb28?'use before 28 Feb '+(y+1):'past 28 Feb '+(y+1))+'</div>'):'';
+    const open=balOpen==r.p.id;
+    h+='<tr style="cursor:pointer" data-bal="'+r.p.id+'" title="Show every holiday day"><td>'+
+      '<span style="display:inline-block;width:12px;color:var(--muted)">'+(open?'▾':'▸')+'</span>'+
+      '<b>'+esc(r.p.name)+'</b> <span class="code">'+esc(r.p.role)+'</span>'+carry+'</td>'+
       '<td class="num">'+r.allow+(r.adj?' <span style="color:#29ACE3">('+(r.adj>0?'+':'')+r.adj+')</span>':'')+'</td>'+
       '<td class="num">'+r.used+'</td>'+
       '<td class="num">'+(r.pending?'<span style="color:#C77800">+'+r.pending+'</span>':'—')+'</td>'+
       '<td class="num"><b style="font-size:15px'+(r.over?';color:#B00020':'')+'">'+r.rem+'</b></td>'+
       '<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:70px;height:9px;border-radius:5px;background:#ece9e2;overflow:hidden"><div style="height:100%;width:'+pct.toFixed(0)+'%;background:'+b.c+'"></div></div>'+
         '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:'+b.c+';background:'+b.bg+';border-radius:10px;padding:1px 8px;white-space:nowrap">'+b.lab+'</span></div></td></tr>';
+    if(open)h+='<tr><td colspan="6" style="background:#faf9f6;padding:10px 14px">'+ledgerHtml(r,y)+'</td></tr>';
   });
   box.innerHTML=h+'</table>';
+  box.querySelectorAll('[data-bal]').forEach(tr=>tr.onclick=e=>{
+    if(e.target.closest('button')||e.target.closest('a'))return; // let inner controls do their job
+    balOpen=(balOpen==tr.dataset.bal)?null:+tr.dataset.bal;renderBalances();});
+  const bp=document.getElementById('bal_prev'),bn=document.getElementById('bal_next');
+  if(bp)bp.onclick=e=>{e.stopPropagation();balYear=y-1;renderBalances();};
+  if(bn)bn.onclick=e=>{e.stopPropagation();balYear=y+1;renderBalances();};
+}
+/* every day that makes up a person's count — the thing that makes a wrong total findable.
+   Shows the arithmetic in the same order it is calculated, so a missing or stray row is
+   obvious at a glance. */
+function ledgerHtml(r,y){
+  const rows=holLedger(r.p.id,y);
+  const adjRows=DB.holidays.filter(h=>h.personId==r.p.id&&h.type==='adjust'&&h.status==='approved'&&holYearOf(h)===y);
+  let h='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px">'+
+    esc(r.p.name)+' · holiday year '+y+'</div>';
+  h+='<table style="width:100%;font-size:12.5px"><tr><th style="width:210px">Dates</th><th class="num" style="width:52px">Days</th><th style="width:96px">Status</th><th>Note</th></tr>';
+  h+='<tr><td colspan="4" style="padding:3px 0"><b>Allowance '+r.allow+' day'+(r.allow===1?'':'s')+'</b>'+
+    (r.allow!==23?' <span style="color:#C77800">(not the standard 23 — set on the Team page)</span>':'')+'</td></tr>';
+  adjRows.forEach(a=>{h+='<tr><td>'+fmtHuman(a.dateFrom)+'</td><td class="num"><b style="color:#29ACE3">'+((+a.workDays>0?'+':'')+a.workDays)+'</b></td>'+
+    '<td><span class="chip" style="background:#29ACE3">adjustment</span></td><td>'+esc(a.note||'')+'</td></tr>';});
+  if(!rows.length)h+='<tr><td colspan="4" class="empty">No holidays recorded for this year.</td></tr>';
+  let run=0;
+  rows.forEach(x=>{
+    const counts=x.status==='approved';
+    if(counts)run+=(+x.workDays||0);
+    const spill=inSpillWindow(x.dateFrom);
+    const st=x.status==='approved'?'<span class="chip" style="background:var(--green)">approved</span>'
+      :x.status==='denied'?'<span class="chip" style="background:var(--red)">denied</span>'
+      :x.status==='cancelled'?'<span class="chip" style="background:#9AA0A8">cancelled</span>'
+      :'<span class="chip" style="background:var(--amber)">'+esc(holStageLabel(x))+'</span>';
+    h+='<tr'+(counts?'':' style="opacity:.5"')+'><td>'+fmtRange(x)+
+      (spill?' <span class="chip" style="background:#7A5AA8;font-size:9px" title="Taken in Jan/Feb — counts against '+y+'">'+y+' days</span>':'')+
+      (holStraddles(x)?'<div style="font-size:10px;color:#C77800;margin-top:1px">⚠ spans 28 Feb — the whole block is counted in '+holYearOf(x)+'. Split it if part belongs to '+(holYearOf(x)+1)+'.</div>':'')+
+      '</td><td class="num">'+(counts?x.workDays:'<s>'+x.workDays+'</s>')+
+      (counts?' <span style="color:var(--muted);font-size:10px">('+run+')</span>':'')+'</td>'+
+      '<td>'+st+'</td><td style="color:var(--muted)">'+esc(x.note||'')+'</td></tr>';
+  });
+  h+='<tr><td><b>Taken</b></td><td class="num"><b>'+r.used+'</b></td><td colspan="2"></td></tr>';
+  h+='<tr><td><b>Left</b> <span style="color:var(--muted);font-size:11px">'+r.allow+(r.adj?(r.adj>0?' + '+r.adj:' − '+Math.abs(r.adj)):'')+' − '+r.used+'</span></td>'+
+    '<td class="num"><b style="font-size:15px'+(r.rem<0?';color:#B00020':'')+'">'+r.rem+'</b></td><td colspan="2"></td></tr>';
+  return h+'</table>';
 }
 /* ================= TAB 2: ALLOCATION (Jesús's whole view) ================= */
 const fmtH=v=>(Math.round(v*100)/100).toLocaleString('es-ES');
@@ -466,9 +526,7 @@ function renderEventAway(){
   const today=toISO(new Date());
   const all=DB.eventaway.slice().sort((a,b)=>(b.dateFrom||'').localeCompare(a.dateFrom||''));
   const list=_evAwayAll?all:all.slice(0,12);
-  const MONn=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const d2=iso=>{const d=ymd(iso);return d.getDate()+' '+MONn[d.getMonth()]+' '+d.getFullYear();};
-  const rng=e=>e.dateFrom===e.dateTo?d2(e.dateFrom):d2(e.dateFrom)+' – '+d2(e.dateTo);
+  const rng=e=>fmtHumanRange(e.dateFrom,e.dateTo);
   if(!all.length){box.innerHTML='<p class="empty" style="color:var(--muted)">No event days flagged yet.</p>';return;}
   let h='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Who</th><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">Event</th><th style="text-align:left;padding:5px 8px;font-size:11px;text-transform:uppercase;color:var(--muted)">When</th><th></th></tr>';
   list.forEach(e=>{const cur=(e.dateFrom||'')<=today&&(e.dateTo||'')>=today;

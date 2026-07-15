@@ -98,7 +98,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=56"></script>
+<script src="store.js?v=57"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -174,7 +174,7 @@ document.getElementById('xlsBtn').onclick=()=>exportXLSX('RENMAD_personnel.xlsx'
    Sick / maternity / paternity leave stays private: only admins, HR, the person
    themselves and a manager of the same role see those rows (canSeeLeaveOf). */
 let calM=new Date();calM.setDate(1);
-function fmtRange(h){return h.dateFrom===h.dateTo?h.dateFrom:(h.dateFrom+' → '+h.dateTo);}
+function fmtRange(h){return fmtHumanRange(h.dateFrom,h.dateTo);}
 function renderCal(){
   const me=DB.currentUser;
   const y=calM.getFullYear(),m=calM.getMonth();

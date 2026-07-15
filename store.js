@@ -47,7 +47,23 @@ function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<'
         '.btn{min-height:42px}'+
         'input,select,textarea{font-size:16px !important}'+ /* stops the iPhone zoom-on-focus */
         '.panel{overflow-x:auto}'+ /* wide admin tables scroll inside their own box */
-      '}';
+      '}'+
+      /* ---- mini calendar: what days is this person actually asking for? ---- */
+      '.mcw{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px}'+
+      '.mc{font:11px "Segoe UI",system-ui,sans-serif}'+
+      '.mc .mcm{font-weight:700;color:#2B2B2B;margin-bottom:3px;font-size:11px}'+
+      '.mc table{border-collapse:separate;border-spacing:2px}'+
+      '.mc th{font-size:9.5px;color:#9AA0A8;font-weight:600;width:20px;padding:0}'+
+      '.mc td{width:20px;height:19px;text-align:center;border-radius:4px;color:#5b5b5b;background:#f6f5f1}'+
+      '.mc td.o{background:#fff;color:#c8c6c0}'+                        /* other month */
+      '.mc td.we{background:#efeee9;color:#b3b0a8}'+                    /* weekend */
+      '.mc td.bh{background:#e6e4dd;color:#8a8780;font-weight:700}'+    /* bank holiday */
+      '.mc td.req{background:#FF4A00;color:#fff;font-weight:800}'+      /* asked for */
+      '.mc td.oth{background:#ffd9c9;color:#8a3a12;font-weight:700}'+   /* their other holidays */
+      '.mc td.gap{background:#fff;color:#2B2B2B;font-weight:800;box-shadow:inset 0 0 0 1.5px #E84830}'+ /* stranded office day */
+      '.mclg{font-size:10.5px;color:#9AA0A8;display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}'+
+      '.mclg i{font-style:normal;display:inline-flex;align-items:center;gap:4px}'+
+      '.mclg b{display:inline-block;width:9px;height:9px;border-radius:2px}';
     h.appendChild(st);
   }catch(e){}
 })();
@@ -145,6 +161,26 @@ function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function toISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtD(d){return d.getDate()+' '+MON[d.getMonth()];}
 function dateRange(ev){const s=ymd(ev.date);return ev.days>1?(fmtD(s)+'–'+fmtD(addDays(s,ev.days-1))+' '+s.getFullYear()):(fmtD(s)+' '+s.getFullYear());}
+/* ---- human dates ----
+   People read "Thursday 30 Jul 26", not "2026-07-30". Everything a human decides on
+   (holiday requests, approvals, balances) goes through these; ISO stays the storage format. */
+const DOW=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+function dowOf(d){return DOW[(d.getDay()+6)%7];}            // Monday-first
+function yy(d){return String(d.getFullYear()).slice(2);}
+function fmtHuman(iso){if(!iso)return '—';const d=ymd(iso);return dowOf(d)+' '+d.getDate()+' '+MON[d.getMonth()]+' '+yy(d);}
+function fmtHumanShort(iso){if(!iso)return '—';const d=ymd(iso);return dowOf(d).slice(0,3)+' '+d.getDate()+' '+MON[d.getMonth()]+' '+yy(d);}
+/* a range in the fewest words that stay unambiguous:
+   one day      -> "Thursday 30 Jul 26"
+   same month   -> "Mon 13 – Fri 24 Jul 26"
+   spans months -> "Mon 28 Dec 26 – Fri 8 Jan 27"   (year on both — it's the Xmas spill) */
+function fmtHumanRange(from,to){
+  if(!from)return '—';
+  if(!to||from===to)return fmtHuman(from);
+  const a=ymd(from),b=ymd(to);
+  if(a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth())
+    return dowOf(a).slice(0,3)+' '+a.getDate()+' – '+dowOf(b).slice(0,3)+' '+b.getDate()+' '+MON[b.getMonth()]+' '+yy(b);
+  return fmtHumanShort(from)+' – '+fmtHumanShort(to);
+}
 
 /* ---- holidays / capacity ---- */
 const HOL={
@@ -263,13 +299,141 @@ function personStatusNow(p){
   }
   return {key:'unknown',label:'Available',emoji:'●',color:'#3E8C28',detail:''};
 }
-/* holiday balance for a year: allowance (23) + carry-over/borrow adjustments − vacation used */
-const HOL_DEADLINE_MD='02-28'; // carry-over must be enjoyed before end of February
+/* ---- the holiday YEAR ----
+   The policy: 23 days a year, and whatever is left may spill over into the next year
+   until 28 February. So days enjoyed on 2–8 Jan are "last year's days" — the count they
+   belong to is NOT the calendar year they fall in. Every balance question therefore asks
+   holYearOf(row), never dateFrom.slice(0,4).
+     • Jan/Feb  -> charged to the PREVIOUS year (the spill window)
+     • Mar–Dec  -> charged to their own year
+     • chargeYear on the row overrides both (HR can reassign: someone genuinely spending
+       next year's allowance in January, or days borrowed in advance)
+   'adjust' rows are the exception: HR stamps them on 1 Jan of the year they apply to, so
+   they always mean that calendar year. */
+const HOL_SPILL_END_MD='02-28';   // last day of the spill window
+const HOL_DEADLINE_MD='02-28';    // (kept: carry-over must be enjoyed before end of February)
+function holYearOf(h){
+  if(!h)return null;
+  if(h.chargeYear!=null&&h.chargeYear!=='')return +h.chargeYear;
+  const iso=h.dateFrom||'';if(iso.length<7)return null;
+  const y=+iso.slice(0,4),m=+iso.slice(5,7);
+  if(h.type==='adjust')return y;                 // stamped on 1 Jan of the year it belongs to
+  return m<=2?y-1:y;                             // Jan & Feb belong to last year's count
+}
+/* the charge year a NEW request would default to (shown in the form so nobody is surprised) */
+function holYearOfDate(iso){const m=+(iso||'').slice(5,7);const y=+(iso||'').slice(0,4);return m<=2?y-1:y;}
+function inSpillWindow(iso){const m=+(iso||'').slice(5,7);return m<=2;}
+/* A range that starts inside the spill window (Jan/Feb) and ends outside it straddles two
+   holiday years — e.g. 27 Feb to 2 Mar is one day of last year's and one of this year's.
+   The whole row is charged by its start date, which is right far more often than not, but
+   it is a judgement call, so say so rather than quietly deciding. HR can split the row or
+   set chargeYear. Only Feb->Mar matters: a Dec->Jan range is entirely one year's anyway. */
+function holStraddles(h){
+  if(!h||h.type==='adjust'||!h.dateFrom||!h.dateTo)return false;
+  if(h.chargeYear!=null&&h.chargeYear!=='')return false;   // HR has already ruled on it
+  return inSpillWindow(h.dateFrom)&&!inSpillWindow(h.dateTo)
+    &&h.dateFrom.slice(0,4)===h.dateTo.slice(0,4);
+}
+/* Belén is outside the allowance policy — her days are recorded and shown on the calendar,
+   but no allowance, carry-over or 28-Feb maths applies to her. */
+function holExempt(p){return isBelenP(p);}
 function holAllowance(p){return (p&&p.holidayDays!=null)?+p.holidayDays:23;}
-function holUsed(personId,year){return DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&(h.type||'vacation')==='vacation'&&(h.dateFrom||'').slice(0,4)===String(year)).reduce((a,h)=>a+(+h.workDays||0),0);}
-function holAdjust(personId,year){return DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&h.type==='adjust'&&(h.dateFrom||'').slice(0,4)===String(year)).reduce((a,h)=>a+(+h.workDays||0),0);}
+function holRowsFor(personId,year,type){
+  return DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&
+    ((type==='adjust')?h.type==='adjust':(h.type||'vacation')==='vacation')&&
+    holYearOf(h)===year);
+}
+function holUsed(personId,year){return holRowsFor(personId,year).reduce((a,h)=>a+(+h.workDays||0),0);}
+function holAdjust(personId,year){return holRowsFor(personId,year,'adjust').reduce((a,h)=>a+(+h.workDays||0),0);}
 function holRemaining(personId,year){const p=DB.person(personId);return holAllowance(p)+holAdjust(personId,year)-holUsed(personId,year);}
 function holDeadlineText(year){return 'enjoy them before 28 Feb '+(year+1);}
+/* ---- mini calendar ----
+   A range of ISO dates tells you nothing about what it LOOKS like. This draws the month(s)
+   a request touches so an approver can see the shape at a glance: the days asked for, the
+   person's other time off around them, bank holidays, and — the point of the exercise —
+   any lonely office days stranded between two holiday blocks.
+   Returns HTML; needs no wiring. */
+function holMiniCal(dateFrom,dateTo,opts){
+  opts=opts||{};
+  const personId=opts.personId,exclId=opts.excludeId;
+  if(!dateFrom||!dateTo)return '';
+  /* the person's OTHER time off (approved or still in the chain), so gaps become visible */
+  const others=personId==null?[]:DB.holidays.filter(h=>h.personId==personId&&h.id!=exclId&&
+    (h.type||'vacation')!=='adjust'&&h.status!=='denied'&&h.status!=='cancelled');
+  const isOther=iso=>others.some(h=>iso>=h.dateFrom&&iso<=h.dateTo);
+  const isReq=iso=>iso>=dateFrom&&iso<=dateTo;
+  const isOff=d=>{const iso=toISO(d);return d.getDay()===0||d.getDay()===6||!!madHol(iso);};
+  /* A working day is "stranded" when it belongs to a SHORT run of office days walled in by
+     time off on both sides — the "back for 3 days, then off again" shape. Measure the whole
+     run, not each side separately: a Wednesday with holidays five days either way is just a
+     normal week, not a stranded day. */
+  const STRAND_MAX=3;             // a run this short between two blocks is the thing to flag
+  const strandCache={};
+  const stranded=iso=>{
+    if(iso in strandCache)return strandCache[iso];
+    const d=ymd(iso);
+    if(isOff(d)||isReq(iso)||isOther(iso))return strandCache[iso]=false;
+    const run=[iso];let x,walled=true;
+    /* walk back to the start of this run of office days */
+    for(x=addDays(d,-1);;x=addDays(x,-1)){const i=toISO(x);
+      if(isOff(x))continue;                       // weekends/bank holidays don't break a run
+      if(isReq(i)||isOther(i))break;              // hit time off -> this end is walled
+      run.push(i);
+      if(run.length>STRAND_MAX){walled=false;break;}
+    }
+    if(walled)for(x=addDays(d,1);;x=addDays(x,1)){const i=toISO(x);
+      if(isOff(x))continue;
+      if(isReq(i)||isOther(i))break;
+      run.push(i);
+      if(run.length>STRAND_MAX){walled=false;break;}
+    }
+    const out=walled&&run.length<=STRAND_MAX;
+    run.forEach(i=>{if(out)strandCache[i]=true;});  // whole run shares the verdict
+    return strandCache[iso]=out;
+  };
+  /* which months to draw: every month the request touches (capped at 3) */
+  const months=[];
+  for(let d=new Date(ymd(dateFrom).getFullYear(),ymd(dateFrom).getMonth(),1);
+      toISO(d)<=dateTo&&months.length<3;d=new Date(d.getFullYear(),d.getMonth()+1,1))
+    months.push(new Date(d));
+  if(!months.length)months.push(new Date(ymd(dateFrom).getFullYear(),ymd(dateFrom).getMonth(),1));
+  let anyGap=false,anyOther=false;
+  const grids=months.map(m0=>{
+    const y=m0.getFullYear(),mo=m0.getMonth();
+    let html='<div class="mc"><div class="mcm">'+MON[mo]+' '+y+'</div><table><tr>'+
+      ['M','T','W','T','F','S','S'].map(x=>'<th>'+x+'</th>').join('')+'</tr>';
+    let d=monday(new Date(y,mo,1));
+    for(let w=0;w<6;w++){
+      html+='<tr>';
+      for(let i=0;i<7;i++,d=addDays(d,1)){
+        const iso=toISO(d),num=d.getDate();
+        if(d.getMonth()!==mo){html+='<td class="o">'+num+'</td>';continue;}
+        const bh=madHol(iso),we=d.getDay()===0||d.getDay()===6;
+        let cls='',tip='';
+        if(isReq(iso)&&!we&&!bh){cls='req';tip='Asked for';}
+        else if(isOther(iso)&&!we&&!bh){cls='oth';tip='Already off';anyOther=true;}
+        else if(bh){cls='bh';tip=bh;}
+        else if(we){cls='we';}
+        else if(stranded(iso)){cls='gap';tip='In the office — on their own between two holidays';anyGap=true;}
+        html+='<td class="'+cls+'"'+(tip?' title="'+esc(tip)+'"':'')+'>'+num+'</td>';
+      }
+      html+='</tr>';
+      if(d.getMonth()!==mo&&w>=3)break;
+    }
+    return html+'</table></div>';
+  });
+  const lg=['<i><b style="background:#FF4A00"></b>asked for</i>'];
+  if(anyOther)lg.push('<i><b style="background:#ffd9c9"></b>already off</i>');
+  if(anyGap)lg.push('<i><b style="background:#fff;box-shadow:inset 0 0 0 1.5px #E84830"></b>alone in the office</i>');
+  lg.push('<i><b style="background:#e6e4dd"></b>bank holiday</i>');
+  return '<div class="mcw">'+grids.join('')+'</div><div class="mclg">'+lg.join('')+'</div>';
+}
+/* every vacation row charged to `year`, in date order — the per-person breakdown */
+function holLedger(personId,year){
+  return DB.holidays.filter(h=>h.personId==personId&&h.type!=='adjust'&&
+      (h.type||'vacation')==='vacation'&&holYearOf(h)===year)
+    .sort((a,b)=>(a.dateFrom||'').localeCompare(b.dateFrom||''));
+}
 function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vacaciones/Leave for one week
   const mon=ymd(mondayISO);let required=0,fest=0,festNames=[],vac=0,leave=0;
   const friISO=toISO(addDays(mon,4));
@@ -304,33 +468,70 @@ function isBelenP(p){return !!p&&(p.email||'').toLowerCase()==='belen.gallego@at
 /* the "Recursos Humanos" login is a TEAM inbox, not a person — no holiday allowance,
    and it never appears in the holiday calendar / balances. */
 function isTeamAccount(p){return !!p&&(p.role==='HR'||(p.email||'').toLowerCase()==='rrhh@ata.email');}
-function holManager(p){ // first approver; managers/admins skip straight to Belén
-  if(!p||p.access==='manager'||p.access==='admin')return null;
-  const mgr=DB.people.find(x=>x.access==='manager'&&x.role===p.role&&x.id!=p.id);
-  if(mgr)return mgr;
-  return DB.people.find(x=>x.access==='admin'&&!isBelenP(x)&&x.id!=p.id)||null; // PM/Admin roles → Carlos
+/* WHO APPROVES WHOM — Belén's explicit map (2026-07-15). Every chain then runs
+   → Belén → HR. This is deliberately a hand-written table, not inferred from role or
+   access: the old version guessed "a manager with the same role", which put Belén at the
+   manager step AND at her own step, so she was asked to decide the same request twice.
+   Keyed by email — the same identity the login resolves against. */
+const HOL_FIRST_APPROVER={
+  /* PM team → Carlos */
+  'andrea.renieblas@ata.email' :'carlos.marquez@ata.email',
+  'cristina.galan@ata.email'   :'carlos.marquez@ata.email',
+  'ewa.paryz@ata.email'        :'carlos.marquez@ata.email',
+  'elena.spinelli@ata.email'   :'carlos.marquez@ata.email',
+  'jesus.rgonzalez@ata.email'  :'carlos.marquez@ata.email',
+  'francesca.ravera@ata.email' :'carlos.marquez@ata.email',
+  /* Sales → Cintia */
+  'ian.casares@ata.email'      :'cintia.hernandez@ata.email',
+  'sheetal.shamdasani@ata.email':'cintia.hernandez@ata.email',
+  /* Marketing → Araceli */
+  'maria.mendicute@ata.email'  :'araceli.giner@ata.email',
+  'valeria.garcia@ata.email'   :'araceli.giner@ata.email',
+  /* Logistics → Valeria Vargas */
+  'julian.uribe@ata.email'     :'valeria.vargas@ata.email',
+  /* straight to Belén (no first approver): Admin + the managers themselves */
+  'jesus.jimenez@ata.email'    :null,
+  'carlos.marquez@ata.email'   :null,
+  'cintia.hernandez@ata.email' :null,
+  'araceli.giner@ata.email'    :null,
+  'valeria.vargas@ata.email'   :null,
+};
+function holManager(p){ // the FIRST approver, or null when the chain starts at Belén
+  if(!p||isBelenP(p)||isTeamAccount(p))return null;
+  const key=(p.email||'').toLowerCase();
+  if(!(key in HOL_FIRST_APPROVER))return null;      // unmapped → straight to Belén
+  const mail=HOL_FIRST_APPROVER[key];
+  if(!mail)return null;
+  return DB.people.find(x=>(x.email||'').toLowerCase()===mail&&x.id!=p.id)||null;
 }
 function holChain(p){
   const c=[],m=holManager(p);
   if(m&&!isBelenP(m))c.push({key:'manager',who:m});
   const belen=DB.people.find(isBelenP);
-  if(belen&&belen.id!=p.id)c.push({key:'belen',who:belen});
+  if(belen&&(!p||belen.id!=p.id))c.push({key:'belen',who:belen});  // Belén's own requests skip her step
   c.push({key:'hr',who:null});
   return c;
 }
-function holStageLabel(req){
+/* the first step a new request enters */
+function holFirstStatus(p){return holChain(p)[0].key;}
+function holStepName(req,key){
   const p=DB.person(req.personId);
-  if(req.status==='manager'){const m=holManager(p);return 'waiting for '+(m?m.name:'manager');}
-  if(req.status==='belen')return 'waiting for Belén';
-  if(req.status==='hr')return 'waiting for HR';
+  if(key==='manager'){const m=holManager(p);return m?m.name:'manager';}
+  if(key==='belen')return 'Belén';
+  return 'HR';
+}
+function holStageLabel(req){
+  if(['manager','belen','hr'].includes(req.status))return 'waiting for '+holStepName(req,req.status);
   return req.status;
 }
 function holActsOnMe(req){ // is it MY turn to decide this request?
   const me=DB.currentUser;if(!me||req.personId==me.id)return false;
   const p=DB.person(req.personId);if(!p)return false;
-  if(req.status==='manager'){const m=holManager(p);return !!(m&&m.id==me.id)||isBelenP(me);}
+  /* strict: each step has exactly ONE holder. Belén acts at her own step only — she is
+     never also the manager step, which is what made her turn appear twice. */
+  if(req.status==='manager'){const m=holManager(p);return !!(m&&m.id==me.id);}
   if(req.status==='belen')return isBelenP(me);
-  if(req.status==='hr')return !!me.hr||isBelenP(me); // HR (rrhh + Jesús) are the approvers; Belén can always act too
+  if(req.status==='hr')return !!me.hr||isBelenP(me); // rrhh is the seat; Belén can always close
   return false;
 }
 function holNextStatus(req){
@@ -339,6 +540,45 @@ function holNextStatus(req){
   return (i<0||i===chain.length-1)?'approved':chain[i+1];
 }
 function myPendingApprovals(){return DB.hrReady()?DB.holidays.filter(holActsOnMe).length:0;}
+/* ---- messages on a holiday request ----
+   Approvers 1 and 2 need to talk about a request ("is he really taking these apart?")
+   without the requester reading over their shoulder — and separately need to be able to
+   ask the requester something. Same thread, two visibilities.
+   The server hides approver-only rows from the requester (RLS); these helpers are the UI
+   half and must never be the only guard. */
+function holCanApprove(p){ // is this person ever an approver? (managers, admins, HR)
+  if(!p)return false;
+  return p.access==='manager'||p.access==='admin'||!!p.hr;
+}
+function holMsgs(holidayId){
+  if(!DB.holmsgReady())return [];
+  const me=DB.currentUser;if(!me)return [];
+  const r=DB.holidays.find(h=>h.id==holidayId);
+  const iAmRequester=!!(r&&r.personId==me.id);
+  const approver=holCanApprove(me);
+  /* mirrors dc_holiday_msgs_sel exactly: approvers see the thread, the requester sees only
+     what was addressed to them, everyone else sees nothing. The server enforces this too —
+     this is the second lock, not the only one. */
+  return DB.holmsgs.filter(m=>m.holidayId==holidayId)
+    .filter(m=>approver||(iAmRequester&&!!m.toRequester))
+    .sort((a,b)=>(a.created||'').localeCompare(b.created||''));
+}
+function holMsgSend(holidayId,text,toRequester){
+  if(!DB.holmsgReady())return null;
+  const me=DB.currentUser;if(!me)return null;
+  text=(text||'').trim();if(!text)return null;
+  const r=DB.holidays.find(h=>h.id==holidayId);if(!r)return null;
+  const row={id:DB.newId(),holidayId:r.id,personId:r.personId,byName:me.name,
+    text,toRequester:!!toRequester,created:new Date().toISOString()};
+  DB.data.holmsgs=DB.data.holmsgs||[];
+  DB.data.holmsgs.push(row);
+  DB.save();
+  /* a message FOR the requester should reach them like any other notification */
+  if(toRequester&&r.personId!=me.id){
+    try{notifySend(r.personId,'holiday',me.name+' about your time off ('+fmtHumanRange(r.dateFrom,r.dateTo)+'): “'+text+'”','home.html');}catch(e){}
+  }
+  return row;
+}
 /* office days: up to 8 office days per person per year — logged via the 'remote' entry type */
 const REMOTE_MAX_DAYS=8;
 function remoteDaysUsed(personId,year){
@@ -846,7 +1086,7 @@ let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone'],
@@ -855,7 +1095,10 @@ const COLS={
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
   projects:['id','label','code','kind','sort','active'],
-  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces'],
+  /* chargeYear = which holiday year these days come out of. Normally derived from the dates
+     (Jan/Feb -> previous year), stored only when HR overrides it. Tolerant: stripped below
+     if dispatch_hol_year.sql hasn't been run yet. */
+  holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces','chargeYear'],
   timesheets:['id','personId','week','hours'],
   timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
   tcreports:['id','personId','day','entryId','thread','status'],
@@ -887,8 +1130,14 @@ const COLS={
   /* notifications inbox (🔔): ticket answers, HR notices, alarms. kind = ticket|notice|holiday.
      personId = recipient; fromName = display name of the sender; isRead toggled by the recipient. */
   inbox:['id','personId','kind','text','link','isRead','fromName','created'],
+  /* messages ON a holiday request. Approvers talk to each other here; the requester never
+     sees those. toRequester=true flips a message into a note they DO see.
+     personId = the REQUESTER (denormalised so the RLS policy stays a one-liner).
+     Deliberately its own table, not a jsonb on dc_holidays: row-level security cannot hide
+     one column of a row the requester is allowed to read. */
+  holmsgs:['id','holidayId','personId','byName','text','toRequester','created'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_todoReady=false,_inboxReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -934,6 +1183,14 @@ const DB={
         if(pr.error)throw pr.error;if(ho.error)throw ho.error;if(ts.error)throw ts.error;
         this.data.projects=pr.data||[];this.data.holidays=ho.data||[];this.data.timesheets=ts.data||[];
         _hrReady=true;
+        /* tolerant like the events kind/lanes split: until dispatch_hol_year.sql adds
+           chargeYear, never push the column (PostgREST rejects unknown columns).
+           The Jan/Feb rule still works — it is derived from the dates. */
+        window._holYearColMissing=false;
+        if(this.data.holidays.length && !('chargeYear' in this.data.holidays[0])){
+          window._holYearColMissing=true;
+          const i2=COLS.holidays.indexOf('chargeYear');if(i2>=0)COLS.holidays.splice(i2,1);
+        }
       }catch(e){console.warn('HR module not ready:',e.message||e);}
       /* time clock (registro horario): append-only + no "deleted" column → own paged load */
       this.data.timeclock=[];this.data.tcreports=[];_tcReady=false;
@@ -979,6 +1236,13 @@ const DB={
       try{const ib=await sb.from('dc_inbox').select('*').eq('deleted',false).order('id',{ascending:false}).limit(400);
         if(ib.error)throw ib.error;this.data.inbox=ib.data||[];_inboxReady=true;
       }catch(e){console.warn('inbox module not ready:',e.message||e);}
+      /* messages on holiday requests (tolerant — the app runs fine before dispatch_hol_msgs.sql).
+         RLS already hides approver-only messages from the requester, so whatever comes back
+         here is what this user is allowed to see. */
+      this.data.holmsgs=[];_holmsgReady=false;
+      try{const hm=await sb.from('dc_holiday_msgs').select('*').eq('deleted',false).order('id');
+        if(hm.error)throw hm.error;this.data.holmsgs=hm.data||[];_holmsgReady=true;
+      }catch(e){console.warn('holiday messages not ready:',e.message||e);}
       /* SPX sales module (proposals + lines + targets + company crosswalk): tolerant —
          the app runs fine before dispatch_spx.sql is applied */
       this.data.spxProps=[];this.data.spxLines=[];this.data.spxTargets=[];this.data.companyMap=[];_spxReady=false;
@@ -1010,12 +1274,25 @@ const DB={
     return this.data;
   },
   save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>{_saveTimer=null;this.syncNow();},700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
+  /* save and WAIT for the database to confirm it. Use this behind any button that then
+     tells the user their work is safe. The 700 ms debounce in save() is fine for incidental
+     edits on a desktop, but a phone suspends timers the instant the app is backgrounded —
+     so "Saved ✓" could appear on a write that never left the device, and the orphaned local
+     edit then made applyRemote() reject the other device's version for good. */
+  async saveNow(){
+    if(!USE_SUPABASE){localStorage.setItem('dispatchStore',JSON.stringify(this.data));return true;}
+    clearTimeout(_saveTimer);_saveTimer=null;
+    /* if a sync is already in flight our rows would only be queued behind it — wait it out
+       (briefly) so the answer we return is about OUR write, not someone else's */
+    for(let i=0;i<40&&_syncing;i++)await new Promise(r=>setTimeout(r,50));
+    return await this.syncNow();
+  },
   /* diff vs the last-synced picture and write ONLY the touched rows:
      new rows -> insert, changed rows -> per-row update, vanished rows -> soft delete.
      Two people editing different rows no longer overwrite each other. */
   async syncNow(){
-    if(!USE_SUPABASE||!sb)return;
-    if(_syncing){_pendingSync=true;return;}
+    if(!USE_SUPABASE||!sb)return true;
+    if(_syncing){_pendingSync=true;return true;}
     _syncing=true;
     try{
       for(const k of Object.keys(TABLES)){
@@ -1028,6 +1305,7 @@ const DB={
         if(k==='tickets'&&!_tickReady)continue; // requests table not created yet
         if(k==='todos'&&!_todoReady)continue; // to-dos table not created yet
         if(k==='inbox'&&!_inboxReady)continue; // inbox table not created yet
+        if(k==='holmsgs'&&!_holmsgReady)continue; // holiday messages table not created yet
         if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)))continue; // SPX tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
@@ -1045,9 +1323,10 @@ const DB={
     }catch(e){
       console.error('sync failed',e);
       alert('That change could not be saved ('+(e.message||e)+').\nUsually this means your access level does not allow it. The page will reload to stay in sync.');
-      location.reload();return;
+      location.reload();return false;
     }finally{_syncing=false;}
     if(_pendingSync){_pendingSync=false;this.syncNow();}
+    return true;
   },
   newId(){let id=Date.now()*10+Math.floor(Math.random()*10);if(id<=_lastId)id=_lastId+1;_lastId=id;return id;},
   /* registro horario: insert the punch NOW, await the database's answer, and never
@@ -1120,6 +1399,8 @@ const DB={
   todoReady(){return !USE_SUPABASE||_todoReady;},
   get inbox(){return this.data.inbox||[];},
   inboxReady(){return !USE_SUPABASE||_inboxReady;},
+  get holmsgs(){return this.data.holmsgs||[];},
+  holmsgReady(){return !USE_SUPABASE||_holmsgReady;},
   /* who may open the 🌴 HR page at all: Belén + the HR tick + finance (Jesús — he only
      gets the Allocation-admin sections there; the page itself sub-gates the rest) */
   canSeeHR(){return !!(this.currentUser&&(this.isHRAdmin()||this.isHR()||this.canFinance()));},
@@ -1193,7 +1474,10 @@ function subscribeRealtime(){
       if(k==='finance'&&!_finReady)return;
       if(k==='weekly')return; // bulk table, no realtime — dashboard reloads on demand
       if((k==='projects'||k==='holidays'||k==='timesheets')&&!_hrReady)return;
-      if(k==='timesheets')return; // own-row edits, no realtime needed
+      /* timesheets ARE live. They used to be skipped as "own-row edits, no realtime needed",
+         but the row's owner is exactly who edits it twice: allocation filled on the laptop
+         never reached the phone (and vice versa), because nothing told the other device. */
+      if(k==='holmsgs'&&!_holmsgReady)return;
       if(k==='timeclock')return; // append-only, reloaded on demand
       if(k==='tcreports'&&!_tcReady)return;
       if(k==='eventaway'&&!_eventReady)return;
@@ -1249,6 +1533,23 @@ function cdnFailBanner(what){
 function injectSB(){return new Promise((res,rej)=>{if(window.supabase)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';s.onload=res;s.onerror=()=>{cdnFailBanner('the app engine (Supabase)');rej(new Error('Supabase library failed to load'));};document.head.appendChild(s);});}
 /* resilience: pages restored from the back/forward cache re-initialise cleanly */
 window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
+/* An installed app on a phone is not reloaded when you come back to it — it is resumed,
+   with whatever it rendered days ago still on screen and its realtime socket long dead.
+   Trusting that stale picture is how allocation got overwritten from the other device.
+   So: if we were in the background for more than a couple of minutes, start fresh. */
+(function(){
+  const STALE_MS=120000;let hiddenAt=0;
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){hiddenAt=Date.now();return;}
+    if(!hiddenAt)return;
+    const away=Date.now()-hiddenAt;hiddenAt=0;
+    if(away<STALE_MS)return;
+    if(_saveTimer||_syncing)return;               // an edit is still in flight — don't discard it
+    if(typeof userIsTyping==='function'&&userIsTyping())return;
+    if(pendingPunches().length)return;            // unsent punches must flush first
+    location.reload();
+  });
+})();
 /* don't let a navigation swallow an edit still waiting in the 700 ms sync window */
 window.addEventListener('beforeunload',e=>{if(_saveTimer||_syncing){e.preventDefault();e.returnValue='';}});
 async function boot(renderFn){
