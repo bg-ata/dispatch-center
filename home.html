@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -119,7 +119,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=57"></script>
+<script src="store.js?v=58"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -771,9 +771,110 @@ function renderAwayFold(){
 /* ================= 🛠 report a clock mistake (fold; ported from hr.html) ================= */
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
 function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');}
+/* Fail-proof corrections (2026-07-15): the person states WHAT HAPPENED, the system
+   works out the punches. Simple fixes apply at once (Belén ratifies after); odd ones
+   wait for her. Falls back to the old free-text flow until dispatch_hr11_claims.sql runs. */
+const CLAIM_TYPES=[
+  ['forgot_out','I forgot to clock out'],
+  ['forgot_in','I forgot to clock in'],
+  ['wrong_time','A punch has the wrong time'],
+  ['extra_punch','There is a punch that should not be there'],
+  ['whole_day','The whole day is wrong'],
+  ['other','Something else'],
+];
+function dayRecordLine(personId,day){
+  const es=tcEffective(personId,day),info=pairTotals(es);
+  if(!es.length)return '<span style="color:var(--muted)">no punches that day</span>';
+  return es.map(e=>entryLabel(e)).join(' → ')
+    +(info.open?' → <b style="color:#C77800">(no clock-out)</b>':'')
+    +' &nbsp;=&nbsp; <b>'+fmtMin(info.total)+'</b>'+(info.open&&day<toISO(new Date())?' ⚠':'');
+}
 function renderReportFold(){
   const box=document.getElementById('reportFoldBody');if(!box)return;
   if(!DB.tcReady()){box.innerHTML='<p class="hint" style="margin-top:8px">Not active yet — run dispatch_hr3.sql in Supabase, then reload.</p>';return;}
+  if(!window._claimReady){renderReportFoldOld(box);return;}
+  const today=toISO(new Date());
+  box.innerHTML=
+    '<p class="hint" style="margin-top:8px">Pick the day, say what happened — simple fixes apply immediately (Belén reviews every one); anything unusual goes to her first.</p>'+
+    '<div class="frm">'+
+    '<label>Day<input type="date" id="cl_day" value="'+today+'" max="'+today+'"></label>'+
+    '<label>What happened<select id="cl_type"><option value="">— pick —</option>'+CLAIM_TYPES.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('')+'</select></label>'+
+    '</div>'+
+    '<div id="cl_rec" class="hint" style="margin:2px 0 8px"></div>'+
+    '<div class="frm" id="cl_inputs"></div>'+
+    '<div class="frm"><label style="min-width:60%">Anything HR should know (optional)<input id="cl_note" placeholder="e.g. the page crashed"></label></div>'+
+    '<div id="cl_prev" style="border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px;display:none"></div>'+
+    '<button class="btn primary" id="cl_send">Send</button><span id="cl_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>'+
+    '<div id="myReports" style="margin-top:14px"></div>';
+  wireClaim();renderMyReports();
+}
+function claimInputsHtml(type,es){
+  const punchSel='<label>Which punch<select id="cl_entry">'+(es.length?es.map(e=>'<option value="'+e.id+'">'+entryLabel(e)+'</option>').join(''):'<option value="">— no punches that day —</option>')+'</select></label>';
+  switch(type){
+    case 'forgot_out': return '<label>I actually left at<input type="time" id="cl_time"></label>';
+    case 'forgot_in':  return '<label>I actually arrived at<input type="time" id="cl_time"></label>';
+    case 'wrong_time': return punchSel+'<label>It should say<input type="time" id="cl_time"></label>';
+    case 'extra_punch':return punchSel;
+    case 'whole_day':  return '<label>I worked from<input type="time" id="cl_from"></label><label>to<input type="time" id="cl_to"></label>';
+    case 'other':      return '<label style="min-width:60%">Tell HR what happened<input id="cl_text" placeholder="describe it — Belén will handle it"></label>';
+    default: return '';
+  }
+}
+function readClaim(){
+  const type=(document.getElementById('cl_type')||{}).value;if(!type)return null;
+  const g=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  return {type,time:g('cl_time')||undefined,from:g('cl_from')||undefined,to:g('cl_to')||undefined,
+    entryId:g('cl_entry')?+g('cl_entry'):undefined,text:g('cl_text')||undefined};
+}
+const CLAIM_HARD_BLOCK={future:1,insane:1,noop:1,no_target:1}; // stop these; too_old/manual go to Belén
+function wireClaim(){
+  const me=DB.currentUser;if(!me)return;
+  const day=document.getElementById('cl_day'),type=document.getElementById('cl_type');
+  const rec=document.getElementById('cl_rec'),inputs=document.getElementById('cl_inputs'),prev=document.getElementById('cl_prev');
+  const refresh=()=>{
+    rec.innerHTML='Your record for that day: &nbsp;'+dayRecordLine(me.id,day.value);
+    const c=readClaim();
+    if(!c||c.type==='other'||( !c.time&&!c.from&&!c.entryId )){prev.style.display='none';return;}
+    const p=planAmendments(me.id,day.value,c);
+    prev.style.display='block';
+    if(p.blocked&&CLAIM_HARD_BLOCK[p.blocked]){prev.innerHTML='<b style="color:var(--red)">✋ '+esc(CLAIM_BLOCK_MSG[p.blocked]||p.blocked)+'</b>';return;}
+    if(p.blocked){prev.innerHTML='📨 '+esc(CLAIM_BLOCK_MSG[p.blocked]||'Belén will handle this one.');return;}
+    prev.innerHTML='You are claiming: <b>'+esc(p.describe)+'</b><br>The day then reads: <b>'+fmtMin(p.after.total)+(p.after.open?' · still clocked in':'')+'</b>'
+      +(p.simple?' <span style="color:var(--green)">— applies immediately; Belén reviews it</span>'
+                :' <span style="color:#C77800">— unusual, so it waits for Belén\'s approval</span>');
+  };
+  const rewire=()=>{inputs.innerHTML=claimInputsHtml(type.value,me?tcEffective(me.id,day.value):[]);
+    inputs.querySelectorAll('input,select').forEach(e=>e.onchange=e.oninput=refresh);refresh();};
+  day.onchange=rewire;type.onchange=rewire;refresh();
+  document.getElementById('cl_send').onclick=async()=>{
+    const c=readClaim();if(!c){alert('Say what happened first.');return;}
+    const note=(document.getElementById('cl_note').value||'').trim();
+    if(c.type==='other'&&!(c.text||note)){alert('Tell HR what happened.');return;}
+    const p=planAmendments(me.id,day.value,c);
+    if(p.blocked&&CLAIM_HARD_BLOCK[p.blocked]){alert(CLAIM_BLOCK_MSG[p.blocked]||p.blocked);return;}
+    const human=(c.type==='other'?(c.text||note):p.describe+(note?' — '+note:''));
+    const rep={id:DB.newId(),personId:me.id,day:day.value,entryId:c.entryId||null,claim:c,ratify:null,
+      thread:[{by:me.name,at:new Date().toISOString(),text:human}],status:'open'};
+    const btn=document.getElementById('cl_send');btn.disabled=true;
+    DB.tcreports.push(rep);
+    const okRep=await DB.saveNow();               // report FIRST — the punch RLS checks it exists
+    let msg='Sent — Belén will make this one.';
+    if(okRep&&!p.blocked&&p.simple){
+      applyPlan(me.id,day.value,p,rep.id,'self-service: '+human);
+      rep.ratify='pending';
+      const okAmend=await DB.saveNow();
+      msg=okAmend?('✔ Done — '+day.value+' now reads '+fmtMin(p.after.total)+'. Belén will review it.')
+                 :'Saved the report, but the correction could not be written — Belén will apply it.';
+      if(!okAmend)rep.ratify=null;
+      window.dispatchEvent(new Event('dc-remote'));
+    }
+    btn.disabled=false;
+    const m=document.getElementById('cl_msg');m.textContent=msg;setTimeout(()=>{const m2=document.getElementById('cl_msg');if(m2)m2.textContent='';},8000);
+    renderReportFold();renderClock&&renderClock();
+  };
+}
+/* pre-claims fallback (dispatch_hr11_claims.sql not run yet) — the old free-text flow */
+function renderReportFoldOld(box){
   box.innerHTML=
     '<p class="hint" style="margin-top:8px">Forgot to clock, or a punch is wrong? Say what happened — it opens a message thread with HR (Belén / Jesús), who make the correction. Everything is logged.</p>'+
     '<div class="frm"><label>Day<input type="date" id="tr_day" value="'+toISO(new Date())+'"></label>'+
@@ -807,6 +908,9 @@ function threadHtml(r){
     (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
 }
 function reportChip(r){
+  if(r.ratify==='pending')return '<span class="chip" style="background:var(--blue)">Applied — Belén reviewing</span>';
+  if(r.ratify==='accepted')return '<span class="chip" style="background:var(--green)">Accepted</span>';
+  if(r.ratify==='denied')return '<span class="chip" style="background:var(--red)">Denied — reversed</span>';
   return r.status==='resolved'?'<span class="chip" style="background:var(--green)">Resolved</span>'
     :r.status==='answered'?'<span class="chip" style="background:var(--blue)">Answered</span>'
     :'<span class="chip" style="background:var(--amber)">Open</span>';

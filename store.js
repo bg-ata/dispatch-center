@@ -639,6 +639,7 @@ function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if
 --------------------------------------------------------------------------- */
 const CLAIM_MAX_DAYS = 14;      // how far back a claim may reach (her call)
 const CLAIM_TOLERANCE_H = 1;    // auto-apply only up to expected + 1h
+window._claimReady = true;      // flipped off at boot if dispatch_hr11_claims.sql has not run
 /* claim = {type, time?, from?, to?, entryId?, text?}
    types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
 function claimDescribe(c, day) {
@@ -1250,7 +1251,7 @@ const COLS={
   holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces','chargeYear'],
   timesheets:['id','personId','week','hours'],
   timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
-  tcreports:['id','personId','day','entryId','thread','status'],
+  tcreports:['id','personId','day','entryId','thread','status','claim','ratify'], // claim/ratify tolerant (dispatch_hr11_claims.sql)
   eventaway:['id','personId','dateFrom','dateTo','title','note'], // "at an event" — away from the office
   /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
      row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
@@ -1307,6 +1308,13 @@ const DB={
         window._extColsMissing=true;
         ['kind','lanes'].forEach(c=>{const i2=COLS.events.indexOf(c);if(i2>=0)COLS.events.splice(i2,1);});
       }
+      /* claims are tolerant too: until dispatch_hr11_claims.sql runs, never push
+         claim/ratify (PostgREST rejects unknowns) and fall back to the old report
+         form. Explicit probe — the table may legitimately have zero rows. */
+      window._claimReady=true;
+      try{const cp=await sb.from('dc_tcreports').select('claim').limit(1);if(cp.error)throw cp.error;}
+      catch(e){window._claimReady=false;
+        ['claim','ratify'].forEach(c=>{const i2=COLS.tcreports.indexOf(c);if(i2>=0)COLS.tcreports.splice(i2,1);});}
       /* finance is tolerant: the app runs fine before dispatch_finance.sql exists */
       this.data.finance=[];_finReady=false;
       try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
