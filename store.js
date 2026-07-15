@@ -631,6 +631,136 @@ function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if
   if(openSince!=null&&day===today){const now=new Date();total+=Math.max(0,now.getHours()*60+now.getMinutes()-openSince);}
   return {entries:es,total,open:openSince!=null};
 }
+/* ---------------------------------------------------------------------------
+   FAIL-PROOF CORRECTIONS (2026-07-15). The person states WHAT HAPPENED; this
+   works out the punches; HR approves the OUTCOME. Nobody picks add/void/fix.
+   planAmendments() is PURE (no DB, no DOM) so every failure we have actually
+   hit is unit-testable. See PROPOSAL - Fail-proof time-clock corrections.md.
+--------------------------------------------------------------------------- */
+const CLAIM_MAX_DAYS = 14;      // how far back a claim may reach (her call)
+const CLAIM_TOLERANCE_H = 1;    // auto-apply only up to expected + 1h
+/* claim = {type, time?, from?, to?, entryId?, text?}
+   types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
+function claimDescribe(c, day) {
+  const d = day;
+  switch (c.type) {
+    case 'forgot_out':  return 'add a clock-out at ' + c.time + ' on ' + d;
+    case 'forgot_in':   return 'add a clock-in at ' + c.time + ' on ' + d;
+    case 'wrong_time':  return 'correct a punch to ' + c.time + ' on ' + d;
+    case 'extra_punch': return 'remove a punch on ' + d;
+    case 'whole_day':   return 'set ' + d + ' to ' + c.from + ' → ' + c.to;
+    default:            return 'a correction on ' + d;
+  }
+}
+function pairTotals(entries) {          // -> {total(min), open}
+  let total = 0, openSince = null;
+  entries.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(e => {
+    if (e.kind === 'in') { if (openSince == null) openSince = tcMinutes(e.time); }
+    else if (e.kind === 'out' && openSince != null) { total += Math.max(0, tcMinutes(e.time) - openSince); openSince = null; }
+  });
+  return { total: total, open: openSince != null };
+}
+function planAmendments(personId, day, claim) {
+  const es = tcEffective(personId, day);
+  const before = pairTotals(es);
+  const today = toISO(new Date());
+  const out = { ops: [], before: before, after: null, blocked: null, describe: claimDescribe(claim, day), simple: false };
+
+  if (!claim || claim.type === 'other') { out.blocked = 'manual'; return out; }
+
+  /* R1 - never write a punch in the future (this is what froze Andrea's clock) */
+  const future = t => day > today || (day === today && t && t > nowHMS().slice(0, 5));
+  const times = [claim.time, claim.from, claim.to].filter(Boolean);
+  if (times.some(future)) { out.blocked = 'future'; return out; }
+
+  /* claim window */
+  const ageDays = Math.round((ymd(today) - ymd(day)) / 86400000);
+  if (ageDays > CLAIM_MAX_DAYS) { out.blocked = 'too_old'; return out; }
+  if (ageDays < 0) { out.blocked = 'future'; return out; }
+
+  const sim = es.map(e => ({ id: e.id, kind: e.kind, time: e.time }));
+  const target = claim.entryId ? es.find(e => e.id == claim.entryId) : null;
+  switch (claim.type) {
+    case 'forgot_out':
+      out.ops.push({ act: 'add', kind: 'out', time: claim.time });
+      sim.push({ kind: 'out', time: claim.time }); break;
+    case 'forgot_in':
+      out.ops.push({ act: 'add', kind: 'in', time: claim.time });
+      sim.push({ kind: 'in', time: claim.time }); break;
+    case 'wrong_time':
+      if (!target) { out.blocked = 'no_target'; return out; }
+      out.ops.push({ act: 'fix', kind: target.kind, time: claim.time, entryId: target.id });
+      sim.forEach(x => { if (x.id == target.id) x.kind = 'void'; });
+      sim.push({ kind: target.kind, time: claim.time }); break;
+    case 'extra_punch':
+      if (!target) { out.blocked = 'no_target'; return out; }
+      out.ops.push({ act: 'void', kind: 'void', time: target.time, entryId: target.id });
+      sim.forEach(x => { if (x.id == target.id) x.kind = 'void'; }); break;
+    case 'whole_day':
+      es.forEach(e => { out.ops.push({ act: 'void', kind: 'void', time: e.time, entryId: e.id }); });
+      sim.forEach(x => { x.kind = 'void'; });
+      out.ops.push({ act: 'add', kind: 'in', time: claim.from });
+      out.ops.push({ act: 'add', kind: 'out', time: claim.to });
+      sim.push({ kind: 'in', time: claim.from }, { kind: 'out', time: claim.to }); break;
+    default: out.blocked = 'manual'; return out;
+  }
+
+  out.after = pairTotals(sim.filter(x => x.kind !== 'void'));
+  /* R2 - a correction that changes nothing is a mistake, not a correction.
+     EXCEPT removing a stray punch: deleting one of Andrea's 12 duplicate clock-ins
+     moves no hours (the pairing ignores repeats) but still cleans the record, which
+     is the whole point of that claim. */
+  if (claim.type !== 'extra_punch' &&
+      out.after.total === before.total && out.after.open === before.open) { out.blocked = 'noop'; return out; }
+  /* R3 - result sanity */
+  if (out.after.total < 0 || out.after.total > 16 * 60) { out.blocked = 'insane'; return out; }
+
+  /* "simple" = safe to apply straight away; anything else waits for Belén */
+  const expected = (typeof tcExpectedDay === 'function') ? tcExpectedDay(personId, day) : 8;
+  out.simple = !out.after.open && out.after.total <= (expected + CLAIM_TOLERANCE_H) * 60;
+  return out;
+}
+/* Write a plan to the ledger. Each op becomes a NEW linked row (nothing is ever
+   updated or deleted); created_by/hash are stamped server-side by dc_tc_stamp().
+   `by` is only used for the thread note - the DB decides the real author. */
+function applyPlan(personId, day, plan, reportId, reason) {
+  if (!plan || plan.blocked || !plan.ops.length) return { ok: false, msg: plan && plan.blocked };
+  plan.ops.forEach(op => {
+    DB.timeclock.push({
+      id: DB.newId(), personId: personId, day: day,
+      time: op.time, kind: op.act === 'void' ? 'void' : op.kind,
+      manual: op.act === 'add', amends: op.entryId || null,
+      reason: reason, note: null, reportId: reportId || null
+    });
+  });
+  DB.save();
+  return { ok: true, n: plan.ops.length };
+}
+/* Undo a correction that Belen denies: void every row the plan wrote. Still additive -
+   the denial is itself a linked amendment, so the trail shows claim -> applied -> denied. */
+function reversePlan(reportId, reason) {
+  const rows = DB.timeclock.filter(r => r.reportId == reportId && r.kind !== 'void');
+  const already = {}; DB.timeclock.forEach(r => { if (r.amends != null) already[r.amends] = true; });
+  let n = 0;
+  rows.forEach(r => {
+    if (already[r.id]) return;
+    DB.timeclock.push({
+      id: DB.newId(), personId: r.personId, day: r.day, time: r.time, kind: 'void',
+      manual: false, amends: r.id, reason: reason, note: null, reportId: reportId
+    });
+    n++;
+  });
+  DB.save();
+  return n;
+}
+const CLAIM_BLOCK_MSG = {
+  future: 'That time has not happened yet. A punch dated in the future stops the clock.',
+  too_old: 'That day is more than ' + CLAIM_MAX_DAYS + ' days ago — Belén has to make this one.',
+  noop: 'That would not change anything on the record. Check the day and the time.',
+  insane: 'That would make the day longer than 16 hours. Check the times.',
+  no_target: 'Pick which punch you mean.',
+  manual: 'Belen will look at this one.'
+};
 /* live worked seconds (for the constantly-counting clock) — open session ticks to real now */
 function tcLiveSeconds(personId,day){
   const es=tcEffective(personId,day);let total=0,openSince=null;
