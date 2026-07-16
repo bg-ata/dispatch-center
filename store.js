@@ -651,10 +651,15 @@ function hrVisiblePeople(){
 /* ---- time clock (registro horario) helpers ---- */
 const TC_START='2026-07-13'; // first day punching is expected (module go-live Monday)
 function tcRows(personId,day){return DB.timeclock.filter(r=>r.personId==personId&&r.day===day);}
-function tcEffective(personId,day){ // amended entries stop counting; 'void' amendments count nothing
+function tcEffective(personId,day){ // resolve the amendment graph: a punch dies only if a LIVE row amends it
   const rows=tcRows(personId,day);
-  const amended={};rows.forEach(r=>{if(r.amends!=null)amended[r.amends]=true;});
-  return rows.filter(r=>!amended[r.id]&&r.kind!=='void').sort((a,b)=>(a.time||'').localeCompare(b.time||''));
+  // Process newest-first (amends always points to an OLDER row, so every amender is resolved before its target).
+  // A row is inactive when an ACTIVE row (a replacement OR a void) amends it; voiding that amender revives the original,
+  // which is what makes a denial actually restore the punches the plan had replaced.
+  const order=rows.slice().sort((a,b)=>(b.id-a.id));
+  const active={};
+  order.forEach(r=>{ active[r.id]=!rows.some(a=>a.amends!=null&&a.amends==r.id&&active[a.id]); });
+  return rows.filter(r=>active[r.id]&&r.kind!=='void').sort((a,b)=>(a.time||'').localeCompare(b.time||''));
 }
 function tcMinutes(t){const p=(t||'0:0').split(':');return (+p[0])*60+(+p[1])+(p[2]?(+p[2])/60:0);} // tolerates HH:MM or HH:MM:SS
 function tcSecondsOf(t){const p=(t||'0:0:0').split(':');return (+p[0])*3600+(+p[1])*60+(+(p[2]||0));}
@@ -730,13 +735,16 @@ function planAmendments(personId, day, claim) {
       out.ops.push({ act: 'add', kind: 'out', time: claim.time });
       sim.push({ kind: 'out', time: claim.time }); break;
     case 'forgot_in': {
-      /* "I forgot to clock in / I arrived at X". If they are CURRENTLY clocked in
-         (the day has an open session) that session should have STARTED at X — so
-         correct the existing clock-in rather than leave two clock-ins on the record.
-         Only when nothing is open do we add a fresh clock-in. */
+      /* "I forgot to clock in / I arrived at X." Correct the OPEN session's clock-in ONLY
+         when X actually belongs to that session (X is after the last clock-out). Otherwise
+         "fixing the last in" would rewrite the wrong punch and clock a still-working person
+         OUT — the split-day bug (morning 09→13, back at 14 open, claims arrival 08:30). When
+         X does not belong to the open session we ADD a clock-in (never destructive) and let
+         pairing + the review gate handle it, rather than silently destroy the live session. */
       const openState = pairState(es);
       const openIn = openState.open ? es.slice().reverse().find(e => e.kind === 'in') : null;
-      if (openIn) {
+      const lastOut = es.filter(e => e.kind === 'out').map(e => e.time).sort().pop() || null;
+      if (openIn && (!lastOut || claim.time > lastOut)) {
         out.ops.push({ act: 'fix', kind: 'in', time: claim.time, entryId: openIn.id });
         sim.forEach(x => { if (x.id == openIn.id) x.kind = 'void'; });
         sim.push({ kind: 'in', time: claim.time });
@@ -806,7 +814,7 @@ function applyPlan(personId, day, plan, reportId, reason) {
 /* Undo a correction that Belen denies: void every row the plan wrote. Still additive -
    the denial is itself a linked amendment, so the trail shows claim -> applied -> denied. */
 function reversePlan(reportId, reason) {
-  const rows = DB.timeclock.filter(r => r.reportId == reportId && r.kind !== 'void');
+  const rows = DB.timeclock.filter(r => r.reportId == reportId);   // ALL rows this plan wrote, incl. its own void rows
   const already = {}; DB.timeclock.forEach(r => { if (r.amends != null) already[r.amends] = true; });
   let n = 0;
   rows.forEach(r => {
