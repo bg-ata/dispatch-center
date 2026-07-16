@@ -119,7 +119,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=61"></script>
+<script src="store.js?v=62"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -840,9 +840,15 @@ function wireClaim(){
     prev.style.display='block';
     if(p.blocked&&CLAIM_HARD_BLOCK[p.blocked]){prev.innerHTML='<b style="color:var(--red)">✋ '+esc(CLAIM_BLOCK_MSG[p.blocked]||p.blocked)+'</b>';return;}
     if(p.blocked){prev.innerHTML='📨 '+esc(CLAIM_BLOCK_MSG[p.blocked]||'Belén will handle this one.');return;}
-    prev.innerHTML='You are claiming: <b>'+esc(p.describe)+'</b><br>The day then reads: <b>'+fmtMin(p.after.total)+(p.after.open?' · still clocked in':'')+'</b>'
+    /* open day: the hours are still running, so show the corrected clock-in time
+       rather than "0 h 00" (which reads as if nothing changed). */
+    const openStart=p.after.open?[...tcEffective(me.id,day.value).filter(e=>e.kind==='in')].sort((a,b)=>(a.time||'').localeCompare(b.time||''))[0]:null;
+    const result=p.after.open
+      ? 'you stay clocked in'+(c.type==='forgot_in'||c.type==='wrong_time'?', starting at <b>'+esc((c.time||(openStart&&openStart.time)||'').slice(0,5))+'</b>':'')+' — your hours count from there'
+      : 'the day reads <b>'+fmtMin(p.after.total)+'</b>';
+    prev.innerHTML='You are claiming: <b>'+esc(p.describe)+'</b><br>Then '+result
       +(p.simple?' <span style="color:var(--green)">— applies immediately; Belén reviews it</span>'
-                :' <span style="color:#C77800">— unusual, so it waits for Belén\'s approval</span>');
+                :' <span style="color:#C77800">— Belén approves this one</span>');
   };
   const rewire=()=>{inputs.innerHTML=claimInputsHtml(type.value,me?tcEffective(me.id,day.value):[]);
     inputs.querySelectorAll('input,select').forEach(e=>e.onchange=e.oninput=refresh);refresh();};
@@ -870,8 +876,8 @@ function wireClaim(){
       window.dispatchEvent(new Event('dc-remote'));
     }
     btn.disabled=false;
-    const m=document.getElementById('cl_msg');m.textContent=msg;setTimeout(()=>{const m2=document.getElementById('cl_msg');if(m2)m2.textContent='';},8000);
-    renderReportFold();renderClock&&renderClock();
+    renderReportFold();renderClock&&renderClock();       // rebuild first (this resets the form)…
+    const m=document.getElementById('cl_msg');if(m){m.textContent=msg;setTimeout(()=>{const m2=document.getElementById('cl_msg');if(m2)m2.textContent='';},8000);} // …then show the confirmation on the fresh element
   };
 }
 /* pre-claims fallback (dispatch_hr11_claims.sql not run yet) — the old free-text flow */

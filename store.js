@@ -693,13 +693,17 @@ function claimDescribe(c, day) {
     default:            return 'a correction on ' + d;
   }
 }
-function pairTotals(entries) {          // -> {total(min), open}
+function pairState(entries) {            // -> {total(min), open, openAt(min|null)}
   let total = 0, openSince = null;
   entries.slice().sort((a, b) => (a.time || '').localeCompare(b.time || '')).forEach(e => {
     if (e.kind === 'in') { if (openSince == null) openSince = tcMinutes(e.time); }
     else if (e.kind === 'out' && openSince != null) { total += Math.max(0, tcMinutes(e.time) - openSince); openSince = null; }
   });
-  return { total: total, open: openSince != null };
+  return { total: total, open: openSince != null, openAt: openSince };
+}
+function pairTotals(entries) {          // -> {total(min), open}
+  const s = pairState(entries);
+  return { total: s.total, open: s.open };
 }
 function planAmendments(personId, day, claim) {
   const es = tcEffective(personId, day);
@@ -725,9 +729,23 @@ function planAmendments(personId, day, claim) {
     case 'forgot_out':
       out.ops.push({ act: 'add', kind: 'out', time: claim.time });
       sim.push({ kind: 'out', time: claim.time }); break;
-    case 'forgot_in':
-      out.ops.push({ act: 'add', kind: 'in', time: claim.time });
-      sim.push({ kind: 'in', time: claim.time }); break;
+    case 'forgot_in': {
+      /* "I forgot to clock in / I arrived at X". If they are CURRENTLY clocked in
+         (the day has an open session) that session should have STARTED at X — so
+         correct the existing clock-in rather than leave two clock-ins on the record.
+         Only when nothing is open do we add a fresh clock-in. */
+      const openState = pairState(es);
+      const openIn = openState.open ? es.slice().reverse().find(e => e.kind === 'in') : null;
+      if (openIn) {
+        out.ops.push({ act: 'fix', kind: 'in', time: claim.time, entryId: openIn.id });
+        sim.forEach(x => { if (x.id == openIn.id) x.kind = 'void'; });
+        sim.push({ kind: 'in', time: claim.time });
+      } else {
+        out.ops.push({ act: 'add', kind: 'in', time: claim.time });
+        sim.push({ kind: 'in', time: claim.time });
+      }
+      break;
+    }
     case 'wrong_time':
       if (!target) { out.blocked = 'no_target'; return out; }
       out.ops.push({ act: 'fix', kind: target.kind, time: claim.time, entryId: target.id });
@@ -748,11 +766,19 @@ function planAmendments(personId, day, claim) {
 
   out.after = pairTotals(sim.filter(x => x.kind !== 'void'));
   /* R2 - a correction that changes nothing is a mistake, not a correction.
-     EXCEPT removing a stray punch: deleting one of Andrea's 12 duplicate clock-ins
-     moves no hours (the pairing ignores repeats) but still cleans the record, which
-     is the whole point of that claim. */
+     Compare the day as it will actually RESOLVE, not just the paired total: on an
+     OPEN day the total is 0 until clocked out, so moving the clock-in earlier looks
+     like "no change" by total alone (the bug a colleague hit 16/07 — clocked in 09:37,
+     really arrived 08:30). Also compare where the open session STARTS.
+     EXCEPT removing a stray punch: voiding one of Andrea's 12 duplicate clock-ins
+     moves no hours but still cleans the record — that is the whole point of it. */
+  const beforeS = pairState(es), afterS = pairState(sim.filter(x => x.kind !== 'void'));
+  const mFloor = v => v == null ? null : Math.floor(v);   // claims are HH:MM — ignore a seconds-only diff
   if (claim.type !== 'extra_punch' &&
-      out.after.total === before.total && out.after.open === before.open) { out.blocked = 'noop'; return out; }
+      Math.round(afterS.total) === Math.round(beforeS.total) && afterS.open === beforeS.open &&
+      mFloor(afterS.openAt) === mFloor(beforeS.openAt)) {
+    out.blocked = 'noop'; return out;
+  }
   /* R3 - result sanity */
   if (out.after.total < 0 || out.after.total > 16 * 60) { out.blocked = 'insane'; return out; }
 
