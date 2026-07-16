@@ -48,6 +48,21 @@
   .mx{overflow-x:auto}
   .mx table{font-size:12px;min-width:640px}
   .mx td.c{text-align:center}
+  /* everyone × week clock grid */
+  table.wgrid{width:100%;border-collapse:collapse;font-size:11.5px;min-width:820px}
+  .wgrid th{background:#eceae3;color:#5f5e5a;font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:5px 6px;text-align:center;white-space:nowrap;position:sticky;top:0;z-index:1}
+  .wgrid th.pcol{text-align:left} .wgrid th.todcol{background:#ffe6db;color:#b5390f}
+  .wgrid .dnum{font-size:12.5px;font-weight:800;color:var(--charcoal)}
+  .wgrid td{border-top:1px solid var(--line);padding:4px 6px;text-align:center;vertical-align:middle}
+  .wgrid td.pcol{text-align:left;font-weight:600;color:var(--charcoal);white-space:nowrap;position:sticky;left:0;background:#fff;z-index:1}
+  .wgrid tr:hover td{background:#faf9f7} .wgrid tr:hover td.pcol{background:#faf9f7}
+  .wgrid .num{text-align:right;font-variant-numeric:tabular-nums} .wgrid .muted{color:var(--muted)}
+  .wc .pp{color:#575652;font-variant-numeric:tabular-nums;line-height:1.28;font-size:11px}
+  .wc .pt{font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums;margin-top:1px}
+  .wc .pt.under{color:#C0392B}
+  .wc.openc{background:#e9f6e9} .wc.openc .pt{color:#0a7a0a}
+  .wc.miss{color:#C0392B;font-weight:800;background:#fbeaea}
+  .wc.off{color:#8a8781} .wc.future{background:#fbfbfa} .wc .dot{color:#cfccc4}
   .ok2{color:var(--green);font-weight:700}.no2{color:var(--red);font-weight:700}.na{color:#c9c6bd}
   .padd{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:10px}
   .padd label{font-size:11px;color:var(--muted);display:flex;flex-direction:column;gap:3px;text-transform:uppercase;letter-spacing:.4px}
@@ -77,7 +92,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=62"></script>
+<script src="store.js?v=63"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -536,6 +551,7 @@ function exportHours(){
 let tcM=new Date();tcM.setDate(1); // month shown in the team time sheet
 let tcWho=null;                    // person shown in the team time sheet
 let phWho=null;                    // person shown in the history panel
+let tcWk=null;                     // Monday of the week shown in the everyone×week grid
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
 function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');} // display HH:MM, full HH:MM:SS kept in the record
 const DEV_ICON={phone:'📱',tablet:'📲',desktop:'💻'};
@@ -546,6 +562,10 @@ function renderTimeclock(){
   if(!DB.tcReady()){document.getElementById('content').innerHTML='<div class="warn">The time clock is not active yet — run <b>dispatch_hr3.sql</b> in Supabase, then reload.</div>';return;}
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>👀 Who’s in today'+visBadge('Belén + HR')+'</h3><p class="hint">Live view of who has clocked in, who’s on a break, who’s off and who is at an event. Anyone expected today who hasn’t clocked in is flagged in red so you can give them a nudge. Device icons = how they opened the Dispatch today: 📱 phone · 📲 tablet · 💻 desktop · ⭐ installed app.</p><div id="tcToday"></div></div>'+
+    '<div class="panel"><h3>🗓 Week grid — everyone'+visBadge('Belén + HR')+'</h3>'+
+    '<p class="hint">Every person, every day of the week — their clock <b>in→out</b> times and the hours done. Use ‹ › to check any past week. <b style="color:#0a7a0a">Green</b> = still clocked in now · <b style="color:#C0392B">red hours</b> = under the expected day · <b style="color:#C0392B">✗</b> = a working day with no punches · 🏦 = bank holiday.</p>'+
+    '<div class="mnav"><button class="btn" id="wk_prev" title="Previous week">‹</button><b id="wk_lab"></b><button class="btn" id="wk_next" title="Next week">›</button><button class="btn" id="wk_now" style="font-size:12px">This week</button></div>'+
+    '<div class="mx" id="tcWeek"></div></div>'+
     '<div class="panel"><h3>🕵 Person history'+visBadge('Belén + HR')+'</h3><p class="hint">One person at a time: their punches this month plus the devices they’ve logged in from over the last 30 days.</p>'+
     '<div class="mnav"><select id="ph_who"></select></div><div class="mx" id="phMonth"></div><div id="phDev" style="margin-top:12px"></div></div>'+
     '<div class="panel decide"><h3>🛠 Corrections queue'+visBadge('Belén + HR')+'</h3><p class="hint">Workers report (from 🙋 Me), you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
@@ -574,7 +594,60 @@ function renderTimeclock(){
   document.getElementById('tcXlsM').onclick=exportTcMonth;
   document.getElementById('tcXlsA').onclick=exportTcArchive;
   wireDownloadStation();
-  renderAttendance();renderPersonHistory();renderTcQueue();renderTeamMonth();renderEventAway();
+  if(tcWk==null)tcWk=mondayOf(new Date());
+  document.getElementById('wk_prev').onclick=()=>{tcWk=addDays(tcWk,-7);renderWeekGrid();};
+  document.getElementById('wk_next').onclick=()=>{const thisMon=mondayOf(new Date());if(toISO(tcWk)<toISO(thisMon)){tcWk=addDays(tcWk,7);renderWeekGrid();}};
+  document.getElementById('wk_now').onclick=()=>{tcWk=mondayOf(new Date());renderWeekGrid();};
+  renderAttendance();renderPersonHistory();renderTcQueue();renderTeamMonth();renderEventAway();renderWeekGrid();
+}
+/* ---- 🗓 everyone × week clock grid: in→out times + hours done, week by week ---- */
+function mondayOf(d){const x=ymd(toISO(d));const wd=(x.getDay()+6)%7;return addDays(x,-wd);}
+function tcPairs(info){
+  const out=[];let openT=null;
+  info.entries.forEach(e=>{const t=(e.time||'').slice(0,5);
+    if(e.kind==='in'){if(openT==null)openT=t;}
+    else if(e.kind==='out'&&openT!=null){out.push(openT+'–'+t);openT=null;}});
+  if(openT!=null)out.push(openT+'–…');       // still clocked in (open pair)
+  return out;
+}
+function tcWeekCell(personId,iso,today){
+  if(iso>today)return '<td class="wc future"></td>';
+  const hol=madHol(iso);
+  if(hol)return '<td class="wc off" title="'+esc('Bank holiday — '+hol)+'">🏦</td>';
+  const info=tcDayInfo(personId,iso),exp=tcExpectedDay(personId,iso),leave=currentLeave(personId,iso);
+  if(leave&&!info.entries.length)return '<td class="wc off" title="'+esc(TYPE_LABEL[leave.type]||leave.type||'Off')+'">–</td>';
+  if(!info.entries.length)return exp>0
+    ?'<td class="wc miss" title="Expected '+exp+'h — no punches">✗</td>'
+    :'<td class="wc"><span class="dot">·</span></td>';
+  const under=exp>0&&!info.open&&info.total/60<exp-0.02;
+  return '<td class="wc'+(info.open?' openc':'')+'"><div class="pp">'+tcPairs(info).map(esc).join('<br>')+
+    '</div><div class="pt'+(under?' under':'')+'">'+fmtMin(info.total)+'</div></td>';
+}
+function renderWeekGrid(){
+  const box=document.getElementById('tcWeek');if(!box)return;
+  if(tcWk==null)tcWk=mondayOf(new Date());
+  const today=toISO(new Date());
+  const isoW=[];for(let i=0;i<7;i++)isoW.push(toISO(addDays(tcWk,i)));
+  const lab=document.getElementById('wk_lab');if(lab)lab.textContent=fmtHumanShort(isoW[0])+' – '+fmtHumanShort(isoW[6]);
+  const people=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name));
+  const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let h='<table class="wgrid"><thead><tr><th class="pcol">Person</th>';
+  isoW.forEach((iso,i)=>{h+='<th class="'+(iso===today?'todcol':'')+'">'+DOW[i]+'<br><span class="dnum">'+ymd(iso).getDate()+'</span></th>';});
+  h+='<th class="num">Week</th><th class="num">Exp.</th><th class="num">Diff</th></tr></thead><tbody>';
+  if(!people.length)h+='<tr><td colspan="11" class="empty">No people in the roster.</td></tr>';
+  people.forEach(p=>{
+    let wk=0,ex=0,cells='';
+    isoW.forEach(iso=>{const info=tcDayInfo(p.id,iso),exp=tcExpectedDay(p.id,iso);
+      if(iso<=today){wk+=info.total;ex+=exp*60;}
+      cells+=tcWeekCell(p.id,iso,today);});
+    const diff=wk-ex;
+    h+='<tr><td class="pcol">'+esc(p.name)+'</td>'+cells+
+      '<td class="num"><b>'+(wk?fmtMin(wk):'—')+'</b></td>'+
+      '<td class="num muted">'+(ex?fmtMin(ex):'—')+'</td>'+
+      '<td class="num" style="color:'+(diff<-15?'#C0392B':diff>15?'#0a7a0a':'var(--muted)')+'">'+
+      (wk?((diff>=0?'+':'−')+fmtMin(Math.abs(diff))):'')+'</td></tr>';
+  });
+  box.innerHTML=h+'</tbody></table>';
 }
 /* ---- ⬇ download station: any dates, one person or everybody ---- */
 function wireDownloadStation(){

@@ -587,7 +587,7 @@ function holActsOnMe(req){ // is it MY turn to decide this request?
      never also the manager step, which is what made her turn appear twice. */
   if(req.status==='manager'){const m=holManager(p);return !!(m&&m.id==me.id);}
   if(req.status==='belen')return isBelenP(me);
-  if(req.status==='hr')return !!me.hr||isBelenP(me); // rrhh is the seat; Belén can always close
+  if(req.status==='hr')return !!me.hr; // rrhh is the ONLY seat that closes — Belén reviews at her step but never finalises (labour sign-off must be HR)
   return false;
 }
 function holNextStatus(req){

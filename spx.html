@@ -36,14 +36,34 @@
   .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
   .filters select,.filters input{padding:6px 9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12.5px;background:#fff;color:var(--ink)}
   tr.byhand td{background:#efeeea}   /* grey = added by hand on the board, not from the Proposal Builder */
+  tr.wonrow td{background:#e6f5e6}   /* WON = green, like the badge */
+  tr.wonrow:hover td{background:#dcefdc}
+  tr.overdue td{background:#fbe9e7}  /* follow-up past its date = red row */
+  tr.overdue:hover td{background:#f7ded9}
+  .notescell{cursor:pointer;border-bottom:1px dashed transparent;display:inline-block;max-width:210px;vertical-align:bottom}
+  .notescell:hover{border-bottom-color:var(--muted)} .notescell .clip{max-width:200px}
   .chip{border:1px solid var(--line);background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
   .seg button{background:#fff;border:none;padding:6px 12px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
   .seg button.on{background:var(--ink);color:#fff}
   .tablewrap{overflow-x:auto;border-radius:11px;border:1px solid var(--line)}
+  /* wide-table chrome: zoom control + always-reachable top scrollbar (native bar sits at the very bottom of a long table) */
+  .tbltools{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+  .tbltools .zbtn{width:26px;height:23px;line-height:1;border:1px solid var(--line);background:#fff;border-radius:6px;cursor:pointer;font-size:15px;color:var(--ink);padding:0}
+  .tbltools .zbtn:hover{border-color:var(--orange);color:var(--orange)}
+  .tbltools .zval{min-width:42px;text-align:center;font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
+  .tbltools .hint{margin-left:6px;color:#9aa2a6}
+  .topscroll{overflow-x:auto;overflow-y:hidden;height:15px;border:1px solid var(--line);border-bottom:none;border-radius:9px 9px 0 0;background:#f4f2ec}
+  .topscroll-in{height:1px}
   table{width:100%;border-collapse:collapse;font-size:12.5px;background:var(--card)}
   th{text-align:left;background:#eceae3;color:#5f5e5a;font-size:10px;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;font-weight:700;white-space:nowrap;position:sticky;top:0}
+  th.sortable{cursor:pointer;user-select:none} th.sortable:hover{background:#e2dfd6;color:var(--ink)}
+  th.sorton{background:#ded8c8;color:var(--ink)}
+  .sarr{font-size:9px;margin-left:2px} .sarr-dim{opacity:.32;font-weight:400}
+  th.actcol,td.actcol{width:34px;text-align:center;padding-left:4px;padding-right:6px}
+  .delx{background:none;border:none;color:#b9524a;cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:6px;opacity:.6}
+  .delx:hover{background:#f6e4e1;opacity:1}
   td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:middle}
   tr.prow{cursor:pointer} tr.prow:hover td{background:#faf9f7}
   .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -106,7 +126,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=62"></script>
+<script src="store.js?v=63"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -152,6 +172,8 @@ function activeTab(){const h=location.hash.replace('#','');return TABLIST.some(t
 let TAB=activeTab();
 let VIEW='general';                  // 'general' (parent rows) | 'event' (child rows)
 let flt={event:'',sales:'',stage:'',accountType:'',source:'',productPackage:'',packageTier:'',reasonForLoss:'',from:'',to:'',q:''};
+let SORT={general:{col:null,dir:1},event:{col:null,dir:1}}; // null col → keep the default (newest-first); click a header to sort Excel-style
+let spxZoom=100;                     // board zoom % (persists across re-renders), applied via CSS zoom on the table
 let HC=null;                         // dc_finance id selected for Health-Check
 
 /* ---------- charts ---------- */
@@ -168,7 +190,8 @@ function propEvents(p){return DB.spxLinesFor(p.id);}
    Builder-fed ones. Builder rows always carry the deck fileName; the 2026-07-13
    sheet import has its own createdBy marker and stays normal. */
 function byHand(p){return !p.fileName&&p.createdBy!=='spx-import-2026-07-13';}
-function rowCls(p){return 'prow'+(byHand(p)?' byhand':'');}
+function isOverdueFU(p){const d=(p.fechaSeguimiento||'').slice(0,10);return p.salesStatus==='Sent'&&!!d&&d<toISO(new Date());}
+function rowCls(p){return 'prow'+(byHand(p)?' byhand':'')+(p.salesStatus==='Confirmed'?' wonrow':'')+(isOverdueFU(p)?' overdue':'');}
 function rowTitle(p){return byHand(p)?' title="Added by hand on the board — not from the Proposal Builder"':'';}
 /* the authoritative value of a proposal = Σ its children, or its own value when it has none (General/single-with-value) */
 function propValue(p){const ls=DB.spxLinesFor(p.id);if(ls.length)return ls.reduce((s,l)=>s+(+l.valueEur||0),0);return +p.valueEur||0;}
@@ -339,9 +362,8 @@ function renderProposals(app,scope){
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
   h+='</div>';
 
-  // table
-  if(VIEW==='general')h+=proposalsTableGeneral(props);
-  else h+=proposalsTableByEvent(props);
+  // table (wrapped in zoom + top-scroll chrome)
+  h+=tableChrome(VIEW==='general'?proposalsTableGeneral(props):proposalsTableByEvent(props));
 
   app.innerHTML=h;
   wireFilters();wireProposalTable();
@@ -351,13 +373,88 @@ function sel(id,label,opts,cur){
   return '<select id="'+id+'"><option value="">'+esc(label)+': all</option>'+
     opts.map(([v,l])=>'<option value="'+esc(v)+'"'+(''+cur===''+v?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>';
 }
+/* ---------- Excel-style column sort (text A→Z, numbers numeric, dates chronological; blanks always last) ---------- */
+function contactSortVal(p){const c=(p.contacts||[])[0];if(!c)return '';return (((c.first||'')+' '+(c.last||'')).trim()||c.email||'');}
+function isBlankV(v){return v==null||v===''||(typeof v==='number'&&isNaN(v));}
+function cmpV(a,b,type,dir){
+  const ab=isBlankV(a),bb=isBlankV(b);
+  if(ab&&bb)return 0; if(ab)return 1; if(bb)return -1;          // blanks sink to the bottom regardless of direction (like Excel)
+  let r;
+  if(type==='num')r=(+a)-(+b);
+  else if(type==='date')r=(''+a).localeCompare(''+b);          // ISO YYYY-MM-DD sorts chronologically as text
+  else r=(''+a).localeCompare(''+b,undefined,{sensitivity:'base',numeric:true}); // case-insensitive, natural number order
+  return r*dir;
+}
+function applySort(rows,cols,view){
+  const s=SORT[view]; if(!s||!s.col)return rows;               // no active sort → keep the caller's default order
+  const col=cols.find(c=>c.k===s.col); if(!col)return rows;
+  return rows.slice().sort((ra,rb)=>cmpV(col.get(ra),col.get(rb),col.type||'text',s.dir));
+}
+function thCells(cols,view,withActions){
+  const s=SORT[view]||{};
+  const cells=cols.map(c=>{
+    const active=s.col===c.k;
+    const arr=active?(s.dir>0?'<span class="sarr">▲</span>':'<span class="sarr">▼</span>'):'<span class="sarr sarr-dim">↕</span>';
+    return '<th class="sortable'+(c.cls?' '+c.cls:'')+(active?' sorton':'')+'" data-sort="'+c.k+'" data-view="'+view+'" title="Sort by '+esc(c.label)+'">'+esc(c.label)+' '+arr+'</th>';
+  }).join('');
+  return cells+(withActions?'<th class="actcol"></th>':'');
+}
+function setSort(view,key){const s=SORT[view];if(s.col===key)s.dir=-s.dir;else{s.col=key;s.dir=1;}render();}
+/* wide-table chrome: a zoom control + a synced top scrollbar so the horizontal bar is reachable without scrolling to the bottom */
+function tableChrome(inner){
+  return '<div class="tblscope">'
+    +'<div class="tbltools"><span>Zoom</span>'
+      +'<button class="zbtn" data-z="-1" title="Zoom out — fit more across">–</button>'
+      +'<span class="zval">'+spxZoom+'%</span>'
+      +'<button class="zbtn" data-z="1" title="Zoom in">+</button>'
+      +'<span class="hint">↔ drag the bar below to scroll wide tables</span></div>'
+    +'<div class="topscroll"><div class="topscroll-in"></div></div>'
+    +inner
+    +'</div>';
+}
+function applyZoom(scope){
+  const wrap=scope.querySelector('.tablewrap'), tbl=wrap&&wrap.querySelector('table');
+  const zval=scope.querySelector('.zval'), topin=scope.querySelector('.topscroll-in');
+  if(tbl)tbl.style.zoom=(spxZoom/100);
+  if(zval)zval.textContent=spxZoom+'%';
+  if(topin&&wrap)topin.style.width=wrap.scrollWidth+'px';
+}
+function wireTableChrome(){
+  document.querySelectorAll('.tblscope').forEach(scope=>{
+    const wrap=scope.querySelector('.tablewrap'); if(!wrap)return;
+    const top=scope.querySelector('.topscroll');
+    applyZoom(scope);
+    if(top){                                                    // two-way scroll sync between the top bar and the table
+      let lock=false;
+      wrap.addEventListener('scroll',()=>{if(lock)return;lock=true;top.scrollLeft=wrap.scrollLeft;lock=false;});
+      top.addEventListener('scroll',()=>{if(lock)return;lock=true;wrap.scrollLeft=top.scrollLeft;lock=false;});
+      if(wrap.scrollWidth<=wrap.clientWidth+2)top.style.display='none'; // nothing to scroll → hide the extra bar
+    }
+    scope.querySelectorAll('.zbtn').forEach(b=>b.onclick=()=>{
+      spxZoom=Math.max(60,Math.min(130,spxZoom+(+b.dataset.z)*10));applyZoom(scope);
+    });
+  });
+}
+function wireSortHeaders(){document.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>setSort(th.dataset.view,th.dataset.sort));}
 function proposalsTableGeneral(props){
-  let h='<div class="tablewrap"><table><thead><tr>'
-    +'<th>Company</th><th>Owner</th><th>Account type</th><th>Source</th><th>Events</th><th>Stage</th><th class="num">Prob.</th>'
-    +'<th>Included in proposal</th><th class="num">Value €</th><th>Sent date</th><th>Follow up</th><th>Contact</th>'
-    +'</tr></thead><tbody>';
-  if(!props.length)h+='<tr><td colspan="12" style="color:var(--muted)">No proposals'+(DB.spxProps.length?' under these filters.':' yet — they appear here automatically when the Proposal Builder generates a deck.')+'</td></tr>';
-  props.slice().sort((a,b)=>(''+(b.createdAt||'')).localeCompare(''+(a.createdAt||''))).forEach(p=>{
+  const cols=[
+    {k:'company', label:'Company',              type:'text', get:p=>p.company},
+    {k:'owner',   label:'Owner',                type:'text', get:p=>p.responsableName||p.responsable},
+    {k:'atype',   label:'Account type',         type:'text', get:p=>p.accountType},
+    {k:'source',  label:'Source',               type:'text', get:p=>p.source},
+    {k:'events',  label:'Events',               type:'text', get:p=>p.isGeneral?'General':DB.spxLinesFor(p.id).map(l=>shortEvent(l)).join(', ')},
+    {k:'stage',   label:'Stage',                type:'text', get:p=>p.stage},
+    {k:'prob',    label:'Prob.', cls:'num',     type:'num',  get:p=>STAGE_PROB[p.stage]},
+    {k:'contents',label:'Included in proposal', type:'text', get:p=>p.contents},
+    {k:'value',   label:'Value €', cls:'num',   type:'num',  get:p=>propValue(p)},
+    {k:'sent',    label:'Sent date',            type:'date', get:p=>(p.fechaEnvio||'').slice(0,10)},
+    {k:'fu',      label:'Follow up',            type:'date', get:p=>(p.fechaSeguimiento||'').slice(0,10)},
+    {k:'contact', label:'Contact',              type:'text', get:p=>contactSortVal(p)},
+    {k:'notes',   label:'Notes',                type:'text', get:p=>p.notas},
+  ];
+  let h='<div class="tablewrap"><table><thead><tr>'+thCells(cols,'general',true)+'</tr></thead><tbody>';
+  if(!props.length)h+='<tr><td colspan="'+(cols.length+1)+'" style="color:var(--muted)">No proposals'+(DB.spxProps.length?' under these filters.':' yet — they appear here automatically when the Proposal Builder generates a deck.')+'</td></tr>';
+  applySort(props.slice().sort((a,b)=>(''+(b.createdAt||'')).localeCompare(''+(a.createdAt||''))),cols,'general').forEach(p=>{
     const ls=DB.spxLinesFor(p.id);
     const evs=(p.isGeneral?'<span style="color:var(--muted)">General</span>':(ls.length?ls.map(l=>esc(shortEvent(l))).join(', '):'—'))+(propHasUnreg(p)?unregChip():'');
     const editable=DB.canEditProp(p);
@@ -378,6 +475,8 @@ function proposalsTableGeneral(props){
       +'<td>'+esc((p.fechaEnvio||'').slice(0,10)||'—')+'</td>'
       +'<td>'+fuCell(p)+'</td>'
       +'<td>'+contactCell(p)+'</td>'
+      +'<td>'+notesCell(p,editable)+'</td>'
+      +'<td class="actcol">'+(editable?'<button class="delx" data-del="'+p.id+'" title="Delete this proposal">✕</button>':'')+'</td>'
       +'</tr>';
   });
   h+='</tbody></table></div>';
@@ -386,17 +485,26 @@ function proposalsTableGeneral(props){
 }
 function proposalsTableByEvent(props){
   // explode into child lines; general proposals (no event) still show once
-  const rows=[];
+  let rows=[];
   props.forEach(p=>{
     const ls=DB.spxLinesFor(p.id);
     if(!ls.length){rows.push({p,l:null});return;}
     ls.forEach(l=>{if(flt.event&&lineEvKey(l)!==flt.event)return;rows.push({p,l});});
   });
-  let h='<div class="tablewrap"><table><thead><tr>'
-    +'<th>Event</th><th>Company</th><th>Owner</th><th>Source</th><th>Stage</th>'
-    +'<th>Included</th><th class="num">Value €</th><th>Follow up</th><th>Contact</th>'
-    +'</tr></thead><tbody>';
-  if(!rows.length)h+='<tr><td colspan="9" style="color:var(--muted)">No lines under these filters.</td></tr>';
+  const cols=[
+    {k:'event',   label:'Event',    type:'text', get:r=>r.l?lineEvName(r.l):(r.p.isGeneral?'General':'')},
+    {k:'company', label:'Company',  type:'text', get:r=>r.p.company},
+    {k:'owner',   label:'Owner',    type:'text', get:r=>r.p.responsableName||r.p.responsable},
+    {k:'source',  label:'Source',   type:'text', get:r=>r.p.source},
+    {k:'stage',   label:'Stage',    type:'text', get:r=>r.p.stage},
+    {k:'included',label:'Included', type:'text', get:r=>r.l?r.l.contents:r.p.contents},
+    {k:'value',   label:'Value €', cls:'num', type:'num', get:r=>r.l?(+r.l.valueEur||0):propValue(r.p)},
+    {k:'fu',      label:'Follow up',type:'date', get:r=>(r.p.fechaSeguimiento||'').slice(0,10)},
+    {k:'contact', label:'Contact',  type:'text', get:r=>contactSortVal(r.p)},
+  ];
+  rows=applySort(rows,cols,'event');
+  let h='<div class="tablewrap"><table><thead><tr>'+thCells(cols,'event',false)+'</tr></thead><tbody>';
+  if(!rows.length)h+='<tr><td colspan="'+cols.length+'" style="color:var(--muted)">No lines under these filters.</td></tr>';
   rows.forEach(({p,l})=>{
     const editable=DB.canEditProp(p);
     const ev=l?eventLineCell(l,editable):(p.isGeneral?'<span style="color:var(--muted)">General (no event)</span>':'—');
@@ -455,6 +563,19 @@ function contactCell(p){
   const tip=c.map((x,i)=>(i===0?'★ main: ':'')+(((x.first||'')+' '+(x.last||'')).trim()||'—')+(x.email?' · '+x.email:'')+(x.phone?' · '+x.phone:'')).join('\n');
   return '<span title="'+esc(tip)+'"><span style="color:#FF4A00">★</span> '+esc(name)+(c.length>1?' <span style="color:var(--muted)">+'+(c.length-1)+'</span>':'')+'</span>';
 }
+function notesCell(p,editable){
+  const t=(p.notas||'').trim();
+  if(!editable)return t?'<span class="clip" title="'+esc(t)+'">'+esc(t)+'</span>':'<span style="color:var(--muted)">—</span>';
+  return '<span class="notescell" data-nid="'+p.id+'" title="'+esc(t||'Click to add a note')+'">'
+    +(t?'<span class="clip">'+esc(t)+'</span>':'<span style="color:#b8973f">+ note</span>')+'</span>';
+}
+function startNotesEdit(sp){
+  const id=+sp.dataset.nid;const p=DB.spxProps.find(x=>x.id==id);if(!p)return;
+  const td=sp.parentElement;td.innerHTML='<input class="money" style="width:210px" type="text" placeholder="note…">';
+  const inp=td.firstChild;inp.value=p.notas||'';inp.focus();let done=false;
+  const commit=()=>{if(done)return;done=true;p.notas=inp.value;DB.save();render();};
+  inp.onblur=commit;inp.onkeydown=e=>{if(e.key==='Enter')commit();if(e.key==='Escape'){done=true;render();}};
+}
 
 /* ----- proposals interactions ----- */
 function setView(v){VIEW=v;render();}
@@ -466,9 +587,14 @@ function wireFilters(){
   const q=document.getElementById('f_q');if(q)q.oninput=()=>{flt.q=q.value;clearTimeout(q._t);q._t=setTimeout(render,250);};
 }
 function wireProposalTable(){
+  wireTableChrome();wireSortHeaders();
+  // delete straight from the board (own proposals; sales-lead/admin any) — perms re-checked in deleteProposal
+  document.querySelectorAll('.delx').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteProposal(+b.dataset.del);});
+  // inline notes edit (own proposals; sales-lead/admin any)
+  document.querySelectorAll('.notescell').forEach(sp=>sp.onclick=e=>{e.stopPropagation();startNotesEdit(sp);});
   // row → detail panel
   document.querySelectorAll('tr.prow').forEach(tr=>tr.onclick=e=>{
-    if(e.target.closest('.mval,.stsel,.warnpill,[data-linkline]'))return; // inline controls handle themselves
+    if(e.target.closest('.mval,.stsel,.warnpill,.delx,.notescell,[data-linkline]'))return; // inline controls handle themselves
     openPanel(+tr.dataset.id);
   });
   // status inline
