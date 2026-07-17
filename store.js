@@ -855,33 +855,43 @@ function tcContinuousSeconds(personId){
   es.forEach(e=>{if(e.kind==='in'){if(openAt==null)openAt=tcSecondsOf(e.time);}else if(e.kind==='out')openAt=null;});
   if(openAt==null)return 0;const now=new Date();return Math.max(0,now.getHours()*3600+now.getMinutes()*60+now.getSeconds()-openAt);
 }
-/* gentle "time for a break?" nudge after a long unbroken stretch (like a car's fatigue alert).
-   Not mandatory — fully dismissible; re-appears after a snooze if they keep going. */
-const BREAK_AFTER_H=5, BREAK_SNOOZE_MIN=60;
-let _breakSnoozeUntil=0,_breakTimer=null;
+/* "time for a break?" nudge — Belén's spec (18 Jul): appears after 4.5 h of unbroken
+   clocked time, snoozeable ONCE for 30 min, then ONCE for 1 h, then never again that day.
+   The snooze ladder is persisted per person per day (survives reloads). */
+const BREAK_AFTER_H=4.5, BREAK_SNOOZES=[30,60]; // minutes: 1st snooze, 2nd snooze — then done for the day
+let _breakTimer=null;
+function breakKey(){return 'dcBreakSnooze|'+(DB.currentUser?DB.currentUser.id:0)+'|'+toISO(new Date());}
+function breakState(){try{return JSON.parse(localStorage.getItem(breakKey()))||{n:0,until:0};}catch(e){return {n:0,until:0};}}
+function setBreakState(s){try{localStorage.setItem(breakKey(),JSON.stringify(s));}catch(e){}}
 function breakReminderTick(){
   try{flushPendingPunches();}catch(e){} // retry any punch that failed to save
   if(!DB.currentUser||!DB.tcReady())return;
   const cont=tcContinuousSeconds(DB.currentUser.id),el=document.getElementById('breakToast');
-  if(cont>=BREAK_AFTER_H*3600 && Date.now()>_breakSnoozeUntil){ if(!el)showBreakToast(cont); }
+  const s=breakState();
+  if(cont>=BREAK_AFTER_H*3600 && s.n<=BREAK_SNOOZES.length && Date.now()>s.until){ if(!el)showBreakToast(cont,s); }
   else if(el&&cont<60){el.remove();} // they clocked out — clear it
-  try{weeklyGoalTick();}catch(e){} // also check the weekly hours goal (last-30-min nudge)
+  try{weeklyGoalTick();}catch(e){} // also run the weekly-hours alarm ladder
 }
-function showBreakToast(cont){
+function showBreakToast(cont,s){
   const h=Math.floor(cont/3600),m=Math.floor((cont%3600)/60);
+  const nextSnooze=s.n<BREAK_SNOOZES.length?BREAK_SNOOZES[s.n]:null; // null → last showing today
   const d=document.createElement('div');d.id='breakToast';
   d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:9998;background:#2B2B2B;color:#fff;border-radius:12px;padding:14px 16px;max-width:320px;box-shadow:0 8px 30px rgba(0,0,0,.28);font-family:Segoe UI,system-ui,sans-serif;font-size:13px';
   d.innerHTML='<div style="font-weight:700;margin-bottom:4px">🚗☕ Time for a break?</div>'+
     '<div style="color:#e6e4df;margin-bottom:10px">You’ve been clocked in for '+h+' h '+String(m).padStart(2,'0')+' without a break. Stopping for lunch or a rest? Remember to clock back in when you’re back.</div>'+
     '<div style="display:flex;gap:8px"><button id="bt_out" style="background:#FF4A00;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;font:inherit">Clock out for a break</button>'+
-    '<button id="bt_dismiss" style="background:none;color:#cfcdc7;border:1px solid #55534e;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">Not yet</button></div>';
+    '<button id="bt_dismiss" style="background:none;color:#cfcdc7;border:1px solid #55534e;border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">'+(nextSnooze?'Snooze '+(nextSnooze>=60?'1 h':nextSnooze+' min'):'Don’t show again today')+'</button></div>';
   document.body.appendChild(d);
   document.getElementById('bt_out').onclick=async ()=>{
-    d.remove();_breakSnoozeUntil=0;
+    d.remove();setBreakState({n:0,until:0}); // a real break resets the ladder
     await DB.punch('out'); // awaited + queued-on-failure, like the clock buttons
     window.dispatchEvent(new Event('dc-remote'));
   };
-  document.getElementById('bt_dismiss').onclick=()=>{_breakSnoozeUntil=Date.now()+BREAK_SNOOZE_MIN*60000;d.remove();};
+  document.getElementById('bt_dismiss').onclick=()=>{
+    const n=s.n+1;
+    setBreakState(n<=BREAK_SNOOZES.length?{n,until:Date.now()+BREAK_SNOOZES[n-1]*60000}:{n,until:8640000000000000}); // past the ladder → silent for the rest of the day
+    d.remove();
+  };
 }
 function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and any approved leave (holiday/sick/maternity/paternity)
   const d=ymd(iso);
@@ -973,24 +983,57 @@ function tcWeekProgress(personId,mondayISO){
   const worked=sec/3600;
   return {target,worked,remaining:Math.max(0,target-worked),pct:target>0?Math.min(1,worked/target):1,done:target>0&&worked>=target-1e-6};
 }
-/* nudge when someone is within the last 30 min of their weekly hours (global, like the break toast) */
-const WEEK_NEAR_H=0.5; let _weekNearShownWk='';
+/* escalating weekly-hours alarms — Belén's spec (18 Jul): "It's hard not to forget the
+   time!" → alarm 1 h before the week's allotted hours are consumed, then 30 min, then
+   15 min, then every 5 min till the end. Only while clocked in (the countdown only moves
+   then); fired marks persist per person per week so a reload never re-spams. */
+const WEEK_ALARMS=[60,30,15,10,5,0]; // minutes-left marks
+function weekAlarmKey(){return 'dcWeekAlarms|'+(DB.currentUser?DB.currentUser.id:0)+'|'+toISO(monday(new Date()));}
 function weeklyGoalTick(){
   if(!DB.currentUser||!DB.tcReady())return;
   const me=DB.currentUser, info=tcDayInfo(me.id,toISO(new Date()));
-  const p=tcWeekProgress(me.id), wk=toISO(monday(new Date())), el=document.getElementById('weekNearToast');
-  if(info.open&&p.remaining>0&&p.remaining<=WEEK_NEAR_H&&_weekNearShownWk!==wk){ if(!el){showWeekNearToast(p);_weekNearShownWk=wk;} }
-  else if(el&&p.remaining<=0){const b=el.querySelector('.wnt-body');if(b)b.innerHTML='✓ That’s your '+Math.round(p.target)+' h — you can clock out whenever.';}
+  const el=document.getElementById('weekAlarmToast');
+  if(!info.open){if(el)el.remove();return;}
+  const p=tcWeekProgress(me.id);
+  if(p.target<=0)return;
+  const remMin=Math.floor(p.remaining*60);
+  if(remMin>60)return;
+  let fired={};try{fired=JSON.parse(localStorage.getItem(weekAlarmKey()))||{};}catch(e){}
+  const crossed=WEEK_ALARMS.filter(t=>remMin<=t&&!fired[t]);
+  if(!crossed.length)return;
+  const due=Math.min.apply(null,crossed);            // the most urgent mark not yet sounded
+  crossed.forEach(t=>fired[t]=1);                    // crossing 12 min marks 60/30/15 as done in one go
+  try{localStorage.setItem(weekAlarmKey(),JSON.stringify(fired));}catch(e){}
+  showWeekAlarm(p,remMin,due);
 }
-function showWeekNearToast(p){
-  const rem=Math.max(1,Math.round(p.remaining*60));
-  const d=document.createElement('div');d.id='weekNearToast';
-  d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:9998;background:#1D6B34;color:#fff;border-radius:12px;padding:14px 16px;max-width:320px;box-shadow:0 8px 30px rgba(0,0,0,.28);font-family:Segoe UI,system-ui,sans-serif;font-size:13px';
-  d.innerHTML='<div style="font-weight:700;margin-bottom:4px">🔔 Almost done for the week</div>'+
-    '<div class="wnt-body" style="color:#dff0e4;margin-bottom:10px">Under 30 minutes — about '+rem+' min left to reach your '+Math.round(p.target)+' h this week.</div>'+
-    '<div style="display:flex;gap:8px;justify-content:flex-end"><button id="wn_ok" style="background:#fff;color:#1D6B34;border:none;border-radius:8px;padding:7px 12px;font-weight:600;cursor:pointer;font:inherit">Got it</button></div>';
+function alarmBeep(n){ // short attention beeps; silently skipped if the browser blocks audio
+  try{const ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended')ac.resume();
+    let t=ac.currentTime;
+    for(let i=0;i<n;i++){const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);
+      o.frequency.value=880;g.gain.setValueAtTime(0.14,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.22);
+      o.start(t);o.stop(t+0.24);t+=0.32;}
+  }catch(e){}
+}
+function showWeekAlarm(p,remMin,mark){
+  const old=document.getElementById('weekAlarmToast');if(old)old.remove();
+  const urgent=remMin<=15, done=remMin<=0;
+  const bg=done?'#D32230':urgent?'#C43A12':'#C77800';
+  const head=done?'⏰ That’s your '+Math.round(p.target)+' h for this week':'⏰ '+remMin+' min of your week left';
+  const body=done
+    ?'Your allotted weekly hours are consumed — time to clock out.'
+    :'About '+remMin+' min until your '+Math.round(p.target)+' h for this week are used up.'+(urgent?' Wrap up and clock out on time.':'');
+  const d=document.createElement('div');d.id='weekAlarmToast';
+  d.style.cssText='position:fixed;left:50%;transform:translateX(-50%);top:14px;z-index:9999;background:'+bg+';color:#fff;border-radius:12px;padding:14px 20px;min-width:340px;max-width:520px;box-shadow:0 10px 34px rgba(0,0,0,.35);font-family:Segoe UI,system-ui,sans-serif;font-size:14px';
+  d.innerHTML='<div style="font-weight:800;font-size:15px;margin-bottom:3px">'+head+'</div>'+
+    '<div style="opacity:.94;margin-bottom:10px">'+body+'</div>'+
+    '<div style="display:flex;gap:8px"><button id="wa_out" style="background:#fff;color:'+bg+';border:none;border-radius:8px;padding:7px 14px;font-weight:700;cursor:pointer;font:inherit">Clock out now</button>'+
+    (done?'':'<button id="wa_ok" style="background:none;color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit">OK</button>')+'</div>';
   document.body.appendChild(d);
-  document.getElementById('wn_ok').onclick=()=>d.remove();
+  alarmBeep(done?4:urgent?3:2);
+  document.getElementById('wa_out').onclick=async ()=>{d.remove();await DB.punch('out');window.dispatchEvent(new Event('dc-remote'));};
+  const ok=document.getElementById('wa_ok');if(ok)ok.onclick=()=>d.remove();
+  // the final "time's up" banner stays until they clock out (weeklyGoalTick removes it then)
 }
 /* in-app alarm badges on the nav (email digests can be added later via an Edge Function) */
 function decorateNav(){
