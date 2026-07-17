@@ -1432,12 +1432,18 @@ const DB={
       /* HR module (projects + holidays + timesheets): tolerant too */
       this.data.projects=[];this.data.holidays=[];this.data.timesheets=[];_hrReady=false;
       try{
+        /* holidays paged too: ~100+ rows/yr — the 1000-row cap would silently
+           truncate balances in a few seasons (same trap as invoices/SPX) */
+        const pagedHol=(async()=>{const out=[];let from=0,page=1000;
+          for(;;){const r=await sb.from('dc_holidays').select('*').eq('deleted',false).order('id').range(from,from+page-1);
+            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
+            if(!r.data||r.data.length<page)break;from+=page;}return out;})();
         const [pr,ho,ts]=await Promise.all([
           sb.from('dc_projects').select('*').eq('deleted',false).order('sort'),
-          sb.from('dc_holidays').select('*').eq('deleted',false).order('id'),
+          pagedHol,
           sb.from('dc_timesheets').select('*').eq('deleted',false).order('id')]);
-        if(pr.error)throw pr.error;if(ho.error)throw ho.error;if(ts.error)throw ts.error;
-        this.data.projects=pr.data||[];this.data.holidays=ho.data||[];this.data.timesheets=ts.data||[];
+        if(pr.error)throw pr.error;if(ts.error)throw ts.error;
+        this.data.projects=pr.data||[];this.data.holidays=ho||[];this.data.timesheets=ts.data||[];
         _hrReady=true;
         /* tolerant like the events kind/lanes split: until dispatch_hol_year.sql adds
            chargeYear, never push the column (PostgREST rejects unknown columns).
@@ -1869,7 +1875,7 @@ function applyRemote(key,row){
 /* a colleague's live edit must NOT wipe a form the user is halfway through
    filling. If they're typing in a field, hold the re-render until they leave it. */
 let _remotePending=false;
-function userIsTyping(){const a=document.activeElement;return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA')&&a.type!=='button'&&a.type!=='checkbox'&&a.type!=='radio');}
+function userIsTyping(){const a=document.activeElement;return !!(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT')&&a.type!=='button'&&a.type!=='checkbox'&&a.type!=='radio');} // SELECT too — a re-render mid-pick wiped half-filled forms
 function scheduleRemoteRender(){
   clearTimeout(_remoteTimer);
   _remoteTimer=setTimeout(function tick(){
@@ -1908,7 +1914,7 @@ window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
   });
 })();
 /* don't let a navigation swallow an edit still waiting in the 700 ms sync window */
-window.addEventListener('beforeunload',e=>{if(_saveTimer||_syncing){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(_saveTimer||_syncing||_syncFails){e.preventDefault();e.returnValue='';}});
 async function boot(renderFn){
   if(USE_SUPABASE){
     await injectSB();
@@ -1987,13 +1993,22 @@ function toolEmbedUrl(t,token){
   let u=t.url;
   const add=q=>{u+=(u.includes('?')?'&':'?')+q;};
   if(/streamlit\.app/i.test(u))add('embed=true');
-  if(t.dcAuth&&token)add('dc_token='+encodeURIComponent(token));
+  if(t.dcAuth&&token){
+    add('dc_token='+encodeURIComponent(token));
+    /* the refresh token lets the tool mint a FRESH access token at write time —
+       without it, a builder session open >1h writes with a dead token and the
+       proposal is lost (audit: builder record-loss path #3) */
+    if(window._dcRefresh)add('dc_refresh='+encodeURIComponent(window._dcRefresh));
+  }
   return u;
 }
-/* current Supabase access token (for dcAuth tool embeds); '' in local mode */
+/* current Supabase access token (for dcAuth tool embeds); '' in local mode.
+   Also stashes the session's refresh token for toolEmbedUrl. */
 async function dcToken(){
   if(!USE_SUPABASE||!sb)return '';
-  try{const {data:{session}}=await sb.auth.getSession();return (session&&session.access_token)||'';}
+  try{const {data:{session}}=await sb.auth.getSession();
+    window._dcRefresh=(session&&session.refresh_token)||'';
+    return (session&&session.access_token)||'';}
   catch(e){return '';}
 }
 function navBar(active){

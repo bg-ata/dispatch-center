@@ -980,7 +980,9 @@ function savePanel(id){
   const st=statusOfStage(p.stage);if(st)p.salesStatus=st;   // stage drives the derived status; blank stage keeps the legacy one
   if(p.stage!=='Lost')p.reasonForLoss=null;                 // a reason only makes sense on a lost deal
   askLegalOnSigned(p,prev);
-  DB.save();closePanel();render();
+  /* audit: confirm the save before closing the panel — an RLS-refused edit used to
+     look saved and silently revert on the next load */
+  DB.saveNow().then(ok=>{if(ok){closePanel();render();}}); // on failure the red banner explains; panel stays open
 }
 
 /* ---------- add a proposal by hand ---------- */
@@ -1065,7 +1067,7 @@ function saveNew(){
     notas:document.getElementById('nc_notas').value.trim(),contacts:contacts,fileName:null,sentLink:null,
     isGeneral:general,mode:general?'general':(lines.length>1?'multi':'single'),active:true,superseded:false});
   lines.forEach(l=>DB.spxLines.push(l));
-  DB.save();closePanel();render();
+  DB.saveNow().then(ok=>{if(ok){closePanel();render();}}); // keep the form open until the board confirms
 }
 /* ---------- event lines on an existing proposal (multi-event) ---------- */
 function panelAddLine(pid){
@@ -1095,7 +1097,7 @@ function deleteProposal(id){
   if(!confirm('Delete the proposal for “'+(p.company||'')+'”? It can be recovered from the audit log.'))return;
   DB.data.spxProps=DB.spxProps.filter(x=>x.id!=id);
   DB.data.spxLines=DB.spxLines.filter(l=>l.parentId!=id);
-  DB.save();closePanel();render();
+  DB.saveNow().then(ok=>{if(ok){closePanel();render();}});
 }
 function deleteLine(lineId){
   const l=DB.spxLines.find(x=>x.id==lineId);if(!l)return;

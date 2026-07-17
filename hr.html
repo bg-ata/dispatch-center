@@ -185,9 +185,12 @@ function renderBackfill(){
       type:document.getElementById('b_type').value,
       note:document.getElementById('b_note').value.trim()||'loaded from record',status:'approved',
       log:[{by:me.name,at:new Date().toISOString(),action:'loaded from record (pre-approved)'}]});
-    DB.save();
-    const m=document.getElementById('b_msg');m.textContent='Added ✓';setTimeout(()=>m.textContent='',3000);
-    renderBackfill();renderBalances();
+    DB.saveNow().then(ok=>{
+      const m=document.getElementById('b_msg');if(!m)return;
+      m.textContent=ok?'Added ✓':'⚠ Not saved yet — retrying in the background.';
+      if(ok)setTimeout(()=>{if(m)m.textContent='';},3000);
+      renderBackfill();renderBalances();
+    });
   };
   /* HR admin: cancel any approved holiday on request (kept visible as cancelled, reason logged) */
   const xh=document.getElementById('x_hol');
@@ -200,9 +203,12 @@ function renderBackfill(){
       if(reason===null)return;
       h.status='cancelled';
       h.log=(h.log||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),action:'cancelled by HR on request',note:reason}]);
-      DB.save();
-      const m=document.getElementById('x_msg');m.textContent='Cancelled ✓';setTimeout(()=>m.textContent='',3000);
-      renderBackfill();renderBalances();
+      DB.saveNow().then(ok=>{
+        const m=document.getElementById('x_msg');if(!m)return;
+        m.textContent=ok?'Cancelled ✓':'⚠ Not saved yet — retrying in the background.';
+        if(ok)setTimeout(()=>{if(m)m.textContent='';},3000);
+        renderBackfill();renderBalances();
+      });
     };
   }
   /* HR: place someone on sick / maternity / paternity leave */
@@ -217,9 +223,12 @@ function renderBackfill(){
       DB.holidays.push({id:DB.newId(),personId:+lw.value,dateFrom:f,dateTo:t,workDays:wd,type:ty,
         note:document.getElementById('lv_note').value.trim()||TYPE_LABEL[ty],status:'approved',
         log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:'placed on '+TYPE_LABEL[ty].toLowerCase()+' by HR'}]});
-      DB.save();
-      const m=document.getElementById('lv_msg');m.textContent='Leave added ✓';setTimeout(()=>m.textContent='',3000);
-      renderBackfill();renderBalances();
+      DB.saveNow().then(ok=>{
+        const m=document.getElementById('lv_msg');if(!m)return;
+        m.textContent=ok?'Leave added ✓':'⚠ Not saved yet — retrying in the background.';
+        if(ok)setTimeout(()=>{if(m)m.textContent='';},3000);
+        renderBackfill();renderBalances();
+      });
     };
   }
   /* HR: carry-over / borrowed days adjustment (a signed balance change for a year) */
@@ -233,9 +242,12 @@ function renderBackfill(){
       DB.holidays.push({id:DB.newId(),personId:+aw.value,dateFrom:d0,dateTo:d0,workDays:days,type:'adjust',
         note:(kind==='carryover'?'Carry-over from '+(yr-1):kind==='borrow'?'Borrowed from '+(yr+1):'Adjustment'),status:'approved',
         log:[{by:DB.currentUser.name,at:new Date().toISOString(),action:(days>0?'+':'')+days+' days '+kind+' by HR'}]});
-      DB.save();
-      const m=document.getElementById('aj_msg');m.textContent='Adjustment added ✓';setTimeout(()=>m.textContent='',3000);
-      renderBackfill();renderBalances();
+      DB.saveNow().then(ok=>{
+        const m=document.getElementById('aj_msg');if(!m)return;
+        m.textContent=ok?'Adjustment added ✓':'⚠ Not saved yet — retrying in the background.';
+        if(ok)setTimeout(()=>{if(m)m.textContent='';},3000);
+        renderBackfill();renderBalances();
+      });
     };
   }
 }

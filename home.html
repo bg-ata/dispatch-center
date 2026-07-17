@@ -518,13 +518,17 @@ function decide(id,ok){
     if(o&&o.status!=='cancelled'){o.status='cancelled';
       o.log=(o.log||[]).concat([{by:me.name,at:new Date().toISOString(),action:'cancelled — replaced by the approved change to '+fmtRange(r)}]);}
   }
-  DB.save();
-  try{ // tell the requester what happened (🔔 inbox); silently no-ops if the inbox table isn't there yet
-    let txt='Your time-off ('+fmtRange(r)+') was '+(ok?'approved':'denied')+' by '+me.name;
-    if(ok&&r.status!=='approved')txt+=' — next: '+holStageLabel(r);
-    notifySend(r.personId,'holiday',txt,'home.html');
-  }catch(e){}
-  render();
+  /* audit: a decision must be CONFIRMED saved before we notify the requester —
+     otherwise the notification announces an approval that never reached the server */
+  DB.saveNow().then(saved=>{
+    if(!saved){render();return;}   // banner explains; the decision retries in the background
+    try{ // tell the requester what happened (🔔 inbox); silently no-ops if the inbox table isn't there yet
+      let txt='Your time-off ('+fmtRange(r)+') was '+(ok?'approved':'denied')+' by '+me.name;
+      if(ok&&r.status!=='approved')txt+=' — next: '+holStageLabel(r);
+      notifySend(r.personId,'holiday',txt,'home.html');
+    }catch(e){}
+    render();
+  });
 }
 
 /* ================= 📝 to-do (personal, NEW) ================= */
@@ -630,6 +634,10 @@ function renderHolPanel(){
     '<span id="r_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>';
   document.getElementById('chainTxt').textContent=holChain(me).map(s=>s.key==='hr'?'HR':s.who.name).join(' → ');
   renderMine();wireForm();
+  /* audit: a re-render used to HIDE the "changing your approved holidays" banner while the
+     change state stayed armed — the next innocent-looking request silently became a change
+     that cancels an approved holiday. Re-arm the banner so the state is always visible. */
+  if(changeOf){const o=DB.holidays.find(x=>x.id==changeOf);if(o)startChange(changeOf,true);else changeOf=null;}
 }
 function renderMine(){
   const me=DB.currentUser;const tbl=document.getElementById('mine');if(!tbl)return;
@@ -656,16 +664,16 @@ function renderMine(){
   tbl.querySelectorAll('[data-chg]').forEach(b=>b.onclick=()=>startChange(+b.dataset.chg));
   wireMsgs(tbl);
 }
-function startChange(id){
+function startChange(id,rearm){ // rearm=true: re-showing after a re-render — no fold-open, no scroll
   const o=DB.holidays.find(x=>x.id==id);if(!o)return;
   changeOf=id;
-  openFold('holFold');
+  if(!rearm)openFold('holFold');
   const ban=document.getElementById('chgBanner');
   ban.style.display='block';
   ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'office days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
   document.getElementById('chgOff').onclick=e=>{e.preventDefault();changeOf=null;ban.style.display='none';const ty2=document.getElementById('r_type');if(ty2)ty2.disabled=false;};
   const ty=document.getElementById('r_type');ty.value=o.type||'vacation';ty.disabled=true;
-  ban.scrollIntoView({block:'center',behavior:'smooth'});
+  if(!rearm)ban.scrollIntoView({block:'center',behavior:'smooth'});
 }
 function wireForm(){
   const f=document.getElementById('r_from'),t=document.getElementById('r_to'),ty=document.getElementById('r_type');
@@ -701,12 +709,20 @@ function wireForm(){
       replaces:orig?orig.id:null,
       note:document.getElementById('r_note').value.trim(),status:chain[0].key,
       log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'office days':'holidays'))}]});
-    DB.save();
-    changeOf=null;document.getElementById('chgBanner').style.display='none';ty.disabled=false;
-    f.value='';t.value='';document.getElementById('r_note').value='';upd();
-    const m=document.getElementById('r_msg');m.textContent='Sent — '+(chain[0].key==='hr'?'HR':chain[0].who.name)+' has been flagged.';
-    setTimeout(()=>{const m2=document.getElementById('r_msg');if(m2)m2.textContent='';},4000);
-    render();
+    /* audit: wait for the database before saying "Sent" — a backgrounded phone
+       suspends the debounce timer and the request never existed */
+    const sendBtn=document.getElementById('r_send');sendBtn.disabled=true;sendBtn.textContent='Sending…';
+    DB.saveNow().then(ok=>{
+      sendBtn.disabled=false;sendBtn.textContent='Send request';
+      const m=document.getElementById('r_msg');
+      if(!ok){if(m)m.textContent='⚠ Not sent yet — retrying in the background. Keep the app open.';return;}
+      changeOf=null;
+      render();   // rebuild FIRST, then write the confirmation on the fresh node (it used to be wiped instantly)
+      openFold('holFold');
+      const m2=document.getElementById('r_msg');
+      if(m2){m2.textContent='Sent — '+(chain[0].key==='hr'?'HR':chain[0].who.name)+' has been flagged.';
+        setTimeout(()=>{const m3=document.getElementById('r_msg');if(m3)m3.textContent='';},4000);}
+    });
   };
 }
 
