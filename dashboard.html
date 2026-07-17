@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=65"></script>
+<script src="store.js?v=66"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -346,6 +346,7 @@ document.getElementById('f_save').onclick=()=>{
     city:f_city.value.trim(),'when':f_when.value.trim(),pm:f_pm.value.trim(),sales:f_sales.value.trim(),
     target:num('f_target'),stretch:num('f_stretch'),invoiced:num('f_invoiced'),spex:num('f_spex'),
     notes:f_notes.value.trim()});
+  try{DB.ensureEventLines();}catch(e){} // new Money event → its invoicing item (código pending) exists at once
   DB.save();document.getElementById('modal').classList.remove('on');renderYear();
 };
 /* ---------- weekly report for the General Manager (copy-into-email) ---------- */

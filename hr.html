@@ -92,7 +92,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=65"></script>
+<script src="store.js?v=66"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -433,7 +433,9 @@ function renderMgr(){
     h+='<div class="panel"><h3>Project numbers'+visBadge('Belén + HR + Jesús')+'</h3><p class="hint">Add next year’s events here; retire finished ones (their history stays). '+
       'Only Belén, Carlos and Jesús can create these — and the code follows the running order.</p><table>'+
       '<tr><th>#</th><th>Project</th><th>Code</th><th></th></tr>'+
-      DB.projects.filter(p=>!p.kind).sort(projCmp).map((p,i)=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td class="code">'+(i+1)+'</td><td>'+esc(p.label)+'</td><td class="code">'+esc(p.code||'—')+'</td>'+
+      DB.projects.filter(p=>!p.kind).sort(projCmp).map((p,i)=>'<tr'+(p.active===false?' style="opacity:.45"':'')+'><td class="code">'+(i+1)+'</td>'+
+        '<td><input data-pl="'+p.id+'" value="'+esc(p.label)+'" style="font:inherit;width:230px;padding:3px 6px;border:1px solid #e3e1da;border-radius:6px"></td>'+
+        '<td><input data-pc="'+p.id+'" value="'+esc(p.code||'')+'" placeholder="pending" style="font:inherit;width:86px;padding:3px 6px;border:1px solid #e3e1da;border-radius:6px'+(p.code?'':';background:#ffe2c4')+'" title="'+(p.code?'Accounting cost code':'Code pending — fill it in when accounting assigns it; it also fills the matching invoicing item')+'"></td>'+
         '<td><button class="btn" style="font-size:11px;padding:3px 9px" data-tgl="'+p.id+'">'+(p.active===false?'Reactivate':'Retire')+'</button></td></tr>').join('')+
       '</table><div class="padd"><label>New project label<input id="np_label" placeholder="02. Hidrógeno 27"></label>'+
       '<label>Cost code<input id="np_code" value="'+nextProjectCode()+'" style="width:100px"></label>'+
@@ -448,6 +450,20 @@ function renderMgr(){
     if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can retire project numbers.');return;}
     const p=DB.projects.find(x=>x.id==b.dataset.tgl);if(!p)return;
     p.active=(p.active===false);DB.save();renderMgr();});
+  /* project lines are EDITABLE (Belén 2026-07-17): auto-created lines arrive with the
+     code pending; Jesús fills it here when accounting assigns it — the same code then
+     flows to the event's invoicing item (and vice versa), one fill covers both. */
+  box.querySelectorAll('[data-pl]').forEach(el=>el.onchange=()=>{
+    if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can edit project lines.');renderMgr();return;}
+    const p=DB.projects.find(x=>x.id==el.dataset.pl);if(!p)return;
+    const l=el.value.trim();if(!l){alert('A project needs a label.');renderMgr();return;}
+    p.label=l;DB.save();});
+  box.querySelectorAll('[data-pc]').forEach(el=>el.onchange=()=>{
+    if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can edit project codes.');renderMgr();return;}
+    const p=DB.projects.find(x=>x.id==el.dataset.pc);if(!p)return;
+    const code=el.value.trim()||null;
+    if(code&&DB.projects.some(x=>x.id!=p.id&&(x.code||'')===code)){alert('Code '+code+' is already in use by "'+DB.projects.find(x=>x.id!=p.id&&(x.code||'')===code).label+'". Codes must be unique.');renderMgr();return;}
+    p.code=code;DB.syncEventCodes();DB.save();renderMgr();});
   const ab=document.getElementById('np_add');
   if(ab)ab.onclick=()=>{
     if(!DB.canManageProjects()){alert('Only Belén, Carlos and Jesús can create project numbers.');return;}

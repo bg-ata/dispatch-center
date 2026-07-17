@@ -1308,6 +1308,24 @@ const SUPABASE_URL='https://dxgvbufsifgowwfggvmr.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4Z3ZidWZzaWZnb3d3Zmdndm1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0ODM1OTUsImV4cCI6MjA5ODA1OTU5NX0.EDMWWjMuDM0jS0d0SwzdhuW_ZnHP0T0kqwL3xc6Cw-w';
 const USE_SUPABASE=!!SUPABASE_URL;
 let sb=null,_saveTimer=null,_syncing=false,_pendingSync=false,_remoteTimer=null,_lastId=0;
+let _syncFails=0,_syncErr='',_syncRetryTimer=null;   // failed-sync retry state (audit Critical 3)
+/* Fixed banner while an edit could not be saved: the data is still on this device and
+   retries automatically. After 5 straight refusals (a permissions "no" is permanent,
+   not transient) it offers discard-and-reload as an explicit user choice. */
+function renderSyncBanner(){
+  let b=document.getElementById('syncBanner');
+  if(!_syncFails){if(b)b.remove();return;}
+  if(!document.body)return;
+  if(!b){b=document.createElement('div');b.id='syncBanner';
+    b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#D32230;color:#fff;font:600 13px \'Segoe UI\',sans-serif;padding:10px 16px;text-align:center;box-shadow:0 -2px 8px rgba(0,0,0,.25)';
+    document.body.appendChild(b);}
+  b.innerHTML=_syncFails<5
+    ?'⚠ A change could not be saved yet — retrying automatically. Keep this page open. <a href="#" id="syncRetry" style="color:#fff;text-decoration:underline">Retry now</a>'
+    :'⚠ A change keeps being refused ('+esc(_syncErr)+'). It may not be allowed for your access level. <a href="#" id="syncRetry" style="color:#fff;text-decoration:underline">Try again</a> &nbsp;·&nbsp; <a href="#" id="syncDiscard" style="color:#fff;text-decoration:underline">Discard that change and reload</a>';
+  const r=document.getElementById('syncRetry');if(r)r.onclick=e=>{e.preventDefault();DB.syncNow();};
+  const d=document.getElementById('syncDiscard');if(d)d.onclick=e=>{e.preventDefault();if(confirm('Discard the unsaved change and reload the page?'))location.reload();};
+}
+window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
@@ -1319,7 +1337,8 @@ const COLS={
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
-  projects:['id','label','code','kind','sort','active'],
+  projects:['id','label','code','kind','sort','active',
+    'eventId'], // board-event link for auto-created lines (dispatch_event_lines.sql)
   /* chargeYear = which holiday year these days come out of. Normally derived from the dates
      (Jan/Feb -> previous year), stored only when HR overrides it. Tolerant: stripped below
      if dispatch_hol_year.sql hasn't been run yet. */
@@ -1427,6 +1446,14 @@ const DB={
         if(this.data.holidays.length && !('chargeYear' in this.data.holidays[0])){
           window._holYearColMissing=true;
           const i2=COLS.holidays.indexOf('chargeYear');if(i2>=0)COLS.holidays.splice(i2,1);
+        }
+        /* event-line cascade is tolerant too: until dispatch_event_lines.sql adds
+           dc_projects."eventId", never push it and skip the auto-project sweep
+           (without the link column the dedupe cannot be trusted). */
+        window._projEvReady=true;
+        if(this.data.projects.length && !('eventId' in this.data.projects[0])){
+          window._projEvReady=false;
+          const i3=COLS.projects.indexOf('eventId');if(i3>=0)COLS.projects.splice(i3,1);
         }
       }catch(e){console.warn('HR module not ready:',e.message||e);}
       /* time clock (registro horario): append-only + no "deleted" column → own paged load */
@@ -1567,10 +1594,20 @@ const DB={
         if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
       }
       snapshot();
+      _syncFails=0;renderSyncBanner();          // success clears the not-saved banner
     }catch(e){
+      /* audit Critical 3: do NOT reload — a reload discards every unsaved edit in
+         this.data. Keep the edits (the shadow diff is untouched, so the very same
+         rows retry), show a persistent banner, and retry with backoff. Only after
+         repeated refusals (an RLS "not allowed" is permanent) does the banner offer
+         "discard and reload" as an EXPLICIT choice — never automatic data loss. */
       console.error('sync failed',e);
-      alert('That change could not be saved ('+(e.message||e)+').\nUsually this means your access level does not allow it. The page will reload to stay in sync.');
-      location.reload();return false;
+      _syncFails++;_syncErr=String((e&&(e.message||e))||'unknown error');
+      renderSyncBanner();
+      if(!_syncRetryTimer)_syncRetryTimer=setTimeout(()=>{_syncRetryTimer=null;DB.syncNow();},Math.min(60,10*_syncFails)*1000);
+      _syncing=false;
+      if(_pendingSync){_pendingSync=false;}     // the scheduled retry covers it
+      return false;
     }finally{_syncing=false;}
     if(_pendingSync){_pendingSync=false;this.syncNow();}
     return true;
@@ -1708,6 +1745,62 @@ const DB={
      Jesús (accounting). Mirrors dc_can_finance() in SQL = admin OR finance flag, so
      the client shows the panel to exactly whom the server-side RLS will let write. */
   canManageProjects(){const u=this.currentUser;return !!(u&&(u.access==='admin'||u.finance));},
+  /* ---------- event → allocation-line cascade (Belén, 2026-07-17) ----------
+     The moment an event exists, its two "allocation" lines exist too:
+     an invoicing ITEM in dc_codigos and an hour-allocation PROJECT in
+     dc_projects — both with the accounting code left PENDING for Jesús to
+     fill when accounting assigns it. So nobody is ever unable to log hours
+     or raise an invoice against a new event. Only CURRENT-or-future events
+     are swept (historic editions stay out of the curated lists). */
+  evCleanName(ev){return (''+(ev.name||'')).replace(/^E\d+\s*RENMAD\s*/i,'').trim();},
+  ensureEventLines(){
+    const out={items:0,projects:0,adopted:0};
+    const curYear=new Date().getFullYear();
+    /* invoicing items: one per Money row (dc_finance) of this year or later */
+    if(this.canBill()&&this.billReady()){
+      this.finance.forEach(f=>{
+        if((+f.year||0)<curYear)return;
+        if(this.codigos.some(c=>c.eventId==f.id))return;
+        const label=((f.name||'?')+' '+(f.year?(''+f.year).slice(-2):'')).trim();
+        this.codigos.push({id:this.newId(),item:label,codigo:'',descripcion:'auto — created with the event',eventId:f.id});
+        out.items++;
+      });
+    }
+    /* hour projects: one per board event of this year or later (needs the eventId column) */
+    if(this.canManageProjects()&&window._projEvReady!==false){
+      const pad2=n=>(''+n).length<2?'0'+n:(''+n);
+      this.events.forEach(ev=>{
+        const d=ev.date?ymd(ev.date):null;
+        if(!d||d.getFullYear()<curYear)return;
+        if(this.projects.some(p=>p.eventId==ev.id))return;
+        const clean=this.evCleanName(ev),yy=(''+d.getFullYear()).slice(-2);
+        const wanted=(clean+' '+yy).toLowerCase();
+        /* adopt a hand-made project whose label already names this event (no duplicates) */
+        const match=this.projects.find(p=>!p.kind&&p.eventId==null&&(''+(p.label||'')).replace(/^\d+\.\s*/,'').trim().toLowerCase()===wanted);
+        if(match){match.eventId=ev.id;out.adopted++;return;}
+        const sort=Math.max(0,...this.projects.map(p=>p.sort||0))+1;
+        this.projects.push({id:this.newId(),label:pad2(sort)+'. '+clean+' '+yy,code:null,kind:null,sort,active:true,eventId:ev.id});
+        out.projects++;
+      });
+    }
+    this.syncEventCodes();
+    return out;
+  },
+  /* one fill covers both registers: a código set on an event's invoicing item
+     flows to its blank hour-project code, and vice versa. Only ever fills
+     BLANKS — a code someone typed is never overwritten. */
+  syncEventCodes(){
+    let n=0;
+    this.finance.forEach(f=>{
+      if(f.eventId==null)return; // Money row not linked to a board event
+      const item=this.codigos.find(c=>c.eventId==f.id);
+      const proj=this.projects.find(p=>p.eventId==f.eventId);
+      if(!item||!proj)return;
+      if(item.codigo&&!proj.code){proj.code=item.codigo;n++;}
+      else if(proj.code&&!item.codigo){item.codigo=proj.code;n++;}
+    });
+    return n;
+  },
   /* admins & managers set any status; members set the status of their OWN tasks
      (all of this is also enforced server-side by row-level security) */
   canEditStatus(t){if(this.canManage())return true;return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
@@ -1808,7 +1901,7 @@ window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
     if(!hiddenAt)return;
     const away=Date.now()-hiddenAt;hiddenAt=0;
     if(away<STALE_MS)return;
-    if(_saveTimer||_syncing)return;               // an edit is still in flight — don't discard it
+    if(_saveTimer||_syncing||_syncFails)return;   // an edit is still in flight or queued for retry — don't discard it
     if(typeof userIsTyping==='function'&&userIsTyping())return;
     if(pendingPunches().length)return;            // unsent punches must flush first
     location.reload();
@@ -1835,6 +1928,7 @@ async function boot(renderFn){
   }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
+  try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted))DB.save();}catch(e){} // event → item/project cascade (writes only for Belén/Jesús-level logins)
   try{const nc=document.getElementById('nav-crm');if(nc&&isBelenP(DB.currentUser))nc.style.display='';}catch(e){} // CRM tab: Belén only (invoicing now opens from inside Money)
   try{const nh=document.getElementById('nav-hr');if(nh&&DB.canSeeHR())nh.style.display='';}catch(e){} // HR tab: Belén + HR + Jesús (allocations) — everyone else's personal stuff lives in Me
   renderFn();

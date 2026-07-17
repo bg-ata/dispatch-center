@@ -81,7 +81,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=65"></script>
+<script src="store.js?v=66"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
@@ -98,7 +98,7 @@ function isAbono(i){return i.producto==='abono'||i.status==='abono';}
 function cobrado(i){if(i.importe_cobrado!=null&&i.importe_cobrado!=='')return +i.importe_cobrado;return i.status==='pagado'?(+i.total_factura||0):0;}
 /* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
 function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
-function codLabel(c){return '('+(c.codigo||'?')+') '+(c.item||'#'+c.id);}
+function codLabel(c){return c.codigo?('('+c.codigo+') '+(c.item||'#'+c.id)):((c.item||'#'+c.id)+' — código pending');}
 /* credit notes carry their OWN sequence — R1, R2, R3… (Jesús Q7) */
 function nextRNumber(){let mx=0;DB.invoices.forEach(i=>{const m=/^R(\d+)$/i.exec((i.numero_factura||'').trim());if(m)mx=Math.max(mx,+m[1]);});return 'R'+(mx+1);}
 /* per-line amount = Qty × Price (the maths does itself — Jesús's model) */
@@ -256,7 +256,7 @@ function codigosPanel(){
     '<table style="max-width:700px"><tr><th>Item</th><th>Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th style="width:24px"></th></tr>';
   codsSorted().forEach(c=>{
     h+='<tr><td><input data-cf="item" data-id="'+c.id+'" value="'+esc(c.item||'')+'" style="width:190px" placeholder="e.g. Almacenamiento 26"></td>'+
-    '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" style="width:90px"></td>'+
+    '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" placeholder="pending" style="width:90px'+(c.codigo?'':';background:#ffe2c4')+'" title="'+(c.codigo?'':'Código pending — fill it in when accounting assigns it; it also fills the event&#39;s hour-allocation project')+'"></td>'+
     '<td><select data-cf="eventId" data-id="'+c.id+'" style="width:220px">'+evOpts(c.eventId)+'</select></td>'+
     '<td><button class="del" data-cdel="'+c.id+'">×</button></td></tr>';});
   h+='</table><div style="margin-top:8px"><button class="btn sm" id="addCod">+ Add item</button> <span class="hint">linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals.</span></div></div>';
@@ -264,7 +264,9 @@ function codigosPanel(){
 }
 function wireCodigos(){
   document.querySelectorAll('[data-cf]').forEach(el=>el.onchange=()=>{const c=DB.codigos.find(x=>x.id==el.dataset.id);if(!c)return;
-    c[el.dataset.cf]=el.dataset.cf==='eventId'?(el.value?+el.value:null):el.value;DB.save();});
+    c[el.dataset.cf]=el.dataset.cf==='eventId'?(el.value?+el.value:null):el.value;
+    if(el.dataset.cf==='codigo')DB.syncEventCodes(); // a código filled here flows to the event's hour-project too
+    DB.save();});
   document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this item?'))return;DB.data.codigos=DB.codigos.filter(x=>x.id!=b.dataset.cdel);DB.save();render();});
   const ac=document.getElementById('addCod');if(ac)ac.onclick=()=>{DB.codigos.push({id:DB.newId(),item:'',codigo:'',descripcion:'',eventId:null});DB.save();render();};
 }
@@ -351,7 +353,13 @@ function renderLines(){
     '<td><input type="number" step="any" data-lf="price" data-ix="'+ix+'" value="'+(a.price!==''&&a.price!=null?a.price:'')+'" style="text-align:right"></td>'+
     '<td><input class="auto" readonly tabindex="-1" value="'+lineAmount(a).toFixed(2)+'" style="text-align:right" title="Qty × Price — does itself"></td>'+
     '<td><select data-lf="codigoId" data-ix="'+ix+'">'+itemOpts(a.codigoId)+'</select></td>'+
-    '<td><input data-cod="'+ix+'" value="'+esc(a.codigo||'')+'" readonly tabindex="-1" title="comes from the chosen item" style="color:#555;background:'+(warn?'#ffe2c4':'#f0eee7')+'"></td>'+
+    /* the código comes from the item — but while the item's código is still PENDING
+       (auto-created with the event), it can be typed right here and it fills the
+       item master + the event's hour-project in one go (Belén 2026-07-17) */
+    (function(){const master=a.codigoId?DB.codigoById(+a.codigoId):null;const pending=master&&!master.codigo;
+      return pending
+        ?'<td><input data-codedit="'+ix+'" value="'+esc(a.codigo||'')+'" placeholder="pending" title="This item has no código yet — type it here and it is saved on the item for good" style="background:#ffe2c4"></td>'
+        :'<td><input data-cod="'+ix+'" value="'+esc(a.codigo||'')+'" readonly tabindex="-1" title="comes from the chosen item" style="color:#555;background:'+(warn?'#ffe2c4':'#f0eee7')+'"></td>';})()+
     '<td><input type="number" step="1" data-lf="passes" data-ix="'+ix+'" value="'+(a.passes!==''&&a.passes!=null?a.passes:'')+'" placeholder="0" style="text-align:right"></td>'+
     '<td><button class="del" data-adel="'+ix+'">×</button></td></tr>';});
   document.getElementById('atbl').innerHTML=h;
@@ -366,6 +374,13 @@ function renderLines(){
       r.passes=(TIPO_PASES[r.tipo_pase]||0)*(+r.qty||0);
     renderLines();refreshModal();});
   document.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{allocRows.splice(+b.dataset.adel,1);if(!allocRows.length)allocRows=[blankRow()];renderLines();refreshModal();});
+  document.querySelectorAll('[data-codedit]').forEach(el=>el.onchange=()=>{
+    const r=allocRows[+el.dataset.codedit];const c=r.codigoId?DB.codigos.find(x=>x.id==r.codigoId):null;
+    const v=el.value.trim();if(!c||!v)return;
+    if(c.codigo&&c.codigo!==v){renderLines();return;} // master got a código meanwhile — it wins
+    c.codigo=v;r.codigo=v;
+    DB.syncEventCodes();DB.save(); // fills the event's hour-project too — one fill covers both
+    renderLines();});
 }
 /* net from the lines; VAT/total off the accounting base (EUR — manual when USD) */
 function calcTotals(){
