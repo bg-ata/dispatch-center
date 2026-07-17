@@ -92,7 +92,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=66"></script>
+<script src="store.js?v=67"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -857,7 +857,7 @@ function renderTcQueue(){
     if(hasClaim&&r.ratify==='pending'){
       const now=pairTotals(tcEffective(r.personId,r.day));
       claimBlock='<div style="background:#F0F7EE;border:1px solid #CBE3C4;border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
-        +'⚡ <b>Applied automatically:</b> '+esc(claimDescribe(r.claim,r.day))+'. Their '+esc(r.day)+' now reads <b>'+fmtMin(now.total)+(now.open?' · still open':'')+'</b>.'
+        +'⚡ <b>Applied automatically:</b> '+esc(claimDescribe(r.claim,r.day))+'. Their '+esc(fmtHuman(r.day))+' now reads <b>'+fmtMin(now.total)+(now.open?' · still open':'')+'</b>.'
         +'<div style="margin-top:8px"><button class="btn ok" style="font-size:12px" data-acc="'+r.id+'">✔ Received &amp; accepted</button> '
         +'<button class="btn no" style="font-size:12px" data-den="'+r.id+'">✖ Deny — reverse it</button></div></div>';
     }else if(hasClaim){
@@ -873,7 +873,7 @@ function renderTcQueue(){
     }
     const manualHidden=hasClaim; // claim cards start with the manual surgery hidden
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">'+
-      '<b>'+esc(p?p.name:'?')+'</b> · '+(r.day||'')+' '+reportChip(r)+threadHtml(r)+claimBlock+
+      '<b>'+esc(p?p.name:'?')+'</b> · '+fmtHuman(r.day)+' '+reportChip(r)+threadHtml(r)+claimBlock+
       '<input id="qr_'+r.id+'" placeholder="reply…" style="width:46%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-qr="'+r.id+'">Reply</button> '+
       '<span style="margin-left:12px"></span>'+
       '<span id="adj_'+r.id+'" style="'+(manualHidden?'display:none':'')+'">'+
@@ -911,7 +911,7 @@ function renderTcQueue(){
     const plan=planAmendments(r.personId,r.day,r.claim);
     if(plan.blocked){alert(CLAIM_BLOCK_MSG[plan.blocked]||plan.blocked);renderTcQueue();return;}
     const who=DB.personName(r.personId)||'them';
-    if(!confirm('Amend '+who+"'s legal time record?\n\n  Day:    "+r.day+'\n  Change: '+plan.describe+'\n\nTheir '+r.day+' then reads: '+fmtMin(plan.after.total)+(plan.after.open?' (still open)':'')+'\n\nThe original entries are never deleted — this adds linked corrections.'))return;
+    if(!confirm('Amend '+who+"'s legal time record?\n\n  Day:    "+fmtHuman(r.day)+'\n  Change: '+plan.describe+'\n\nTheir '+fmtHuman(r.day)+' then reads: '+fmtMin(plan.after.total)+(plan.after.open?' (still open)':'')+'\n\nThe original entries are never deleted — this adds linked corrections.'))return;
     applyPlan(r.personId,r.day,plan,r.id,(r.thread[0]&&r.thread[0].text)||plan.describe);
     r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'✔ Approved and applied: '+plan.describe}]);
     r.ratify='accepted';r.status='resolved';DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
@@ -969,9 +969,9 @@ function renderTcQueue(){
       else if(x.kind==='out'&&op!=null){tot+=Math.max(0,tcMinutes(x.time)-op);op=null;}});
     const after=op!=null?'still clocked IN (open)':(Math.floor(tot/60)+' h '+String(Math.round(tot%60)).padStart(2,'0'));
     if(!confirm('Amend '+who+"'s legal time record?\n\n"+
-      '  Day:    '+day+'\n'+
+      '  Day:    '+fmtHuman(day)+'\n'+
       '  Change: '+what+'\n\n'+
-      'Their '+day+' then reads: '+after+'\n\n'+
+      'Their '+fmtHuman(day)+' then reads: '+after+'\n\n'+
       'The original entry is never deleted — this is added as a linked correction.'))return;
     const reason=prompt('Reason for the amendment (goes in the permanent record):',(r.thread[0]&&r.thread[0].text)||'');
     if(!reason){alert('A reason is mandatory for amendments.');return;}
@@ -982,7 +982,7 @@ function renderTcQueue(){
       amends:act==='add'?null:+entId,
       reason,note:null,reportId:r.id});
     r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),
-      text:'✔ Amendment applied ('+day+'): '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
+      text:'✔ Amendment applied ('+fmtHuman(day)+'): '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
     r.status='resolved';
     DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
   });

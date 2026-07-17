@@ -689,7 +689,7 @@ window._inv2Ready = true;       // flipped off at boot if dispatch_invoicing2.sq
 /* claim = {type, time?, from?, to?, entryId?, text?}
    types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
 function claimDescribe(c, day) {
-  const d = day;
+  const d = fmtHuman(day); // Belén's date format everywhere: day, month and year — never ISO
   switch (c.type) {
     case 'forgot_out':  return 'add a clock-out at ' + c.time + ' on ' + d;
     case 'forgot_in':   return 'add a clock-in at ' + c.time + ' on ' + d;
@@ -934,7 +934,7 @@ function renderPunchBanner(){
   if(!el){el=document.createElement('div');el.id='punchPendingBar';document.body.prepend(el);}
   el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#D32230;color:#fff;padding:8px 16px;font:13px Segoe UI,system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.25)';
   el.innerHTML='<b>⚠ '+q.length+' clock punch'+(q.length>1?'es':'')+' not saved yet</b>'+
-    '<span style="opacity:.92">'+q.map(p=>p.kind.toUpperCase()+' '+p.day+' '+(p.time||'').slice(0,5)).join(' · ')+'</span>'+
+    '<span style="opacity:.92">'+q.map(p=>p.kind.toUpperCase()+' '+fmtHumanShort(p.day)+' '+(p.time||'').slice(0,5)).join(' · ')+'</span>'+
     '<span style="opacity:.8">Kept safe on this device — retrying automatically.</span>'+
     '<button id="ppRetry" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Retry now</button>';
   document.getElementById('ppRetry').onclick=()=>flushPendingPunches();

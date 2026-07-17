@@ -119,7 +119,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=66"></script>
+<script src="store.js?v=67"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -886,7 +886,7 @@ function wireClaim(){
       applyPlan(me.id,day.value,p,rep.id,'self-service: '+human);
       rep.ratify='pending';
       const okAmend=await DB.saveNow();
-      msg=okAmend?('✔ Done — '+day.value+' now reads '+fmtMin(p.after.total)+'. Belén will review it.')
+      msg=okAmend?('✔ Done — '+fmtHuman(day.value)+' now reads '+fmtMin(p.after.total)+'. Belén will review it.')
                  :'Saved the report, but the correction could not be written — Belén will apply it.';
       if(!okAmend)rep.ratify=null;
       window.dispatchEvent(new Event('dc-remote'));
@@ -944,7 +944,7 @@ function renderMyReports(){
   const mine=DB.tcreports.filter(r=>r.personId==me.id).sort((a,b)=>b.id-a.id).slice(0,6);
   if(!mine.length){box.innerHTML='';return;}
   box.innerHTML='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">My reports</div>'+
-    mine.map(r=>'<div style="margin-bottom:10px"><b>'+(r.day||'')+'</b> '+reportChip(r)+threadHtml(r)+
+    mine.map(r=>'<div style="margin-bottom:10px"><b>'+fmtHuman(r.day)+'</b> '+reportChip(r)+threadHtml(r)+
       (r.status!=='resolved'?'<input id="rr_'+r.id+'" placeholder="reply…" style="width:70%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-rr="'+r.id+'">Send</button>':'')+'</div>').join('');
   box.querySelectorAll('[data-rr]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.rr);const inp=document.getElementById('rr_'+r.id);
