@@ -7,7 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <title>RENMAD Dispatch Center — Invoicing</title>
 <style>
-  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--purple:#8E5BC9;--green:#3E8C28;}
+  :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--purple:#8E5BC9;--green:#3E8C28;--amber:#C77800;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
   .app{padding:16px 22px 90px;max-width:1500px;margin:0 auto}
@@ -22,6 +22,7 @@
   .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
   .btn.sm{padding:3px 9px;font-size:12px}
   .btn:hover{filter:brightness(.97)}
+  .btn:disabled{opacity:.55;cursor:default}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
   .panel h3{margin:0 0 8px;font-size:15px}
   .hint{font-size:12px;color:var(--muted);font-weight:400}
@@ -46,7 +47,7 @@
   .del:hover{color:var(--red)}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:14px 12px}
   #modal.on{display:flex}
-  #modal .card{background:#fff;border-radius:14px;padding:14px 20px 16px;width:1120px;max-width:97vw}
+  #modal .card{background:#fff;border-radius:14px;padding:14px 20px 16px;width:1160px;max-width:97vw}
   #modal h3{margin:0 0 8px;font-size:16px}
   .frm{display:grid;grid-template-columns:repeat(6,1fr);gap:5px 9px}
   .frm label{font-size:9.5px;color:var(--muted);display:flex;flex-direction:column;gap:2px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;overflow:hidden}
@@ -57,9 +58,15 @@
   .frm input[readonly]{background:#f6f5f1;color:var(--muted)}
   .mrow{display:flex;justify-content:flex-end;gap:8px;margin-top:10px;align-items:center}
   .amsg{margin-right:auto;font-size:12px;min-height:15px}
-  .alloctbl td,.alloctbl th{padding:2px 5px}
-  .alloctbl input,.alloctbl select{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:100%}
+  .lntbl td,.lntbl th{padding:2px 5px}
+  .lntbl input,.lntbl select{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:100%}
+  .lntbl input.auto{background:#eef4ff;border-color:#cfe0f7;color:#185FA5;font-weight:600}
   .sect{grid-column:1/-1;border-top:1px solid var(--line);padding-top:5px;margin-top:1px;font-size:10.5px;font-weight:700;color:var(--charcoal);text-transform:uppercase;letter-spacing:.5px}
+  .totbox{background:#faf9f6;border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:290px}
+  .totline{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:3px 0;font-size:13px}
+  .totline.big{font-size:15px;font-weight:700;color:var(--charcoal);border-top:1px solid var(--line);margin-top:4px;padding-top:8px}
+  .totline input,.totline select{font:inherit;font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px}
+  .draftbar{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:10px;padding:9px 14px;font-size:13px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -68,20 +75,20 @@
   <h1>🧾 Invoicing</h1>
   <p class="sub">The invoicing engine — every euro starts life here as an invoice line. Lines cascade into the 💶 Money figures, the per-event delegate lists (catering) and sales attribution. Every change is recorded.</p>
   <div id="warnbox"></div>
+  <div id="draftbox"></div>
   <div id="content"></div>
 </div>
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=64"></script>
+<script src="store.js?v=65"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
-let editingId=null, allocRows=[], flt={ev:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
+let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
 const todayISO=()=>toISO(new Date());
 /* European display format DD/MM/YYYY (inputs stay type=date; this is for tables/exports) */
 function ddmmyyyy(iso){if(!iso)return '';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 function actorName(){const u=DB.currentUser;return u?(u.name||u.email||''):'';}
-function finSorted(){return DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.semester-b.semester)||(a.name||'').localeCompare(b.name||''));}
 function finById(id){return DB.finance.find(f=>f.id==id);}
 /* clean event label — no location (Jesús: "Invest Italia 2026", not "· Milan"; keeps Excel exports clean) */
 function finLabelClean(f){return f?((f.name||'?')+' '+(f.year||'')).replace(/\s+/g,' ').trim():'';}
@@ -89,6 +96,19 @@ function eurF(n){return finFmt(n);}
 function num2(v){return Math.round((+v||0)*100)/100;}
 function isAbono(i){return i.producto==='abono'||i.status==='abono';}
 function cobrado(i){if(i.importe_cobrado!=null&&i.importe_cobrado!=='')return +i.importe_cobrado;return i.status==='pagado'?(+i.total_factura||0):0;}
+/* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
+function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
+function codLabel(c){return '('+(c.codigo||'?')+') '+(c.item||'#'+c.id);}
+/* credit notes carry their OWN sequence — R1, R2, R3… (Jesús Q7) */
+function nextRNumber(){let mx=0;DB.invoices.forEach(i=>{const m=/^R(\d+)$/i.exec((i.numero_factura||'').trim());if(m)mx=Math.max(mx,+m[1]);});return 'R'+(mx+1);}
+/* per-line amount = Qty × Price (the maths does itself — Jesús's model) */
+function lineAmount(r){return num2((+r.qty||0)*(+r.price||0));}
+function lineHasData(r){return lineAmount(r)!==0||(+r.passes||0)!==0||(+r.amount||0)!==0;}
+/* line product with legacy fallback: pre-2.0 alloc rows have no producto of their own */
+function lineProd(a,inv){return a.producto||(inv?inv.producto:'')||'';}
+function invPasses(i){return DB.allocsFor(i.id).reduce((s,a)=>s+(+a.passes||0),0);}
+/* Σ net of every live invoice linked to an SPX contract — the A11 check reads this */
+function linkedNet(propId,exceptId){return DB.invoices.filter(x=>x.spxProposalId==propId&&x.status!=='cancelado'&&x.id!=exceptId).reduce((s,x)=>s+(+x.importe_base||0),0);}
 
 /* ---------- main render ---------- */
 function render(){
@@ -97,7 +117,9 @@ function render(){
     C.innerHTML='<div class="panel"><h3>🔒 Billing only</h3><p class="hint">This area is for the invoicing editor (billing permission) and admins. '+
       'The figures it produces are visible to everyone in 💶 Money and the event delegate lists.</p></div>';W.innerHTML='';return;
   }
-  W.innerHTML=DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>';
+  W.innerHTML=(DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>')+
+    (DB.billReady()&&window._inv2Ready===false?'<div class="warn">Invoicing 2.0 line details (product · qty · price per line) will not persist until <b>dispatch_invoicing2.sql</b> is run in Supabase. Amounts, códigos and passes still save fine.</div>':'');
+  renderDraftBar();
   const rows=filtered();
   /* cancelled invoices are OUT of every card (they were inflating Net/Total while the
      € Dashboard correctly excluded them — the two screens disagreed) */
@@ -105,6 +127,9 @@ function render(){
   const base=live.reduce((a,i)=>a+(+i.importe_base||0),0), tot=live.reduce((a,i)=>a+(+i.total_factura||0),0);
   const cob=live.reduce((a,i)=>a+cobrado(i),0);
   const pend=live.reduce((a,i)=>a+Math.max(0,(+i.total_factura||0)-cobrado(i)),0);
+  /* the item filter lists only items actually used in an analítica (E1) — so Webinars/ATA are filterable too */
+  const usedIds={};DB.invoiceAllocs.forEach(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);if(c)usedIds[c.id]=1;});
+  const itemOpts=codsSorted().filter(c=>usedIds[c.id]).map(c=>'<option value="'+c.id+'" '+(flt.item==c.id?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
   C.innerHTML=
     '<div class="cards">'+
       '<div class="cardk"><div class="v">'+rows.length+'</div><div class="k">Invoices</div></div>'+
@@ -113,9 +138,9 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected</div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding</div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (item · código · pedido · razón social)">⬇ Excel</button></h3>'+
+    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button></h3>'+
     '<div class="flt">'+
-      '<select id="f_ev"><option value="all">— all events —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(flt.ev==f.id?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('')+'</select>'+
+      '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
       '<select id="f_st"><option value="all">— status —</option>'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(flt.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'+
       '<input id="f_txt" placeholder="search: company, invoice nº, order, comment…" value="'+esc(flt.text)+'" style="width:250px">'+
@@ -124,53 +149,24 @@ function render(){
       '<span class="hint" style="margin-left:auto"><span class="allocchip" style="background:#EFE3FB">credit note</span><span class="allocchip" style="background:#F8D7D7">cancelled</span></span>'+
     '</div>'+
     '<div class="tblwrap"><table id="itbl"></table></div>'+
-    '<p class="hint">Sorted by date, then invoice nº. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes assigned, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in).</p></div>'+
+    '<p class="hint">Sorted by date, then invoice nº. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
     (showCodigos?codigosPanel():'');
   renderTable(rows);
   document.getElementById('addInv').onclick=()=>openModal(null);
+  document.getElementById('addCredit').onclick=openCreditPicker;
   document.getElementById('cfgCod').onclick=()=>{showCodigos=!showCodigos;render();};
-  document.getElementById('xls').onclick=()=>{
-    const list=filtered();
-    exportXLSX('RENMAD_invoices_'+todayISO()+'.xlsx',[
-      {name:'Invoices',rows:list.map(i=>({
-        'Invoice nº':i.numero_factura||'',
-        'Date':ddmmyyyy(i.fecha),
-        'Company':i.razon_social||'',
-        'Product':PRODUCTO_LABEL[i.producto]||i.producto||'',
-        'Pass type':i.producto==='tickets'&&i.tipo_pase?(i.tipo_pase+((+i.pase_cantidad||0)>1?' ×'+i.pase_cantidad:'')):'',
-        'Subtotal €':+i.importe_base||0,
-        'Subtotal $ (USD)':(i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='')?+i.importe_usd:'',
-        'VAT %':i.iva_pct!=null?+i.iva_pct:'',
-        'VAT €':+i.iva_importe||0,
-        'Total €':+i.total_factura||0,
-        'Status':INV_STATUS[i.status]||i.status||'',
-        'Collected €':(i.status!=='cancelado'&&cobrado(i))?cobrado(i):'',
-        'Sales rep':i.responsable_comercial?DB.personName(i.responsable_comercial):'',
-        'Entered by':i.entered_by||'',
-        'Comments':i.comentarios||''
-      }))},
-      {name:'Analítica',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);return{
-        'Invoice nº':i.numero_factura||'',
-        'Order (pedido)':(i.pedido&&i.pedido!=='N/A')?i.pedido:'',
-        'Company (razón social)':i.razon_social||'',
-        'Item':c?(c.item||''):(f?finLabelClean(f):''),
-        'Código contable':a.codigo||(c?(c.codigo||''):''),
-        'Amount €':+a.amount||0,
-        'Passes':+a.passes||0
-      };}))}
-    ]);
-  };
+  document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
-  set('f_ev','ev');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
+  set('f_item','item');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
   const tx=document.getElementById('f_txt');tx.oninput=()=>{flt.text=tx.value;renderTable(filtered());};
-  document.getElementById('f_clear').onclick=()=>{flt={ev:'all',prod:'all',status:'all',text:'',from:'',to:''};render();};
+  document.getElementById('f_clear').onclick=()=>{flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''};render();};
   if(showCodigos)wireCodigos();
 }
 function filtered(){
   const t=(flt.text||'').toLowerCase();
   return DB.invoices.filter(i=>{
-    if(flt.ev!=='all'&&!DB.allocsFor(i.id).some(a=>a.eventId==flt.ev))return false;
-    if(flt.prod!=='all'&&i.producto!==flt.prod)return false;
+    if(flt.item!=='all'&&!DB.allocsFor(i.id).some(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);return c&&c.id==flt.item;}))return false;
+    if(flt.prod!=='all'&&i.producto!==flt.prod&&!DB.allocsFor(i.id).some(a=>a.producto===flt.prod))return false;
     if(flt.status!=='all'&&i.status!==flt.status)return false;
     if(flt.from&&(i.fecha||'')<flt.from)return false;
     if(flt.to&&(i.fecha||'')>flt.to)return false;
@@ -178,28 +174,38 @@ function filtered(){
     return true;
   }).sort((a,b)=>((a.fecha||'').localeCompare(b.fecha||''))||((a.numero_factura||'').localeCompare(b.numero_factura||'',undefined,{numeric:true})));
 }
+/* which products live on an invoice — line products first, invoice product as legacy fallback */
+function prodCell(i){
+  const set={},out=[];
+  DB.allocsFor(i.id).forEach(a=>{const p=lineProd(a,i);if(p&&!set[p]){set[p]=1;out.push(PRODUCTO_LABEL[p]||p);}});
+  if(!out.length&&i.producto)out.push(PRODUCTO_LABEL[i.producto]||i.producto);
+  return out.join(' + ');
+}
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Company</th><th>Product</th><th class="num">Subtotal</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Collected</th><th>Sales rep</th><th>Contract (SPX) <span class="hint" style="text-transform:none">optional</span></th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Entered by</th><th style="width:50px"></th></tr>';
-  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal $</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Comments</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  if(!rows.length)h+='<tr><td colspan="16" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
       const label=c?(esc(c.item||'?')+(c.codigo?' · '+esc(c.codigo):'')):(f?esc(finLabelClean(f)):('#'+(a.eventId||'?')));
       return '<span class="allocchip">'+label+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
-    const stSel='<select class="inl" data-st="'+i.id+'">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
+    /* C2: Cancelled is NOT offered by hand — it only arrives via a total credit note */
+    const stOpts=Object.keys(INV_STATUS).filter(s=>s!=='cancelado'||i.status==='cancelado');
+    const stSel='<select class="inl" data-st="'+i.id+'" '+(i.status==='cancelado'?'disabled title="Cancelled via credit note — final"':'')+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
+    const passes=invPasses(i);
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
       '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
-      '<td>'+ddmmyyyy(i.fecha)+'</td><td style="white-space:normal">'+esc(i.razon_social||'')+'</td>'+
-      '<td>'+(PRODUCTO_LABEL[i.producto]||i.producto||'')+((+i.cantidad||0)>1?' ×'+i.cantidad:'')+(i.producto==='tickets'&&i.tipo_pase?' · '+i.tipo_pase+((+i.pase_cantidad||0)>1?'×'+i.pase_cantidad:''):'')+'</td>'+
-      '<td class="num">'+eurF(i.importe_base)+(i.en_usd?' <span class="hint" title="Invoiced in USD">/ '+(i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'$ —')+'</span>':'')+'</td>'+
+      '<td>'+ddmmyyyy(i.fecha)+'</td><td>'+ddmmyyyy(i.vencimiento)+'</td><td style="white-space:normal">'+esc(i.razon_social||'')+'</td>'+
+      '<td>'+prodCell(i)+'</td>'+
+      '<td class="num">'+(passes?passes:'<span class="hint">—</span>')+'</td>'+
+      '<td class="num">'+eurF(i.importe_base)+'</td>'+
+      '<td class="num">'+(i.en_usd&&i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'<span class="hint">—</span>')+'</td>'+
       '<td class="num">'+eurF(i.iva_importe)+' <span class="hint">'+(i.iva_pct!=null?i.iva_pct+'%':'')+'</span></td>'+
       '<td class="num"><b>'+eurF(i.total_factura)+'</b></td>'+
       '<td>'+stSel+'</td>'+
-      '<td>'+(i.status==='cancelado'?'':(cobrado(i)?eurF(cobrado(i)):'<span class="hint">—</span>'))+'</td>'+
-      '<td>'+(i.responsable_comercial?esc(DB.personName(i.responsable_comercial)):'—')+'</td>'+
-      '<td style="white-space:normal">'+contractCell(i)+'</td>'+
       '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
+      '<td style="white-space:normal;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+esc(i.comentarios||'')+'">'+esc(i.comentarios||'')+'</td>'+
       '<td>'+esc(i.entered_by||'')+'</td>'+
       '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
   });
@@ -208,9 +214,8 @@ function renderTable(rows){
   document.querySelectorAll('[data-ctr]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openModal(DB.invoice(b.dataset.ctr));};});
   document.querySelectorAll('[data-st]').forEach(s=>s.onchange=()=>{
     const i=DB.invoice(s.dataset.st);if(!i)return;
-    if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — edit the invoice.');s.value=i.status;return;}
+    if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — use “+ Credit note”.');s.value=i.status;return;}
     i.status=s.value;
-    if(i.status==='cancelado')i.metodo_pago='na';
     if(i.status==='pagado'){if(!i.fecha_cobro)i.fecha_cobro=todayISO();}
     else i.fecha_cobro=null; // leaving Paid clears the stamp — a stale one made SPX count it as paid forever
     DB.save();render();
@@ -218,7 +223,7 @@ function renderTable(rows){
   document.querySelectorAll('[data-kill]').forEach(b=>b.onclick=()=>{
     const i=DB.invoice(b.dataset.kill);if(!i)return;
     const dl=DB.delegates.filter(d=>d.invoice_id==i.id).length;
-    if(!confirm('Delete invoice '+(i.numero_factura||'')+' with its event split'+(dl?' and its '+dl+' delegate seats':'')+'? (recoverable from the audit log)'))return;
+    if(!confirm('Delete invoice '+(i.numero_factura||'')+' with its analítica lines'+(dl?' and its '+dl+' delegate seats':'')+'? (recoverable from the audit log)'))return;
     DB.data.invoices=DB.invoices.filter(x=>x.id!=i.id);
     DB.data.invalloc=DB.invoiceAllocs.filter(a=>a.invoice_id!=i.id);
     DB.data.delegates=DB.delegates.filter(d=>d.invoice_id!=i.id);
@@ -226,42 +231,33 @@ function renderTable(rows){
   });
 }
 
-/* the Contract (SPX) cell: linked → the contract's company; a sponsorship/upgrade
-   invoice with no link gets a soft OPTIONAL nudge (click opens the edit modal) */
-function contractCell(i){
-  if(i.spxProposalId){
-    const p=(DB.spxProps||[]).find(x=>x.id==i.spxProposalId);
-    if(p)return '🔗 '+esc(p.company||'?');
-    return '🔗 <span class="hint">#'+esc(''+i.spxProposalId)+'</span>';
-  }
-  if((i.producto==='sponsorship'||i.producto==='upgrade')&&i.status!=='cancelado')
-    return '<button class="btn sm" data-ctr="'+i.id+'" title="Optional — link this invoice to the contract the salesperson sent (SPX Invoiced/Paid follows it)" style="color:#C77800">link contract</button>';
-  return '<span class="hint">—</span>';
-}
-/* the contract's salesperson, for double-checking against the invoice's own Sales
-   rep column — a mismatch turns orange, it never blocks anything */
+/* Contract salesperson — derived from the SPX link (the "who sold it" Jesús kept, B1).
+   A11: the ⚠ now compares the CONTRACT VALUE vs the linked invoices' net — warn only, never block. */
 function contractOwnerCell(i){
-  if(!i.spxProposalId)return '<span class="hint">—</span>';
+  if(!i.spxProposalId){
+    if((i.producto==='sponsorship'||i.producto==='upgrade'||DB.allocsFor(i.id).some(a=>a.producto==='sponsorship'||a.producto==='upgrade'))&&i.status!=='cancelado')
+      return '<button class="btn sm" data-ctr="'+i.id+'" title="Link this invoice to the contract the salesperson sent — mandatory for new SPX/upgrade invoices" style="color:#C77800">link contract</button>';
+    return '<span class="hint">—</span>';
+  }
   const p=(DB.spxProps||[]).find(x=>x.id==i.spxProposalId);
-  if(!p)return '<span class="hint">?</span>';
+  if(!p)return '<span class="hint">#'+esc(''+i.spxProposalId)+'</span>';
   const owner=p.responsableName||p.responsable||'';
-  if(!owner)return '<span class="hint">—</span>';
-  const rep=i.responsable_comercial?(DB.personName(i.responsable_comercial)||''):'';
-  if(rep&&rep.trim().toLowerCase()!==owner.trim().toLowerCase())
-    return '<span style="color:#C77800;font-weight:700" title="Does not match the invoice Sales rep ('+esc(rep)+') — double-check">⚠ '+esc(owner)+'</span>';
-  return esc(owner);
+  const cVal=+p.valueEur||0;
+  const invTot=linkedNet(i.spxProposalId,null);
+  if(cVal&&Math.abs(invTot-cVal)>0.01)
+    return '<span style="color:#C77800;font-weight:700" title="Invoiced so far on this contract: '+eurF(invTot)+' vs contract value '+eurF(cVal)+' — double-check (the fault can sit on either side)">⚠ '+esc(owner||'?')+'</span>';
+  return esc(owner||'—');
 }
 
 /* ---------- códigos contables (mini-BD, hand-maintained) ---------- */
 function codigosPanel(){
-  const evOpts=sel=>'<option value="">— no event —</option>'+finSorted().map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
+  const evOpts=sel=>'<option value="">— no event —</option>'+DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.name||'').localeCompare(b.name||'')).map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
   let h='<div class="panel"><h3>Items &amp; accounting codes <span class="hint">— the mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list</span></h3>'+
-    '<table style="max-width:860px"><tr><th>Item</th><th>Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th>Notes</th><th style="width:24px"></th></tr>';
-  DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true})).forEach(c=>{
+    '<table style="max-width:700px"><tr><th>Item</th><th>Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th style="width:24px"></th></tr>';
+  codsSorted().forEach(c=>{
     h+='<tr><td><input data-cf="item" data-id="'+c.id+'" value="'+esc(c.item||'')+'" style="width:190px" placeholder="e.g. Almacenamiento 26"></td>'+
     '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" style="width:90px"></td>'+
     '<td><select data-cf="eventId" data-id="'+c.id+'" style="width:220px">'+evOpts(c.eventId)+'</select></td>'+
-    '<td><input data-cf="descripcion" data-id="'+c.id+'" value="'+esc(c.descripcion||'')+'" style="width:100%"></td>'+
     '<td><button class="del" data-cdel="'+c.id+'">×</button></td></tr>';});
   h+='</table><div style="margin-top:8px"><button class="btn sm" id="addCod">+ Add item</button> <span class="hint">linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals.</span></div></div>';
   return h;
@@ -274,7 +270,7 @@ function wireCodigos(){
 }
 
 /* ---------- add / edit modal ---------- */
-/* contracts Jesús can link an invoice to = live WON proposals (the one already
+/* contracts to link an invoice to = live WON proposals (the one already
    linked stays listed even if its status later changes, so edits never wipe it) */
 function spxContractOpts(sel){
   const won=(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded&&(p.salesStatus==='Confirmed'||(sel&&p.id==sel)))
@@ -282,202 +278,323 @@ function spxContractOpts(sel){
   return '<option value="">— none —</option>'+won.map(p=>'<option value="'+p.id+'" '+(sel&&p.id==sel?'selected':'')+'>'
     +esc(p.company||'?')+' · '+esc(p.responsableName||p.responsable||'')+' · '+finFmt(+p.valueEur||0)+'</option>').join('');
 }
-function openModal(inv){
+/* build editable line rows from an invoice's stored allocs (legacy rows get qty=1, price=amount) */
+function rowsFromInvoice(inv){
+  return DB.allocsFor(inv.id).map(a=>{let cid=a.codigoId,cod=a.codigo;
+    if(!cid&&a.eventId!=null&&a.eventId!==''){const m=DB.codigoForEvent(a.eventId);if(m){cid=m.id;cod=cod||m.codigo;}}
+    const qty=(a.qty!=null&&a.qty!=='')?+a.qty:1;
+    const price=(a.price!=null&&a.price!=='')?+a.price:num2((+a.amount||0)/(qty||1));
+    return {id:a.id,producto:lineProd(a,inv),tipo_pase:a.tipo_pase||(lineProd(a,inv)==='tickets'?(inv.tipo_pase||''):''),
+      qty:qty,price:price,codigoId:cid||'',codigo:cod||'',eventId:a.eventId,passes:a.passes!=null?a.passes:''};});
+}
+function blankRow(){return {id:null,producto:'',tipo_pase:'',qty:1,price:'',codigoId:'',codigo:'',eventId:'',passes:''};}
+function openModal(inv,preset){
   editingId=inv?inv.id:null;
-  allocRows=inv?DB.allocsFor(inv.id).map(a=>{let cid=a.codigoId,cod=a.codigo;
-      if(!cid&&a.eventId!=null&&a.eventId!==''){const m=DB.codigoForEvent(a.eventId);if(m){cid=m.id;cod=cod||m.codigo;}}
-      return {id:a.id,codigoId:cid||'',codigo:cod||'',eventId:a.eventId,amount:a.amount,passes:a.passes};}):[{id:null,codigoId:'',codigo:'',eventId:'',amount:'',passes:''}];
-  const i=inv||{fecha:todayISO(),vencimiento:todayISO(),iva_pct:21,status:'no_pagado',metodo_pago:'transferencia',en_usd:false,entered_by:actorName()};
-  const pOpts=sel=>'<option value="">—</option>'+DB.people.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>'<option value="'+p.id+'" '+(p.id==sel?'selected':'')+'>'+esc(p.name)+'</option>').join('');
+  allocRows=preset&&preset.lines?preset.lines.map(r=>Object.assign({},r)):(inv?rowsFromInvoice(inv):[blankRow()]);
+  if(!allocRows.length)allocRows=[blankRow()];
+  const i=Object.assign({fecha:todayISO(),vencimiento:todayISO(),iva_pct:21,status:'no_pagado',metodo_pago:'transferencia',en_usd:false,entered_by:actorName()},inv||{},preset&&preset.fields||{});
   const invOpts=sel=>'<option value="">—</option>'+DB.invoices.filter(x=>x.id!=editingId).map(x=>'<option value="'+x.id+'" '+(x.id==sel?'selected':'')+'>'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+'</option>').join('');
+  /* C2: no manual Cancelled — the status only exists via a total credit note */
+  const stOpts=Object.keys(INV_STATUS).filter(s=>s!=='cancelado'||i.status==='cancelado');
   document.getElementById('modalbody').innerHTML=
-    '<h3>'+(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice')+'</h3>'+
+    '<h3>'+(preset&&preset.title?preset.title:(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice'))+'</h3>'+
     '<div class="frm">'+
-    '<label class="w2">Invoice nº *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R…"></label>'+
+    '<label class="w2">Invoice nº *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R1, R2…"></label>'+
     '<label>Date *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
     '<label>Due date<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
-    '<label>Entered by <span class="hint" style="text-transform:none;font-weight:400">(automatic)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
+    '<label class="w2">Entered by <span class="hint" style="text-transform:none;font-weight:400">(automatic)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
     '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
-    '<label>Product *<select id="m_prod"><option value="">—</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(i.producto===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select></label>'+
-    '<label>Quantity<input id="m_cant" type="number" step="any" min="0" value="'+(i.cantidad!=null?i.cantidad:'')+'"></label>'+
-    '<label id="l_pase" style="display:none">Pass type<select id="m_pase"><option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(i.tipo_pase===t?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+' passes)</option>').join('')+'</select></label>'+
-    '<label id="l_pasec" style="display:none">Nº of packs<input id="m_pasec" type="number" min="1" step="1" value="'+(i.pase_cantidad!=null?i.pase_cantidad:1)+'" title="e.g. 2 × Single = 2 packs of Single"></label>'+
-    '<label id="l_pedido" style="display:none">Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'" placeholder="tickets only"></label>'+
-    '<label id="l_resp" style="display:none">Sales rep<select id="m_resp">'+pOpts(i.responsable_comercial)+'</select></label>'+
-    '<label class="w2" id="l_contract" style="display:none">Contract (SPX proposal) <span class="hint" style="text-transform:none;font-weight:400">— link this invoice to the contract the salesperson sent; SPX Invoiced/Paid follows it</span><select id="m_spx">'+spxContractOpts(i.spxProposalId)+'</select></label>'+
-    '<div class="sect">Amounts</div>'+
-    '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— enter both the EUR and the USD amount by hand (accounting sets them)</span></label>'+
-    '<label>Subtotal € *<input id="m_base" type="number" step="any" value="'+(i.importe_base!=null?i.importe_base:'')+'"></label>'+
-    '<label class="usdf" style="display:none">Subtotal $ (USD)<input id="m_usdi" type="number" step="any" value="'+(i.importe_usd!=null?i.importe_usd:'')+'"></label>'+
-    '<label>VAT %<select id="m_iva"><option value="21" '+(i.iva_pct==21?'selected':'')+'>21%</option><option value="0" '+(i.iva_pct==0?'selected':'')+'>0%</option></select></label>'+
-    '<label>VAT €<input id="m_ivai" readonly value="'+(i.iva_importe!=null?i.iva_importe:'')+'"></label>'+
-    '<label>Invoice total €<input id="m_tot" readonly value="'+(i.total_factura!=null?i.total_factura:'')+'"></label>'+
-    '<label>Discount % (info)<input id="m_dto" type="number" step="any" value="'+(i.descuento_pct!=null?i.descuento_pct:'')+'"></label>'+
-    '<label id="l_motivo" style="display:none">Reason for 0% VAT<select id="m_motivo"><option value="">—</option>'+IVA_MOTIVOS.map(m=>'<option '+(i.iva_motivo===m?'selected':'')+'>'+m+'</option>').join('')+'</select></label>'+
-    '<div class="sect">Payment</div>'+
-    '<label>Status<select id="m_st">'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
-    '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono','na'].map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
-    '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
-    '<label class="w4">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
+    '<label>Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'"></label>'+
+    '<label class="w2" id="l_contract" style="display:none">Contract (SPX proposal) * <span class="hint" style="text-transform:none;font-weight:400">— mandatory for SPX &amp; upgrade invoices; SPX Invoiced/Paid follows it</span><select id="m_spx">'+spxContractOpts(i.spxProposalId)+'</select></label>'+
+    '<label id="l_owner" style="display:none">Contract salesperson<input id="m_owner" readonly tabindex="-1" value=""></label>'+
+    '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— line prices go in US$; type the final € figure for accounting in the totals box</span></label>'+
     '</div>'+
-    '<div class="sect" style="margin-top:8px">Analítica <span class="hint" style="text-transform:none;font-weight:400">(split the invoice across items — each line needs its código contable; passes on an event item create the delegate seats)</span></div>'+
-    '<table class="alloctbl" id="atbl"></table>'+
-    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ item</button> <span id="asum" class="hint"></span></div>'+
+    '<div class="sect" style="margin-top:8px">Analítica — the invoice, line by line <span class="hint" style="text-transform:none;font-weight:400">(Qty × Price does the maths · the código fills itself from the item · passes = pass type × qty)</span></div>'+
+    '<table class="lntbl" id="atbl"></table>'+
+    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ line</button></div>'+
+    '<div style="display:flex;gap:16px;align-items:flex-start;margin-top:10px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:260px">'+
+        '<div class="sect">Payment</div>'+
+        '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
+        '<label>Status<select id="m_st">'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
+        '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono','na'].map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
+        '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
+        '<label class="w2">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
+        '</div>'+
+        '<div id="m_ctrhint" class="hint" style="margin-top:6px"></div>'+
+      '</div>'+
+      '<div class="totbox">'+
+        '<div class="totline"><span>Subtotal (Σ of the lines)</span><b id="t_net">—</b></div>'+
+        '<div class="totline"><span>VAT</span><span><select id="m_iva"><option value="21" '+(i.iva_pct==21?'selected':'')+'>21%</option><option value="0" '+(i.iva_pct==0?'selected':'')+'>0%</option></select> · <span id="t_iva">—</span></span></div>'+
+        '<div class="totline" id="l_motivo" style="display:none"><span>Reason for 0% VAT</span><select id="m_motivo"><option value="">—</option>'+IVA_MOTIVOS.map(m=>'<option '+(i.iva_motivo===m?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'+
+        '<div class="totline"><span>Discount % <span class="hint">(informative — never subtracts)</span></span><input id="m_dto" type="number" step="any" value="'+(i.descuento_pct!=null?i.descuento_pct:'')+'" style="width:70px;text-align:right"></div>'+
+        '<div class="totline big"><span>Total</span><span id="t_tot">—</span></div>'+
+        '<div class="totline usdf" style="display:none;border-top:1px dashed var(--line);margin-top:6px;padding-top:8px"><span>EUR for accounting <span class="hint">(manual)</span></span><input id="m_eur" type="number" step="any" value="'+(i.en_usd&&i.importe_base!=null?i.importe_base:'')+'" style="width:110px;text-align:right"></div>'+
+      '</div>'+
+    '</div>'+
     '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
   document.getElementById('modal').classList.add('on');
   wireModal(i);
 }
-function paseTotal(){
-  const t=document.getElementById('m_pase').value,n=+document.getElementById('m_pasec').value||1;
-  return t?(TIPO_PASES[t]||0)*n:0;
-}
-function renderAllocs(){
-  const cods=DB.codigos.slice().sort((a,b)=>(''+(a.item||'')).localeCompare(''+(b.item||'')));
-  const itemOpts=sel=>'<option value="">— item —</option>'+cods.map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(c.item||('#'+c.id))+(c.codigo?' ('+esc(c.codigo)+')':'')+'</option>').join('');
-  let h='<tr><th>Item</th><th style="width:92px">Código *</th><th style="width:120px">Amount €</th><th style="width:96px">Passes 🎟</th><th style="width:24px"></th></tr>';
-  allocRows.forEach((a,ix)=>{const cod=a.codigo||'';const warn=a.codigoId&&!cod;
-    h+='<tr><td><select data-af="codigoId" data-ix="'+ix+'">'+itemOpts(a.codigoId)+'</select></td>'+
-    '<td><input data-cod="'+ix+'" value="'+esc(cod)+'" readonly tabindex="-1" title="comes from the chosen item" style="color:#555;background:'+(warn?'#ffe2c4':'#f0eee7')+'"></td>'+
-    '<td><input type="number" step="any" data-af="amount" data-ix="'+ix+'" value="'+(a.amount!=null?a.amount:'')+'"></td>'+
-    '<td><input type="number" step="1" min="0" data-af="passes" data-ix="'+ix+'" value="'+(a.passes!=null?a.passes:'')+'" placeholder="0"></td>'+
+function renderLines(){
+  const cods=codsSorted();
+  const itemOpts=sel=>'<option value="">— item —</option>'+cods.map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
+  const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('');
+  const paseOpts=sel=>'<option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(t===sel?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+')</option>').join('');
+  const usd=document.getElementById('m_usd')&&document.getElementById('m_usd').checked;
+  let h='<tr><th style="min-width:120px">Product *</th><th style="width:110px">Pass type</th><th style="width:56px" class="num">Qty</th><th style="width:84px" class="num">Price '+(usd?'$':'€')+'</th><th style="width:92px" class="num">Amount '+(usd?'$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Passes</th><th style="width:24px"></th></tr>';
+  allocRows.forEach((a,ix)=>{
+    const warn=a.codigoId&&!a.codigo;
+    h+='<tr><td><select data-lf="producto" data-ix="'+ix+'">'+prodOpts(a.producto)+'</select></td>'+
+    '<td>'+(a.producto==='tickets'?'<select data-lf="tipo_pase" data-ix="'+ix+'">'+paseOpts(a.tipo_pase)+'</select>':'<span class="hint" style="display:block;text-align:center">—</span>')+'</td>'+
+    '<td><input type="number" step="any" min="0" data-lf="qty" data-ix="'+ix+'" value="'+(a.qty!=null?a.qty:'')+'" style="text-align:right"></td>'+
+    '<td><input type="number" step="any" data-lf="price" data-ix="'+ix+'" value="'+(a.price!==''&&a.price!=null?a.price:'')+'" style="text-align:right"></td>'+
+    '<td><input class="auto" readonly tabindex="-1" value="'+lineAmount(a).toFixed(2)+'" style="text-align:right" title="Qty × Price — does itself"></td>'+
+    '<td><select data-lf="codigoId" data-ix="'+ix+'">'+itemOpts(a.codigoId)+'</select></td>'+
+    '<td><input data-cod="'+ix+'" value="'+esc(a.codigo||'')+'" readonly tabindex="-1" title="comes from the chosen item" style="color:#555;background:'+(warn?'#ffe2c4':'#f0eee7')+'"></td>'+
+    '<td><input type="number" step="1" data-lf="passes" data-ix="'+ix+'" value="'+(a.passes!==''&&a.passes!=null?a.passes:'')+'" placeholder="0" style="text-align:right"></td>'+
     '<td><button class="del" data-adel="'+ix+'">×</button></td></tr>';});
   document.getElementById('atbl').innerHTML=h;
-  document.querySelectorAll('[data-af]').forEach(el=>el.onchange=()=>{
-    const r=allocRows[+el.dataset.ix];
-    if(el.dataset.af==='codigoId'){const c=DB.codigoById(+el.value);r.codigoId=el.value?+el.value:'';r.codigo=c?(c.codigo||''):'';r.eventId=(c&&c.eventId!=null)?c.eventId:'';renderAllocs();}
-    else r[el.dataset.af]=el.value;
-    allocSummary();});
-  document.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{allocRows.splice(+b.dataset.adel,1);renderAllocs();allocSummary();});
-  allocSummary();
+  document.querySelectorAll('[data-lf]').forEach(el=>el.onchange=()=>{
+    const r=allocRows[+el.dataset.ix],f=el.dataset.lf;
+    if(f==='codigoId'){const c=DB.codigoById(+el.value);r.codigoId=el.value?+el.value:'';r.codigo=c?(c.codigo||''):'';r.eventId=(c&&c.eventId!=null)?c.eventId:'';}
+    else if(f==='producto'){r.producto=el.value;if(el.value!=='tickets')r.tipo_pase='';}
+    else r[f]=el.value;
+    /* A3 fix: passes ALWAYS recalc when pass type or qty changes on a tickets line —
+       the old form froze the first number for good */
+    if(r.producto==='tickets'&&(f==='tipo_pase'||f==='qty'||f==='producto')&&r.tipo_pase)
+      r.passes=(TIPO_PASES[r.tipo_pase]||0)*(+r.qty||0);
+    renderLines();refreshModal();});
+  document.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{allocRows.splice(+b.dataset.adel,1);if(!allocRows.length)allocRows=[blankRow()];renderLines();refreshModal();});
 }
-function allocSummary(){
-  const base=+document.getElementById('m_base').value||0;
-  const sum=allocRows.reduce((a,r)=>a+(+r.amount||0),0);
-  const el=document.getElementById('asum');
-  el.innerHTML='split '+eurF(sum)+' of net '+eurF(base)+(Math.abs(sum-base)>0.01&&sum>0?' — <b style="color:#C77800">does not add up</b>':'');
+/* net from the lines; VAT/total off the accounting base (EUR — manual when USD) */
+function calcTotals(){
+  const usd=document.getElementById('m_usd').checked;
+  const net=num2(allocRows.reduce((s,r)=>s+lineAmount(r),0));
+  const baseEur=usd?(+document.getElementById('m_eur').value||0):net;
+  const pct=+document.getElementById('m_iva').value||0;
+  return {usd,net,baseEur,iva:num2(baseEur*pct/100),tot:num2(baseEur*(1+pct/100))};
+}
+function refreshModal(){
+  const $=id=>document.getElementById(id);
+  const t=calcTotals(),cur=t.usd?'$':'€';
+  $('t_net').textContent=(t.usd?'$':'')+t.net.toFixed(2)+(t.usd?'':' €');
+  $('t_iva').textContent=t.iva.toFixed(2)+' €';
+  $('t_tot').textContent=t.tot.toFixed(2)+' €';
+  document.querySelectorAll('.usdf').forEach(el=>el.style.display=t.usd?'':'none');
+  $('l_motivo').style.display=$('m_iva').value==='0'?'':'none';
+  const needsSpx=allocRows.some(r=>r.producto==='sponsorship'||r.producto==='upgrade');
+  $('l_contract').style.display=needsSpx?'':'none';
+  $('l_owner').style.display=(needsSpx&&$('m_spx').value)?'':'none';
+  const st=$('m_st').value;
+  $('l_abde').style.display=(st==='abono')?'':'none';
+  /* live A11 hint — contract value vs what is invoiced on it (warn only, never blocks) */
+  const hint=$('m_ctrhint');
+  if(needsSpx&&$('m_spx').value){
+    const p=(DB.spxProps||[]).find(x=>x.id==+$('m_spx').value);
+    if(p){
+      $('m_owner').value=p.responsableName||p.responsable||'—';
+      const cVal=+p.valueEur||0,others=linkedNet(p.id,editingId),mine=t.usd?(+$('m_eur').value||0):t.net;
+      const sum=others+mine;
+      hint.innerHTML=cVal?('Contract '+eurF(cVal)+' · this invoice '+eurF(mine)+(others?' · other linked invoices '+eurF(others):'')+
+        (Math.abs(sum-cVal)>0.01?' — <b style="color:var(--amber)">⚠ does not match the contract ('+eurF(sum)+' vs '+eurF(cVal)+') — double-check, the fault can sit on either side</b>':' — <b style="color:var(--green)">matches the contract ✓</b>')):'';
+    }
+  }else hint.innerHTML='';
 }
 function wireModal(i){
   const $=id=>document.getElementById(id);
-  const showIf=(id,on)=>{const el=$(id);if(el)el.style.display=on?'':'none';};
-  const refreshVis=()=>{
-    const prod=$('m_prod').value;
-    showIf('l_pase',prod==='tickets');showIf('l_pasec',prod==='tickets');showIf('l_pedido',prod==='tickets');
-    showIf('l_resp',prod==='sponsorship'); // sólo SPX — the commission hook
-    showIf('l_contract',prod==='sponsorship'||prod==='upgrade'); // invoice ↔ contract link (Jesús)
-    showIf('l_motivo',$('m_iva').value==='0');
-    showIf('l_abde',$('m_st').value==='abono'||prod==='abono');
-    document.querySelectorAll('.usdf').forEach(el=>el.style.display=$('m_usd').checked?'':'none');
-  };
-  const calc=()=>{
-    const base=+$('m_base').value||0,pct=+$('m_iva').value||0;
-    $('m_ivai').value=num2(base*pct/100);$('m_tot').value=num2(base*(1+pct/100));
-    allocSummary();
-    // single-event invoice: prefill the allocation amount with the base
-    if(allocRows.length===1&&(allocRows[0].amount===''||allocRows[0].amount==null)){allocRows[0].amount=base||'';renderAllocs();}
-  };
-  ['m_prod','m_iva','m_st','m_usd'].forEach(id=>$(id).addEventListener('change',refreshVis));
-  ['m_base','m_iva'].forEach(id=>$(id).addEventListener('input',calc));
-  ['m_pase','m_pasec'].forEach(id=>$(id).addEventListener('change',()=>{
-    // tickets: suggest total passes (Single=1 … Quad=4 × packs) into a single allocation
-    if($('m_prod').value==='tickets'&&allocRows.length===1&&!(+allocRows[0].passes)){allocRows[0].passes=paseTotal()||'';renderAllocs();}
-  }));
-  $('m_st').addEventListener('change',()=>{if($('m_st').value==='cancelado')$('m_pago').value='na';});
-  /* paying by Card marks the invoice Paid automatically */
-  $('m_pago').addEventListener('change',()=>{if($('m_pago').value==='tarjeta'&&$('m_st').value!=='cancelado')$('m_st').value='pagado';});
-  $('addAlloc').onclick=()=>{allocRows.push({id:null,codigoId:'',codigo:'',eventId:'',amount:'',passes:''});renderAllocs();};
-  $('m_cancel').onclick=closeModal;
+  ['m_iva','m_st','m_spx','m_eur'].forEach(id=>$(id).addEventListener('change',refreshModal));
+  $('m_usd').addEventListener('change',()=>{renderLines();refreshModal();}); // the line headers switch €/$ with the checkbox
+  $('m_eur').addEventListener('input',refreshModal);
+  /* A6: due date can no longer precede the invoice date */
+  $('m_fecha').addEventListener('change',()=>{if($('m_venc').value&&$('m_venc').value<$('m_fecha').value)$('m_venc').value=$('m_fecha').value;});
+  $('m_st').addEventListener('change',()=>{if($('m_st').value==='abono')$('m_pago').value='abono';});
+  /* A8: paying by Card marks the invoice Paid automatically */
+  $('m_pago').addEventListener('change',()=>{if($('m_pago').value==='tarjeta'&&$('m_st').value!=='abono')$('m_st').value='pagado';});
+  $('addAlloc').onclick=()=>{allocRows.push(blankRow());renderLines();refreshModal();};
+  $('m_cancel').onclick=()=>{clearDraft();closeModal();};
   $('m_save').onclick=saveInvoice;
-  renderAllocs();refreshVis();calc();
+  renderLines();refreshModal();
 }
 function closeModal(){document.getElementById('modal').classList.remove('on');editingId=null;}
 document.getElementById('modal').onclick=e=>{if(e.target===document.getElementById('modal'))closeModal();};
 
-function saveInvoice(){
+/* ---------- draft safety (audit Critical 3): the form is stashed before the network
+   is trusted; a failed sync (which alerts + reloads) can no longer eat typed work ---------- */
+function formModel(){
+  const $=id=>document.getElementById(id);
+  return {editingId,fields:{
+    numero_factura:$('m_num').value,fecha:$('m_fecha').value,vencimiento:$('m_venc').value,
+    razon_social:$('m_rs').value,pedido:$('m_pedido').value,en_usd:$('m_usd').checked,
+    iva_pct:+$('m_iva').value,iva_motivo:$('m_motivo').value,descuento_pct:$('m_dto').value,
+    status:$('m_st').value,metodo_pago:$('m_pago').value,comentarios:$('m_com').value,
+    abono_de:$('m_abde').value,spxProposalId:$('m_spx').value,entered_by:$('m_by').value,
+    importe_base:$('m_eur').value},lines:allocRows};
+}
+function stashDraft(){try{sessionStorage.setItem('inv2_draft',JSON.stringify(formModel()));}catch(e){}}
+function clearDraft(){try{sessionStorage.removeItem('inv2_draft');}catch(e){}}
+function renderDraftBar(){
+  const box=document.getElementById('draftbox');let d=null;
+  try{d=JSON.parse(sessionStorage.getItem('inv2_draft'));}catch(e){}
+  if(!d){box.innerHTML='';return;}
+  box.innerHTML='<div class="draftbar">📝 An invoice you were editing did not finish saving — nothing was lost. '+
+    '<button class="btn sm" id="draftResume">Resume it</button><button class="btn sm" id="draftDrop">Discard</button></div>';
+  document.getElementById('draftResume').onclick=()=>{
+    const inv=d.editingId?DB.invoice(d.editingId):null;
+    openModal(inv,{fields:d.fields,lines:d.lines,title:(inv?'Edit invoice (recovered draft)':'New invoice (recovered draft)')});
+  };
+  document.getElementById('draftDrop').onclick=()=>{clearDraft();renderDraftBar();};
+}
+
+async function saveInvoice(){
   const $=id=>document.getElementById(id),msg=$('m_msg');
   const err=t=>{msg.style.color='var(--red)';msg.textContent=t;};
-  const num=$('m_num').value.trim(),prod=$('m_prod').value,st=$('m_st').value;
+  const num=$('m_num').value.trim(),st=$('m_st').value;
   if(!num)return err('Invoice nº is missing.');
-  if(!prod)return err('Product is missing.');
   if(!$('m_rs').value.trim())return err('Company name is missing.');
-  if($('m_base').value==='')return err('Net amount is missing.');
+  const lines=allocRows.filter(lineHasData);
+  if(!lines.length)return err('The invoice needs at least one line (product · qty · price).');
+  if(lines.some(r=>!r.producto))return err('Every line needs a product.');
+  /* analítica: every line MUST have an item (código contable) — mandatory */
+  if(lines.some(r=>!r.codigoId))return err('Every line needs an item / código contable — it is mandatory.');
   /* duplicate invoice numbers are BLOCKED (also enforced by the DB unique index) */
   if(DB.invoices.some(x=>x.id!=editingId&&(x.numero_factura||'').trim().toLowerCase()===num.toLowerCase()))return err('That invoice nº already exists — duplicates are blocked.');
-  /* abonos must start with R */
-  if((prod==='abono'||st==='abono')&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. R20260012).');
   const fecha=$('m_fecha').value;
   if(!fecha)return err('Date is missing.');
   const yr=+fecha.slice(0,4);
   if(yr>new Date().getFullYear())return err('The date cannot go beyond the current year.');
   if(yr<2020)return err('That date looks wrong ('+fecha.slice(0,4)+') — check the year.');
+  /* A6: a due date before the invoice date is now blocked */
+  if($('m_venc').value&&$('m_venc').value<fecha)return err('The due date cannot be before the invoice date.');
   if($('m_iva').value==='0'&&!$('m_motivo').value)return err('0% VAT: choose the reason (exempt / not subject / reverse charge / export).');
-  if($('m_usd').checked&&$('m_usdi').value==='')return err('Invoiced in USD: enter the USD amount too (both EUR and USD go in by hand).');
-  /* analítica: every line carrying money/passes MUST have an item (código contable) — mandatory */
-  const dataLines=allocRows.filter(r=>((+r.amount||0)!==0||(+r.passes||0)>0));
-  if(dataLines.some(r=>!r.codigoId))return err('Every analítica line needs an item / código contable — it is mandatory.');
-  const allocs=dataLines.filter(r=>r.codigoId);
-  let base=+$('m_base').value||0;
+  const esAbono=(st==='abono');
+  /* abonos must start with R (own sequence — use “+ Credit note” to get the next one) */
+  if(esAbono&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. '+nextRNumber()+').');
+  if(!esAbono&&num.toUpperCase().startsWith('R')&&/^R\d+$/i.test(num))return err('R-numbers are reserved for credit notes.');
+  /* A7: SPX & upgrade invoices must carry their contract */
+  const needsSpx=lines.some(r=>r.producto==='sponsorship'||r.producto==='upgrade');
+  if(needsSpx&&!$('m_spx').value&&!esAbono)return err('Sponsorship / upgrade invoices must be linked to their SPX contract — pick it under Contract.');
+  const t=calcTotals();
+  if(t.usd&&$('m_eur').value==='')return err('Invoiced in USD: type the final EUR figure for accounting in the totals box.');
   /* credit notes are stored NEGATIVE — everywhere downstream (Money, KPIs, Excel) sums
      them, so a positive abono would double-count revenue instead of reversing it. */
-  const esAbono=(prod==='abono'||st==='abono');
-  if(esAbono&&base>0){
-    base=-base;
-    allocRows.forEach(r=>{if((+r.amount||0)>0)r.amount=-Math.abs(+r.amount);});
+  if(esAbono&&t.net>0){
+    allocRows.forEach(r=>{if((+r.price||0)>0)r.price=-Math.abs(+r.price);if((+r.passes||0)>0)r.passes=-Math.abs(+r.passes);});
+    renderLines();
   }
-  const sum=allocs.reduce((a,r)=>a+(+r.amount||0),0);
-  if(allocs.length&&Math.abs(sum-base)>0.01){
-    if(!confirm('The analítica ('+finFmt(sum)+') does not add up to the net amount ('+finFmt(base)+'). Save anyway?'))return;
-  }
+  const t2=calcTotals();
+  const baseEur=esAbono&&t2.baseEur>0?-Math.abs(t2.baseEur):t2.baseEur;
+  /* invoice-level product, derived from the lines (legacy filters + the SPX crosswalk read it) */
+  const lineProds=lines.map(r=>r.producto);
+  const producto=esAbono?'abono':(lineProds.includes('sponsorship')?'sponsorship':lineProds.includes('upgrade')?'upgrade':lineProds.includes('tickets')?'tickets':lineProds[0]);
+  stashDraft();   /* from here the network is involved — the draft survives any failure */
+  const prev=editingId?Object.assign({},DB.invoice(editingId)):null;
   const row={
     id:editingId||DB.newId(),
-    codigo_contable:(allocs[0]&&(DB.codigoById(+allocs[0].codigoId)||{}).codigo)||null,
-    producto:prod,cantidad:$('m_cant').value===''?null:+$('m_cant').value,
-    tipo_pase:prod==='tickets'?($('m_pase').value||null):null,
-    pase_cantidad:prod==='tickets'?(+$('m_pasec').value||1):null,
+    codigo_contable:(DB.codigoById(+lines[0].codigoId)||{}).codigo||null,
+    producto,cantidad:null,
+    tipo_pase:null,pase_cantidad:null,
     fecha,numero_factura:num,
-    pedido:prod==='tickets'?($('m_pedido').value.trim()||''):'N/A',
-    vencimiento:$('m_venc').value||todayISO(),
-    responsable_comercial:prod==='sponsorship'&&$('m_resp').value?+$('m_resp').value:null,
-    spxProposalId:(prod==='sponsorship'||prod==='upgrade')&&$('m_spx').value?+$('m_spx').value:null,
-    razon_social:$('m_rs').value.trim(),importe_base:base,
-    en_usd:$('m_usd').checked,
-    importe_usd:$('m_usd').checked&&$('m_usdi').value!==''?+$('m_usdi').value:null,
-    usd_rate:null,
-    usd_rate_date:null,
+    pedido:$('m_pedido').value.trim()||'N/A',
+    vencimiento:$('m_venc').value||fecha,
+    responsable_comercial:prev?prev.responsable_comercial:null, /* A10: field gone, legacy data preserved */
+    spxProposalId:needsSpx&&$('m_spx').value?+$('m_spx').value:(prev?prev.spxProposalId:null),
+    razon_social:$('m_rs').value.trim(),importe_base:baseEur,
+    en_usd:t2.usd,
+    importe_usd:t2.usd?(esAbono?-Math.abs(t2.net):t2.net):null,
+    usd_rate:null,usd_rate_date:null,
     iva_pct:+$('m_iva').value,iva_motivo:$('m_iva').value==='0'?$('m_motivo').value:null,
-    iva_importe:num2(base*(+$('m_iva').value)/100),total_factura:num2(base*(1+(+$('m_iva').value)/100)),
+    iva_importe:num2(baseEur*(+$('m_iva').value)/100),total_factura:num2(baseEur*(1+(+$('m_iva').value)/100)),
     descuento_pct:$('m_dto').value===''?null:+$('m_dto').value,
-    /* collections: importe_cobrado (legacy partial payments) is PRESERVED on edit — never
-       wiped by an unrelated change. fecha_cobro follows the status: stamped when Paid,
-       CLEARED when not (a stale stamp used to make SPX report unpaid invoices as paid). */
     status:st,
-    fecha_cobro:st==='pagado'?((editingId&&(DB.invoice(editingId)||{}).fecha_cobro)||todayISO()):null,
-    importe_cobrado:editingId?((DB.invoice(editingId)||{}).importe_cobrado!=null?(DB.invoice(editingId)||{}).importe_cobrado:null):null,
-    metodo_pago:st==='cancelado'?'na':$('m_pago').value,
+    fecha_cobro:st==='pagado'?((prev&&prev.fecha_cobro)||todayISO()):null,
+    importe_cobrado:prev?(prev.importe_cobrado!=null?prev.importe_cobrado:null):null,
+    metodo_pago:$('m_pago').value,
     comentarios:$('m_com').value.trim(),
-    abono_de:(st==='abono'||prod==='abono')&&$('m_abde').value?+$('m_abde').value:null,
+    abono_de:esAbono&&$('m_abde').value?+$('m_abde').value:null,
     entered_by:$('m_by').value.trim()||actorName(),
   };
   if(editingId){const old=DB.invoice(editingId);Object.assign(old,row);}
   else DB.invoices.push(row);
   /* sync allocations: update kept rows, add new, drop removed */
   const keep={};
-  allocs.forEach(a=>{
+  lines.forEach(a=>{
     const c=DB.codigoById(+a.codigoId)||{};
     const evId=(c.eventId!=null&&c.eventId!=='')?+c.eventId:null; // RENMAD item → feeds the € Dashboard; Webinars/ATA/etc → null
     const codStr=c.codigo||a.codigo||'';
-    if(a.id){const ex=DB.invoiceAllocs.find(x=>x.id==a.id);if(ex){ex.eventId=evId;ex.amount=+a.amount||0;ex.passes=+a.passes||0;ex.codigo=codStr;ex.codigoId=+a.codigoId;keep[ex.id]=1;return;}}
-    const na={id:DB.newId(),invoice_id:row.id,eventId:evId,amount:+a.amount||0,passes:+a.passes||0,codigo:codStr,codigoId:+a.codigoId};
+    const vals={eventId:evId,amount:lineAmount(a)||(+a.amount||0),passes:+a.passes||0,codigo:codStr,codigoId:+a.codigoId,
+      producto:a.producto||null,tipo_pase:a.producto==='tickets'?(a.tipo_pase||null):null,
+      qty:a.qty===''||a.qty==null?null:+a.qty,price:a.price===''||a.price==null?null:+a.price};
+    if(a.id){const ex=DB.invoiceAllocs.find(x=>x.id==a.id);if(ex){Object.assign(ex,vals);keep[ex.id]=1;return;}}
+    const na=Object.assign({id:DB.newId(),invoice_id:row.id},vals);
     DB.invoiceAllocs.push(na);keep[na.id]=1;
   });
   DB.data.invalloc=DB.invoiceAllocs.filter(x=>x.invoice_id!=row.id||keep[x.id]);
+  /* C2: a TOTAL credit note cancels its invoice automatically — the only road to Cancelled */
+  let cancelledOriginal=null;
+  if(esAbono&&row.abono_de){
+    const orig=DB.invoice(row.abono_de);
+    if(orig&&orig.status!=='cancelado'&&Math.abs(Math.abs(baseEur)-Math.abs(+orig.importe_base||0))<=0.01){
+      orig.status='cancelado';orig.fecha_cobro=null;cancelledOriginal=orig.numero_factura;
+    }
+  }
   syncDelegates(row);
-  DB.save();
+  /* audit Critical 3: WAIT for the database before telling anyone it saved */
+  const btn=$('m_save');btn.disabled=true;btn.textContent='Saving…';msg.style.color='var(--muted)';msg.textContent='Saving…';
+  const ok=await DB.saveNow();
+  btn.disabled=false;btn.textContent='Save';
+  if(!ok){err('Could not save — your draft is kept.');return;}
+  clearDraft();
   closeModal();render();
+  if(cancelledOriginal)alert('Invoice '+cancelledOriginal+' is now Cancelled — covered by this total credit note '+num+'.');
 }
-/* tickets & sponsorship: top the event's delegate rows up to each allocation's pass count
+
+/* ---------- C1: + Credit note — pick invoice → total or partial → auto-negative draft ---------- */
+function openCreditPicker(){
+  const cands=DB.invoices.filter(i=>i.status!=='cancelado'&&i.status!=='abono'&&i.producto!=='abono')
+    .sort((a,b)=>((b.fecha||'').localeCompare(a.fecha||'')));
+  document.getElementById('modalbody').innerHTML=
+    '<h3>+ Credit note</h3>'+
+    '<p class="hint" style="margin:0 0 10px">Pick the invoice to credit. A <b>total</b> credit note reverses everything and marks the invoice Cancelled; a <b>partial</b> one auto-splits money, passes and lines proportionally — and you can still edit every line before saving.</p>'+
+    '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
+    '<label class="w2">Invoice to credit *<select id="cn_inv"><option value="">—</option>'+cands.map(x=>'<option value="'+x.id+'">'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+' · '+eurF(x.importe_base)+'</option>').join('')+'</select></label>'+
+    '<label>Type<select id="cn_type"><option value="total">Total — reverses everything, cancels the invoice</option><option value="partial">Partial — you set the amount</option></select></label>'+
+    '<label id="cn_amtl" style="display:none">Net amount to credit €<input id="cn_amt" type="number" step="any" min="0"></label>'+
+    '</div>'+
+    '<div class="mrow"><span class="amsg" id="cn_msg"></span><button class="btn" id="cn_cancel">Cancel</button><button class="btn primary" id="cn_go">Create draft →</button></div>';
+  document.getElementById('modal').classList.add('on');
+  const $=id=>document.getElementById(id);
+  $('cn_type').onchange=()=>{$('cn_amtl').style.display=$('cn_type').value==='partial'?'':'none';};
+  $('cn_cancel').onclick=closeModal;
+  $('cn_go').onclick=()=>{
+    const inv=DB.invoice($('cn_inv').value);
+    if(!inv){$('cn_msg').style.color='var(--red)';$('cn_msg').textContent='Pick the invoice to credit.';return;}
+    const total=$('cn_type').value==='total';
+    const origNet=Math.abs(+inv.importe_base||0);
+    let credit=total?origNet:Math.abs(+$('cn_amt').value||0);
+    if(!credit){$('cn_msg').style.color='var(--red)';$('cn_msg').textContent='Enter the net amount to credit.';return;}
+    if(credit>origNet+0.01){$('cn_msg').style.color='var(--red)';$('cn_msg').textContent='That is more than the invoice net ('+eurF(origNet)+').';return;}
+    const ratio=origNet?credit/origNet:1;
+    /* proportional lines, negated — then fully editable (Jesús Q8) */
+    const lines=rowsFromInvoice(inv).map(r=>{
+      const q=+r.qty||1;
+      const scaledAmt=num2(lineAmount(r)*ratio);
+      return Object.assign({},r,{id:null,price:-num2(scaledAmt/q),passes:-(Math.round((+r.passes||0)*ratio)),amount:-scaledAmt});
+    }).filter(r=>lineAmount(r)!==0||(+r.passes||0)!==0);
+    openModal(null,{title:'New credit note for '+esc(inv.numero_factura||''),lines,fields:{
+      numero_factura:nextRNumber(),fecha:todayISO(),vencimiento:todayISO(),
+      razon_social:inv.razon_social,pedido:inv.pedido,en_usd:!!inv.en_usd,
+      importe_base:inv.en_usd?-num2(credit):'',
+      iva_pct:inv.iva_pct!=null?inv.iva_pct:21,iva_motivo:inv.iva_motivo||'',
+      status:'abono',metodo_pago:'abono',abono_de:inv.id,spxProposalId:inv.spxProposalId||'',
+      comentarios:(total?'Total':'Partial')+' credit note for '+(inv.numero_factura||'')}});
+  };
+}
+
+/* tickets & sponsorship: top the event's delegate rows up to each line's pass count
    (never duplicates on re-save; extra rows are left alone — remove them on the event page). */
 function syncDelegates(inv){
-  if(inv.status==='cancelado')return;
+  if(inv.status==='cancelado'||inv.status==='abono')return;
   if(!(inv.producto==='tickets'||inv.producto==='sponsorship'))return;
   const src=inv.producto==='tickets'?'ticket':'sponsor';
   /* passes are summed PER EVENT first: two analítica lines on the same event (e.g. stand +
@@ -498,6 +615,42 @@ function syncDelegates(inv){
         added_by:'invoicing · '+(inv.entered_by||''),notes:''});
     }
   });
+}
+
+/* ---------- Excel (billing-only by construction — this whole page is canBill-gated) ---------- */
+function exportExcel(){
+  const list=filtered();
+  exportXLSX('RENMAD_invoices_'+todayISO()+'.xlsx',[
+    {name:'Invoices',rows:list.map(i=>({
+      'Invoice nº':i.numero_factura||'',
+      'Date':ddmmyyyy(i.fecha),
+      'Due date':ddmmyyyy(i.vencimiento),
+      'Company':i.razon_social||'',
+      'Product':prodCell(i),
+      'Passes':invPasses(i)||'',
+      'Subtotal €':+i.importe_base||0,
+      'Subtotal $ (USD)':(i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='')?+i.importe_usd:'',
+      'VAT %':i.iva_pct!=null?+i.iva_pct:'',
+      'VAT €':+i.iva_importe||0,
+      'Total €':+i.total_factura||0,
+      'Status':INV_STATUS[i.status]||i.status||'',
+      'Contract salesperson':(function(){const p=i.spxProposalId?(DB.spxProps||[]).find(x=>x.id==i.spxProposalId):null;return p?(p.responsableName||p.responsable||''):'';})(),
+      'Comments':i.comentarios||'',
+      'Entered by':i.entered_by||''
+    }))},
+    {name:'Analítica',rows:list.flatMap(i=>DB.allocsFor(i.id).map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);return{
+      'Invoice nº':i.numero_factura||'',
+      'Order (pedido)':(i.pedido&&i.pedido!=='N/A')?i.pedido:'',
+      'Company (razón social)':i.razon_social||'',
+      'Product':PRODUCTO_LABEL[lineProd(a,i)]||lineProd(a,i)||'',
+      'Item':c?(c.item||''):(f?finLabelClean(f):''),
+      'Código contable':a.codigo||(c?(c.codigo||''):''),
+      'Qty':a.qty!=null&&a.qty!==''?+a.qty:'',
+      'Price':a.price!=null&&a.price!==''?+a.price:'',
+      'Amount €':+a.amount||0,
+      'Passes':+a.passes||0
+    };}))}
+  ]);
 }
 
 boot(render);

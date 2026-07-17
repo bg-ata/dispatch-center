@@ -126,7 +126,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=64"></script>
+<script src="store.js?v=65"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -551,7 +551,10 @@ function fuCell(p){
   return esc(d);
 }
 function accBadge(p){const a=accountingFor(p);
-  if(a.noEvent)return ' <span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>';
+  /* Jesús (Invoicing 2.0): "not invoiced" only means something on a WON proposal —
+     Sent/Lost/blank ones are not supposed to be invoiced, so no badge there */
+  if(a.state==='none'&&p.salesStatus!=='Confirmed')return '';
+  if(a.noEvent)return p.salesStatus==='Confirmed'?' <span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>':'';
   const info=ACC[a.state];return ' <span class="accb '+info.cls+'" title="Accounting status — derived from Facturación, never typed">'+info.txt+'</span>';}
 function moneyCell(id,kind,v,editable){
   if(!editable)return '<span class="mval ro">'+money(v)+'</span>';

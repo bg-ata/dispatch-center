@@ -685,6 +685,7 @@ function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if
 const CLAIM_MAX_DAYS = 14;      // how far back a claim may reach (her call)
 const CLAIM_TOLERANCE_H = 1;    // auto-apply only up to expected + 1h
 window._claimReady = true;      // flipped off at boot if dispatch_hr11_claims.sql has not run
+window._inv2Ready = true;       // flipped off at boot if dispatch_invoicing2.sql has not run
 /* claim = {type, time?, from?, to?, entryId?, text?}
    types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
 function claimDescribe(c, day) {
@@ -1331,7 +1332,8 @@ const COLS={
      row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
   invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by',
     'spxProposalId'], // invoice ↔ contract link, set by Jesús in Facturación (dispatch_invoice_contract.sql)
-  invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId'],
+  invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId',
+    'producto','tipo_pase','qty','price'], // Invoicing 2.0 line model (dispatch_invoicing2.sql)
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
   /* códigos = the item↔código-contable master Jesús maintains (item name + accounting
      code + optional link to a dc_finance event so RENMAD lines still roll into the € Dashboard) */
@@ -1448,14 +1450,23 @@ const DB={
          the app runs fine before dispatch_facturacion.sql is applied */
       this.data.invoices=[];this.data.invalloc=[];this.data.delegates=[];this.data.codigos=[];_billReady=false;
       try{
+        /* paged: Supabase caps selects at 1000 rows — invoices/allocs/delegates grow past
+           that within a couple of seasons and the cap TRUNCATES SILENTLY (audit Critical 4) */
+        const paged=async tbl=>{const out=[];let from=0,page=1000;
+          for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
+            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
+            if(!r.data||r.data.length<page)break;from+=page;}return out;};
         const [iv,al,dg,cg]=await Promise.all([
-          sb.from('dc_invoices').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_invoice_alloc').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_delegates').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_codigos').select('*').eq('deleted',false).order('id')]);
-        if(iv.error)throw iv.error;if(al.error)throw al.error;if(dg.error)throw dg.error;if(cg.error)throw cg.error;
-        this.data.invoices=iv.data||[];this.data.invalloc=al.data||[];this.data.delegates=dg.data||[];this.data.codigos=cg.data||[];
+          paged('dc_invoices'),paged('dc_invoice_alloc'),paged('dc_delegates'),paged('dc_codigos')]);
+        this.data.invoices=iv;this.data.invalloc=al;this.data.delegates=dg;this.data.codigos=cg;
         _billReady=true;
+        /* Invoicing 2.0 line columns are tolerant: until dispatch_invoicing2.sql runs,
+           never push producto/tipo_pase/qty/price on alloc rows (PostgREST rejects
+           unknown columns). Explicit probe — the table may legitimately be empty. */
+        window._inv2Ready=true;
+        try{const p2=await sb.from('dc_invoice_alloc').select('qty').limit(1);if(p2.error)throw p2.error;}
+        catch(e){window._inv2Ready=false;
+          ['producto','tipo_pase','qty','price'].forEach(c=>{const i2=COLS.invalloc.indexOf(c);if(i2>=0)COLS.invalloc.splice(i2,1);});}
       }catch(e){console.warn('facturación module not ready:',e.message||e);}
       /* team request box (tolerant — app runs fine before dispatch_tickets.sql) */
       this.data.tickets=[];_tickReady=false;
@@ -1482,13 +1493,14 @@ const DB={
          the app runs fine before dispatch_spx.sql is applied */
       this.data.spxProps=[];this.data.spxLines=[];this.data.spxTargets=[];this.data.companyMap=[];_spxReady=false;
       try{
+        /* paged like facturación — the proposal board already imports ~full seasons */
+        const paged=async tbl=>{const out=[];let from=0,page=1000;
+          for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
+            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
+            if(!r.data||r.data.length<page)break;from+=page;}return out;};
         const [sp,sl,stg,cm]=await Promise.all([
-          sb.from('dc_spx_proposals').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_spx_lines').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_spx_targets').select('*').eq('deleted',false).order('id'),
-          sb.from('dc_company_map').select('*').eq('deleted',false).order('id')]);
-        if(sp.error)throw sp.error;if(sl.error)throw sl.error;if(stg.error)throw stg.error;if(cm.error)throw cm.error;
-        this.data.spxProps=sp.data||[];this.data.spxLines=sl.data||[];this.data.spxTargets=stg.data||[];this.data.companyMap=cm.data||[];
+          paged('dc_spx_proposals'),paged('dc_spx_lines'),paged('dc_spx_targets'),paged('dc_company_map')]);
+        this.data.spxProps=sp;this.data.spxLines=sl;this.data.spxTargets=stg;this.data.companyMap=cm;
         _spxReady=true;
       }catch(e){console.warn('SPX module not ready:',e.message||e);}
       /* SPX event registry (tolerant + separate: the board works before it exists, falling back to proposal-derived events) */
@@ -1710,8 +1722,8 @@ function delegateState(d){
     if(inv&&inv.status!=='pagado')return {key:'unpaid',bg:'#F8D7D7',label:'invoice not paid yet'};}
   return {key:'ok',bg:'#fff',label:''};
 }
-const PRODUCTOS=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones'];
-const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings'};
+const PRODUCTOS=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones','refacturacion'];
+const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings',refacturacion:'Refacturación'};
 const TIPO_PASES={single:1,double:2,triple:3,quad:4};
 const INV_STATUS={pagado:'Paid',no_pagado:'Unpaid',cancelado:'Cancelled',abono:'Credit note'};
 const IVA_MOTIVOS=['exempt','not subject','reverse charge (ISP)','export'];
