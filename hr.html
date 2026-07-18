@@ -292,6 +292,7 @@ function renderBalances(){
     '<button class="btn" style="font-size:12px;padding:3px 9px" id="bal_next">›</button>'+
     '<span style="font-size:11.5px;color:var(--muted)">= days enjoyed 1 Mar '+y+' → 28 Feb '+(y+1)+
     ' <span title="Company policy: 23 days a year, and whatever is left may be enjoyed until 28 February of the next year. So days taken in January and February count against the previous year.">ⓘ</span></span>'+
+    '<button class="btn" style="font-size:12px;padding:3px 10px" id="bal_xls" title="Download the holiday pack (balances + full ledger) to Excel">⬇ Holiday pack</button>'+
     '<span style="flex:1"></span>'+
     '<span style="font-size:11.5px;color:var(--muted)">Click a name to see every day</span></div>';
   h+='<table><tr><th>Person</th><th class="num">Allowance</th><th class="num">Taken</th><th class="num">Pending</th><th class="num">Left</th><th style="width:210px">Pace</th></tr>';
@@ -317,6 +318,26 @@ function renderBalances(){
   const bp=document.getElementById('bal_prev'),bn=document.getElementById('bal_next');
   if(bp)bp.onclick=e=>{e.stopPropagation();balYear=y-1;renderBalances();};
   if(bn)bn.onclick=e=>{e.stopPropagation();balYear=y+1;renderBalances();};
+  const bx=document.getElementById('bal_xls');if(bx)bx.onclick=e=>{e.stopPropagation();exportHolidayPack(y);};
+}
+/* Holiday pack for payroll / gestoría: balances + the full dated ledger + carry-over rows,
+   for the selected holiday year. HR-admin only (this whole panel is). */
+function exportHolidayPack(y){
+  const people=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>a.name.localeCompare(b.name));
+  const bal=people.map(p=>({Person:p.name,Role:p.role,'Holiday year':y,
+    Allowance:holAllowance(p),'Carry / borrow':holAdjust(p.id,y),
+    Used:holUsed(p.id,y),Left:holRemaining(p.id,y)}));
+  const ledger=[],carry=[];
+  people.forEach(p=>{
+    DB.holidays.filter(h=>h.personId==p.id&&h.status!=='cancelled'&&(h.type||'vacation')!=='adjust')
+      .sort((a,b)=>(a.dateFrom||'').localeCompare(b.dateFrom||''))
+      .forEach(h=>ledger.push({Person:p.name,From:h.dateFrom,To:h.dateTo,'Working days':+h.workDays||0,
+        Type:(TYPE_LABEL[h.type]||h.type||'Holiday'),Status:h.status,'Charged year':holYearOf(h)}));
+    DB.holidays.filter(h=>h.personId==p.id&&h.type==='adjust'&&h.status!=='cancelled')
+      .forEach(h=>carry.push({Person:p.name,Year:(h.dateFrom||'').slice(0,4),Days:+h.workDays||0,Note:h.note||''}));
+  });
+  exportXLSX('RENMAD_holidays_'+y+'.xlsx',
+    [{name:'Balances',rows:bal},{name:'Ledger',rows:ledger},{name:'Carry-over',rows:carry}]);
 }
 /* every day that makes up a person's count — the thing that makes a wrong total findable.
    Shows the arithmetic in the same order it is calculated, so a missing or stray row is
@@ -713,9 +734,17 @@ function exportTimeclockRange(fromISO,toISO_,personId){
         Punches:info.entries.map(entryLabel).join(' · '),
         'Worked (h)':worked,'Expected (h)':exp,'Diff (h)':Math.round((worked-exp)*100)/100,
         Note:madHol(iso)?('Bank holiday — '+madHol(iso)):(currentLeave(p.id,iso)?TYPE_LABEL[currentLeave(p.id,iso).type]:'')});
-      info.entries.forEach(e=>punches.push({Person:p.name,Date:e.day,Time:e.time,Kind:e.kind,
-        'Added afterwards':e.manual?'yes':'',Amends:e.amends||'',Reason:e.reason||'',
-        RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
+      /* H3: the Punches sheet is the INSPECTION record — it must list EVERY row
+         (voided originals + the void/correction rows too), not just the counted ones,
+         or the hash chain can't be verified and corrections are invisible. A "Counted?"
+         column marks which rows contribute to the total. */
+      const effIds=new Set(info.entries.map(e=>e.id));
+      DB.timeclock.filter(x=>x.personId==p.id&&x.day===iso)
+        .sort((a,b)=>(a.time||'').localeCompare(b.time||''))
+        .forEach(e=>punches.push({Person:p.name,Date:e.day,Time:e.time,Kind:e.kind,
+          'Counted?':effIds.has(e.id)?'yes':'',
+          'Added afterwards':e.manual?'yes':'',Amends:e.amends||'',Reason:e.reason||'',
+          RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
     }
   });
   days.sort((a,b)=>a.Date===b.Date?a.Person.localeCompare(b.Person):a.Date.localeCompare(b.Date));
@@ -998,8 +1027,11 @@ function exportTcMonth(){
       if(exp<=0&&!info.entries.length)continue;
       rows.push({Person:p.name,Day:iso,Punches:info.entries.map(entryLabel).join(' · '),
         'Worked (h)':Math.round(info.total/60*100)/100,'Expected (h)':exp,'Diff (h)':Math.round((info.total/60-exp)*100)/100});
-      info.entries.forEach(e=>raw.push({Person:p.name,Day:e.day,Time:e.time,Kind:e.kind,Manual:e.manual?'yes':'',
-        Reason:e.reason||'',RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
+      const effIdsM=new Set(info.entries.map(e=>e.id));   // H3: complete record incl. voided originals + void rows
+      DB.timeclock.filter(x=>x.personId==p.id&&x.day===iso)
+        .sort((a,b)=>(a.time||'').localeCompare(b.time||''))
+        .forEach(e=>raw.push({Person:p.name,Day:e.day,Time:e.time,Kind:e.kind,'Counted?':effIdsM.has(e.id)?'yes':'',Manual:e.manual?'yes':'',
+          Reason:e.reason||'',RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
     }
   });
   exportXLSX('RENMAD_timeclock_'+y+'-'+String(m+1).padStart(2,'0')+'.xlsx',[{name:'Month',rows},{name:'Raw entries',rows:raw}]);

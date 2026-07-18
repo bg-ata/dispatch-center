@@ -360,6 +360,7 @@ function renderProposals(app,scope){
   h+='<input type="text" id="f_q" placeholder="search company / contact…" value="'+esc(flt.q)+'" style="min-width:150px">';
   if(flt.event||flt.sales||flt.stage||flt.accountType||flt.source||flt.productPackage||flt.packageTier||flt.reasonForLoss||flt.from||flt.to||flt.q)
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
+  h+='<button class="chip" onclick="exportSpx()" title="Download this list (respecting the filters above) to Excel">⬇ Excel</button>';
   h+='</div>';
 
   // table (wrapped in zoom + top-scroll chrome)
@@ -369,6 +370,30 @@ function renderProposals(app,scope){
   wireFilters();wireProposalTable();
 }
 function tile(l,n,s,cls){return '<div class="tile'+(cls?' '+cls:'')+'"><div class="l">'+esc(l)+'</div><div class="n">'+n+'</div><div class="s">'+esc(s||'')+'</div></div>';}
+/* ---------- Excel export of the board (respects the current tab + filters) ---------- */
+function exportSpx(){
+  const scope=(TAB==='before')?'before':'current';
+  const cur=currentEventKeys();
+  const props=liveProps().filter(passFilters).filter(p=>scope==='before'?!propIsCurrent(p,cur):propIsCurrent(p,cur));
+  if(!props.length){alert('No proposals match the current filters.');return;}
+  const proposals=props.map(p=>{
+    const c=(p.contacts||[])[0]||{};
+    let acc=null;try{acc=accountingFor(p);}catch(e){}
+    return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',
+      Status:p.salesStatus||'',Stage:p.stage||'',Source:p.source||'',
+      'Account type':p.accountType||'','Product/Package':p.productPackage||'',Package:p.packageTier||'',
+      'Value €':+p.valueEur||0,Sent:p.fechaEnvio||'','Follow-up':p.fechaSeguimiento||'',
+      'Reason for loss':p.reasonForLoss||'',
+      Invoicing:(acc&&acc.state&&acc.state!=='none')?acc.state:'',
+      'Main contact':(((c.first||'')+' '+(c.last||'')).trim()),'Contact email':c.email||'','Contact phone':c.phone||'',
+      Notes:p.notas||''};
+  });
+  const lines=[];
+  props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>lines.push({
+    Company:p.company||'',Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
+  exportXLSX('RENMAD_SPX_'+scope+'_'+toISO(new Date())+'.xlsx',
+    [{name:'Proposals',rows:proposals},{name:'Event lines',rows:lines}]);
+}
 function sel(id,label,opts,cur){
   return '<select id="'+id+'"><option value="">'+esc(label)+': all</option>'+
     opts.map(([v,l])=>'<option value="'+esc(v)+'"'+(''+cur===''+v?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>';
