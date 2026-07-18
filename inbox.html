@@ -60,7 +60,7 @@
   <div id="composer"></div>
   <div id="listwrap"></div>
 </div>
-<script src="store.js?v=68"></script>
+<script src="store.js?v=69"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('inbox');
 function refreshNav(){document.getElementById('nav').innerHTML=navBar('inbox');try{decorateNav();}catch(e){}}
@@ -100,13 +100,20 @@ function renderComposer(){
     render();
   };
 }
+/* only follow safe destinations: a relative in-app path or an http(s) URL — never
+   javascript:/data: etc. (a crafted inbox row could otherwise run script on click) */
+function safeLink(u){u=(''+u).trim();
+  if(/^https?:\/\//i.test(u))return true;
+  if(/^[a-z][a-z0-9+.\-]*:/i.test(u))return false;   // any other scheme → block
+  return true;                                        // relative path
+}
 function msgHtml(m){
   const k=INBOX_KINDS[m.kind]||INBOX_KINDS.notice;
   return '<div class="msg'+(m.isRead?'':' unread')+'"'+(m.isRead?'':' data-read="'+m.id+'" title="Click to mark as read"')+'>'
     +'<span class="kchip" style="background:'+k.color+'" title="'+esc(k.label)+'">'+k.icon+'</span>'
     +'<div class="txt"><div class="body">'+esc(m.text)+'</div>'
     +'<div class="mline">'+esc(m.fromName||'')+' · '+fmtWhen(m.created)
-    +(m.link?' · <a href="'+esc(m.link)+'">Open →</a>':'')+'</div></div></div>';
+    +(m.link&&safeLink(m.link)?' · <a href="'+esc(m.link)+'">Open →</a>':'')+'</div></div></div>';
 }
 function render(){
   renderComposer();

@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=68"></script>
+<script src="store.js?v=69"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -486,7 +486,7 @@ function renderWeek(){
     '<div class="bigeur">'+eur(total)+'</div><p class="hint">signed across '+rows.length+' event'+(rows.length===1?'':'s')+' this week</p>'+
     '<div class="wstbl"><table id="wstbl"></table></div></div>'+
     weekAnalysis()+
-    (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
+    (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written. Or <button class="btn" id="wkExport" style="font-size:12px;padding:3px 9px">⬇ Export the current data</button> in the same layout, so it re-imports cleanly.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
   const sel=document.getElementById('wkSel');
   sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+ddmmyyyy(d)+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
   sel.onchange=()=>{weekDate=sel.value;renderWeek();};
@@ -1127,7 +1127,18 @@ function applyImport(parsed){
   return {added:added,updated:updated,unchanged:same};
 }
 window.parseWeeklyWorkbook=parseWeeklyWorkbook;window.applyImport=applyImport;
+/* round-trip export: the same "Database" sheet + HMAP headers the importer reads, so the
+   in-app data can go back out to Excel and re-import cleanly (canFinance-gated like import) */
+function exportWeekly(){
+  const rows=DB.weekly.slice()
+    .sort((a,b)=>(''+(a.eventCode||'')).localeCompare(''+(b.eventCode||''))||((+a.week||0)-(+b.week||0)))
+    .map(r=>{const o={};Object.keys(HMAP).forEach(h=>{const v=r[HMAP[h]];o[h]=(v==null?'':v);});return o;});
+  if(!rows.length){alert('No weekly data to export yet.');return;}
+  exportXLSX('RENMAD_weekly_'+toISO(new Date())+'.xlsx',[{name:'Database',rows}]);
+}
+window.exportWeekly=exportWeekly;
 function wireImport(){
+  const xb=document.getElementById('wkExport');if(xb)xb.onclick=exportWeekly;
   const drop=document.getElementById('drop');if(!drop)return;
   const file=document.getElementById('file'),msg=document.getElementById('impmsg');
   const handle=f=>{

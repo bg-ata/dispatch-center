@@ -915,7 +915,7 @@ function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved');}
    session, server error) the punch is kept here — localStorage, survives closing
    the browser — shown in a red banner and retried until it lands. */
 const PUNCH_QUEUE_KEY='dcPendingPunches';
-let _punchAck=null,_punchFlushing=false;
+let _punchAck=null,_punchFlushing=false,_punchClockWarn=false;
 function pendingPunches(){try{return JSON.parse(localStorage.getItem(PUNCH_QUEUE_KEY))||[];}catch(e){return [];}}
 function setPendingPunches(q){try{if(q.length)localStorage.setItem(PUNCH_QUEUE_KEY,JSON.stringify(q));else localStorage.removeItem(PUNCH_QUEUE_KEY);}catch(e){}renderPunchBanner();}
 async function flushPendingPunches(){
@@ -923,16 +923,25 @@ async function flushPendingPunches(){
   const q=pendingPunches();if(!q.length)return;
   _punchFlushing=true;
   try{
-    const left=[];
+    const left=[];let clockWarn=false;
+    const isClockErr=m=>/future|dated in the future|no_future/i.test(m||'');
     for(const p of q){
       try{
         const {error}=await sb.from('dc_timeclock').insert([p]);
-        if(error&&!(error.code==='23505'||/duplicate key/i.test(error.message||''))){left.push(p);continue;} // duplicate = it DID save on an earlier try
+        if(error&&!(error.code==='23505'||/duplicate key/i.test(error.message||''))){
+          /* the server refused it as future-dated → the DEVICE clock was wrong when this
+             punch was made, so its day/time can't be trusted and blind retry will loop
+             forever (audit H2). Keep it (never lose a punch) but flag the real cause so the
+             banner tells the worker to fix their clock + offers an explicit Dismiss. */
+          if(isClockErr(error.message))clockWarn=true;
+          left.push(p);continue;
+        }
         if(DB.data&&DB.data.timeclock&&!DB.data.timeclock.some(r=>r.id==p.id))DB.data.timeclock.push(p);
         if(_shadow&&_shadow.timeclock)_shadow.timeclock[p.id]=JSON.stringify(p);
-      }catch(e){left.push(p);}
+      }catch(e){if(isClockErr(e&&e.message))clockWarn=true;left.push(p);}
     }
     const saved=q.length-left.length;
+    _punchClockWarn=left.length?clockWarn:false;
     setPendingPunches(left);
     if(saved)window.dispatchEvent(new Event('dc-remote'));
   }finally{_punchFlushing=false;}
@@ -943,10 +952,23 @@ function renderPunchBanner(){
   if(!q.length){if(el)el.remove();return;}
   if(!el){el=document.createElement('div');el.id='punchPendingBar';document.body.prepend(el);}
   el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#D32230;color:#fff;padding:8px 16px;font:13px Segoe UI,system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.25)';
-  el.innerHTML='<b>⚠ '+q.length+' clock punch'+(q.length>1?'es':'')+' not saved yet</b>'+
-    '<span style="opacity:.92">'+q.map(p=>p.kind.toUpperCase()+' '+fmtHumanShort(p.day)+' '+(p.time||'').slice(0,5)).join(' · ')+'</span>'+
-    '<span style="opacity:.8">Kept safe on this device — retrying automatically.</span>'+
-    '<button id="ppRetry" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Retry now</button>';
+  const list=q.map(p=>p.kind.toUpperCase()+' '+fmtHumanShort(p.day)+' '+(p.time||'').slice(0,5)).join(' · ');
+  if(_punchClockWarn){
+    /* H2: a future-dated punch can never save as-is — name the real cause (device clock)
+       and give an explicit Dismiss so a stuck, mis-dated punch can be cleared after the
+       worker fixes their clock and re-clocks. */
+    el.innerHTML='<b>⚠ Clock punch not saved — this device\'s date/time looks wrong</b>'+
+      '<span style="opacity:.92">It recorded: '+esc(list)+'</span>'+
+      '<span style="opacity:.85">Set your device to the correct date &amp; time, then Retry. If you have already clocked again correctly, Dismiss this.</span>'+
+      '<button id="ppRetry" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Retry</button>'+
+      '<button id="ppDismiss" style="background:transparent;color:#fff;border:1px solid #fff;border-radius:7px;padding:5px 12px;font-weight:600;cursor:pointer;font:inherit">Dismiss</button>';
+    document.getElementById('ppDismiss').onclick=()=>{if(confirm('Discard '+q.length+' unsaved punch'+(q.length>1?'es':'')+'? Only do this if the times were wrong and you have re-clocked correctly.')){_punchClockWarn=false;setPendingPunches([]);}};
+  }else{
+    el.innerHTML='<b>⚠ '+q.length+' clock punch'+(q.length>1?'es':'')+' not saved yet</b>'+
+      '<span style="opacity:.92">'+esc(list)+'</span>'+
+      '<span style="opacity:.8">Kept safe on this device — retrying automatically.</span>'+
+      '<button id="ppRetry" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Retry now</button>';
+  }
   document.getElementById('ppRetry').onclick=()=>flushPendingPunches();
 }
 function punchAckHtml(){ // confirmation line under the clock button (both clock cards)
