@@ -171,7 +171,7 @@ function normCompany(s){
 function domainOf(email){const m=(''+(email||'')).split('@');return m.length===2?m[1].toLowerCase().trim():'';}
 
 /* ---------- tab routing ---------- */
-const TABLIST=[['proposals','Proposals'],['health','Health-Check'],['report','Reporting'],['before','Before']]; // Before parked at the end — empty until the first event closes
+const TABLIST=[['proposals','Proposals'],['dashboard','Dashboard'],['health','Health-Check'],['report','Reporting'],['before','Before']]; // Before parked at the end — empty until the first event closes
 function activeTab(){const h=location.hash.replace('#','');return TABLIST.some(t=>t[0]===h)?h:'proposals';}
 let TAB=activeTab();
 let VIEW='general';                  // 'general' (parent rows) | 'event' (child rows)
@@ -307,6 +307,7 @@ function render(){
   const el=document.getElementById('app');
   if(TAB==='proposals')renderProposals(el,'current');
   else if(TAB==='before')renderProposals(el,'before');
+  else if(TAB==='dashboard')renderDashboard(el);
   else if(TAB==='health')renderHealth(el);
   else renderReporting(el);
 }
@@ -738,6 +739,57 @@ function specsMoney(evKey,status){
   });
   return sum;
 }
+/* money / count on one event by board bucket (Confirmed|Sent|Silent|Lost) */
+function eventBucketMoney(evKey,bucket){let s=0;liveProps().forEach(p=>{if(spxBucket(p)!==bucket)return;DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===evKey)s+=(+l.valueEur||0);});});return s;}
+function cntEventBucket(evKey,bucket){return liveProps().filter(p=>spxBucket(p)===bucket&&DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===evKey)).length;}
+/* ================= DASHBOARD TAB (Belén #8 — the at-a-glance summary) ================= */
+function renderDashboard(app){
+  const evsAll=spxEvents();
+  const cur=evsAll.filter(evCurrent).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const past=evsAll.filter(e=>!evCurrent(e)).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  if(HC==null||!evsAll.some(e=>e.key===HC))HC=(cur[0]&&cur[0].key)||(past[0]&&past[0].key)||null;
+  let optsHtml=cur.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+'</option>').join('');
+  if(past.length)optsHtml+='<option disabled>──── finished ────</option>'+past.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+' · (finished)</option>').join('');
+  let h='<div class="filters"><label style="font-weight:700;color:var(--ink)">Event:</label>'
+    +'<select id="db_ev">'+(optsHtml||'<option>—</option>')+'</select> <span class="ro-note">Resumen del evento — lo que el equipo quiere ver de un vistazo.</span></div>';
+  const ev=evsAll.find(e=>e.key===HC);
+  if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events yet.</div>';const s=document.getElementById('db_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
+  const fid=ev.financeId;
+  const won=eventBucketMoney(ev.key,'Confirmed'),sent=eventBucketMoney(ev.key,'Sent'),silent=eventBucketMoney(ev.key,'Silent'),lost=eventBucketMoney(ev.key,'Lost');
+  const tickets=fid!=null?invoicedPases(fid).total:0;
+  const reg=hasReg()?(ev.reg||{}):(fid!=null?(DB.spxTargetFor(fid)||{}):{});
+  const spTarget=+reg.sponsorshipTarget||0,tkTarget=+reg.pasesTarget||0,totTarget=spTarget+tkTarget;
+  const closed=won+tickets,reached=totTarget?closed/totTarget:null,toGoMoney=Math.max(0,totTarget-closed);
+  // TOP block — the general view
+  h+='<div class="card"><h3 style="margin:0 0 10px">'+esc(ev.name)+' — resumen</h3><div class="tiles">'
+    +tile('Specs cerrado',money(won),cntEventBucket(ev.key,'Confirmed')+' Won','good')
+    +tile('Tickets cerrado',money(tickets),'vendidos (Facturación)')
+    +tile('Cerrado total',money(closed),'specs + tickets','good')
+    +tile('Target del evento',totTarget?money(totTarget):'—',(spTarget&&tkTarget)?('specs '+money(spTarget)+' · tickets '+money(tkTarget)):'donde esté en Money')
+    +tile('% target',reached==null?'—':pct(reached),reached==null?'':'fuera '+pct(Math.max(0,1-reached))+' · faltan '+money(toGoMoney))
+    +'</div></div>';
+  // BOTTOM block — analysis: Sent / Silent / Lost / Won share of the pipeline
+  const pipeTotal=sent+silent+lost+won,shareOf=v=>pipeTotal?v/pipeTotal:null;
+  h+='<div class="card"><h3 style="margin:0 0 10px">Reparto del pipeline</h3><div class="tiles">'
+    +tile('Sent',money(sent),shareOf(sent)==null?'':pct(shareOf(sent))+' · '+cntEventBucket(ev.key,'Sent')+' props')
+    +tile('Silent',money(silent),shareOf(silent)==null?'':pct(shareOf(silent))+' · '+cntEventBucket(ev.key,'Silent')+' dormidas')
+    +tile('Lost',money(lost),shareOf(lost)==null?'':pct(shareOf(lost))+' · '+cntEventBucket(ev.key,'Lost')+' props')
+    +tile('Won',money(won),shareOf(won)==null?'':pct(shareOf(won))+' · firmadas','good')
+    +'</div></div>';
+  h+='<div class="chartbox"><h3>Evolución semanal del pipeline — '+esc(ev.name)+'</h3><div class="cw"><canvas id="c_dashwk"></canvas></div></div>';
+  h+=healthCard(ev);
+  app.innerHTML=h;
+  const s=document.getElementById('db_ev');if(s)s.onchange=()=>{HC=s.value;render();};
+  wireHC(_hcT);
+  // weekly evolution for THIS event's proposals (created-week € + running total)
+  const evProps=liveProps().filter(p=>DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===ev.key));
+  const byWk={};evProps.forEach(p=>{const d=(p.createdAt||p.fechaEnvio||'').slice(0,10);if(!d)return;const wk=weekStart(d);const v=DB.spxLinesFor(p.id).filter(l=>lineEvKey(l)===ev.key).reduce((a,l)=>a+(+l.valueEur||0),0);byWk[wk]=(byWk[wk]||0)+v;});
+  const wks=Object.keys(byWk).sort();let r=0;const cum=wks.map(k=>{r+=byWk[k];return r;});
+  mkChart('c_dashwk',{data:{labels:wks,datasets:[
+      {type:'bar',label:'€ nuevo/semana',data:wks.map(k=>byWk[k]),backgroundColor:'#F3B0A0',order:2},
+      {type:'line',label:'€ acumulado',data:cum,borderColor:'#C0392B',backgroundColor:'#C0392B',borderWidth:2,tension:.25,pointRadius:2,order:1}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},scales:{x:{ticks:{font:{size:9},maxRotation:0}},y:{ticks:{callback:v=>money(v)}}}}});
+}
 /* health-check target/stretch row — Specs | Tickets | TOTAL (editable cells wired by wireHC) */
 function hcRow2(label,specs,tickets,total,editable,specsF,ticketsF){
   const c=(v,fld)=>editable?'<span class="mval" data-tf="'+fld+'" title="Click to edit">'+money(v)+'</span>':money(v);
@@ -755,15 +807,24 @@ function renderHealth(app){
     +'<select id="hc_ev">'+(optsHtml||'<option>—</option>')+'</select> <span class="ro-note">The events you\'re selling — same set as the board.</span></div>';
   const ev=evsAll.find(e=>e.key===HC);
   if(!ev){app.innerHTML=h+'<div class="card" style="color:var(--muted)">No events yet.</div>';const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};return;}
+  app.innerHTML=h+healthCard(ev);
+  const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};
+  wireHC(_hcT);
+}
+/* the reusable health-check card for ONE event — used on the Health-Check tab, the
+   Dashboard tab, and below the Proposals block. Sets _hcFid/_hcReg/_hcT for wireHC. */
+let _hcT=null;
+function healthCard(ev){
   const fid=ev.financeId; _hcFid=fid; _hcReg=(hasReg()&&ev.reg)?ev.reg:null;
   const t=_hcReg||(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
+  _hcT=t;
   let conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
   if(conv>1)conv=conv/100;conv=Math.max(0,Math.min(1,conv));   // "35" means 35%, always a 0–1 fraction
   /* SIGNED = deals marked Won on the board (sales-declared), counted the moment they're Won
      — NOT invoiced (Belén, 20 Jul: the Won deal, e.g. 19.275, must count immediately).
      Invoiced is shown as an "of which" sub-line. Silent proposals never count as pipeline. */
-  const wonSpecs=specsMoney(HC,'Confirmed');
-  const pipeline=specsMoney(HC,'Sent');
+  const wonSpecs=specsMoney(ev.key,'Confirmed');
+  const pipeline=specsMoney(ev.key,'Sent');
   const expected=pipeline*conv;
   const invSpecs=fid!=null?invoicedSponsorship(fid).total:0;         // of-which-invoiced (info)
   const tickets=fid!=null?invoicedPases(fid):{total:0,paid:0};       // tickets come from Facturación
@@ -778,7 +839,7 @@ function renderHealth(app){
   const addT=gapT>=0?0:(conv>0?(-gapT)/conv:null),addS=gapS>=0?0:(conv>0?(-gapS)/conv:null);   // conv 0 → can't derive
   const editable=DB.canSalesLead()&&(_hcReg!=null||fid!=null);   // targets editable if the registry or a Money row holds them
 
-  h+='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
+  let h='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
     +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so tickets sold (Facturación) can\'t derive — targets &amp; the Won/pipeline sponsorship figures still work. Link it in <b>⚙ Manage events</b>.</div>':'')
     +'<p class="lead"><b>Firmado</b> = deals marked <b>Won</b> on the board (the moment they\'re Won) + <b>tickets</b> vendidos (Facturación). La <b>proyección</b> añade el pipeline aún en Sent × conversión.</p>';
 
@@ -812,9 +873,7 @@ function renderHealth(app){
     +'</div>';
   h+='<p class="ro-note">«Alcanzado» = lo ya firmado (Won + tickets) sobre el target total. «Fuera de target» = lo que queda por firmar. La proyección añade el pipeline pendiente por su conversión.</p>';
   h+='</div>';
-  app.innerHTML=h;
-  const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};
-  wireHC(t);
+  return h;
 }
 function hcRow(label,pases,spons,total,editable,pf,sf){
   const c=(v,fld)=>editable?'<span class="mval" data-tf="'+fld+'" title="Click to edit">'+money(v)+'</span>':money(v);
