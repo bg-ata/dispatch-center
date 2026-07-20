@@ -1980,6 +1980,37 @@ window.addEventListener('pageshow',e=>{if(e.persisted)location.reload();});
 })();
 /* don't let a navigation swallow an edit still waiting in the 700 ms sync window */
 window.addEventListener('beforeunload',e=>{if(_saveTimer||_syncing||_syncFails){e.preventDefault();e.returnValue='';}});
+/* ---- page-crash alarm (20 Jul 2026 lesson) ----
+   A JS crash used to die silently and could leave a half-wired page that LOOKS fine
+   (buttons drawn but no handlers attached — the Monday clock-in outage). Any uncaught
+   error or promise rejection now raises a visible bar so a broken page says so. */
+let _jsErrShown=false;
+function showJsErrBar(msg){
+  if(_jsErrShown)return;
+  const put=()=>{ if(_jsErrShown)return;_jsErrShown=true;
+    try{
+      const d=document.createElement('div');d.id='dcJsErrBar';
+      d.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#8E1B26;color:#fff;padding:9px 16px;font:13px Segoe UI,system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 -2px 10px rgba(0,0,0,.3)';
+      d.innerHTML='<b>⚠ Something broke on this page</b>'+
+        '<span style="opacity:.9">Some buttons or panels may not respond. Reload usually fixes it — if it keeps happening, file a 💡 Request.</span>'+
+        '<span style="opacity:.6;font-size:11.5px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+String(msg||'').replace(/</g,'&lt;')+'</span>'+
+        '<button id="dcJsErrReload" style="margin-left:auto;background:#fff;color:#8E1B26;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Reload</button>';
+      document.body.appendChild(d);
+      document.getElementById('dcJsErrReload').onclick=()=>location.reload();
+    }catch(e){}
+  };
+  if(document.body)put();else document.addEventListener('DOMContentLoaded',put);
+}
+window.addEventListener('error',e=>{
+  const m=(e&&e.message)||'';
+  if(/ResizeObserver loop/.test(m))return;   // benign browser noise, not a crash
+  showJsErrBar(m+(e&&e.filename?' — '+String(e.filename).split('/').pop()+':'+e.lineno:''));
+});
+window.addEventListener('unhandledrejection',e=>{
+  const r=e&&e.reason,m=(r&&(r.message||String(r)))||'';
+  if(!m||/AbortError/.test(m))return;        // aborted fetches on navigation are normal
+  showJsErrBar(m);
+});
 async function boot(renderFn){
   if(USE_SUPABASE){
     await injectSB();
