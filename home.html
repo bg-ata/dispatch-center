@@ -197,6 +197,9 @@ function render(){
 function renderClock(){
   const me=DB.currentUser,box=document.getElementById('clockPanel');
   if(_clockTick){clearInterval(_clockTick);_clockTick=null;}
+  /* the "Recursos Humanos" login is an EXTERNAL team shared with another company, not an
+     employee (Belén, 20 Jul): no clock duty here — they track time in their own system. */
+  if(isTeamAccount(me)){box.innerHTML='<h3>⏱ Clock</h3><p class="hint">External HR team account — no clock in/out needed here (your team keeps time in its own system). You will get an email at rrhh@ata.email whenever something needs HR action; the 🔔 panel on the right shows the same items.</p>';return;}
   if(!DB.tcReady()){box.innerHTML='<h3>⏱ Clock'+visBadge('you + HR')+'</h3><p class="hint">Not active yet — run dispatch_hr3.sql. Once live, clock in/out lives right here.</p>';return;}
   const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
   box.innerHTML='<h3>⏱ Clock'+visBadge('you + HR')+'</h3>'+
@@ -254,6 +257,7 @@ function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
 function renderAllocPanel(){
   const box=document.getElementById('allocPanel');
   let h='<h3>📊 My week allocation'+visBadge('you + HR')+'</h3>';
+  if(isTeamAccount(DB.currentUser)){box.innerHTML='<h3>📊 Week allocation</h3><p class="hint">External HR team account — no weekly hour allocation required.</p>';return;}
   if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
   box.innerHTML=h+
     '<p class="hint">Split your week’s hours across the project numbers — bank holidays and approved holidays are filled in for you.</p>'+

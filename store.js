@@ -508,11 +508,13 @@ const HR_START='2026-07-06'; // first week the timesheet is mandatory (module go
 function tsFor(personId,weekISO){return DB.timesheets.find(t=>t.personId==personId&&t.week===weekISO);}
 function tsManualSum(t){return t?Object.values(t.hours||{}).reduce((a,v)=>a+(+v||0),0):0;}
 function tsComplete(personId,weekISO){
+  if(isTeamAccount(DB.person(personId)))return true; // external HR team: no allocation duty (Belén, 20 Jul)
   const w=weekWorkInfo(weekISO,personId);
   if(w.toAllocate<=0)return true; // all-holiday/vacation week: nothing to fill
   return Math.abs(tsManualSum(tsFor(personId,weekISO))-w.toAllocate)<0.01;
 }
 function missingWeeks(personId){
+  if(isTeamAccount(DB.person(personId)))return []; // external HR team: never nagged for hours
   const out=[],cur=toISO(monday(new Date()));
   for(let m=ymd(HR_START);toISO(m)<cur;m=addDays(m,7)){
     const iso=toISO(m);
@@ -865,7 +867,7 @@ function breakState(){try{return JSON.parse(localStorage.getItem(breakKey()))||{
 function setBreakState(s){try{localStorage.setItem(breakKey(),JSON.stringify(s));}catch(e){}}
 function breakReminderTick(){
   try{flushPendingPunches();}catch(e){} // retry any punch that failed to save
-  if(!DB.currentUser||!DB.tcReady())return;
+  if(!DB.currentUser||!DB.tcReady()||isTeamAccount(DB.currentUser))return;
   const cont=tcContinuousSeconds(DB.currentUser.id),el=document.getElementById('breakToast');
   const s=breakState();
   if(cont>=BREAK_AFTER_H*3600 && s.n<=BREAK_SNOOZES.length && Date.now()>s.until){ if(!el)showBreakToast(cont,s); }
@@ -894,6 +896,7 @@ function showBreakToast(cont,s){
   };
 }
 function tcExpectedDay(personId,iso){ // 0 on weekends, bank holidays and any approved leave (holiday/sick/maternity/paternity)
+  if(isTeamAccount(DB.person(personId)))return 0; // external HR team: no clock duty (Belén, 20 Jul)
   const d=ymd(iso);
   if(d.getDay()===0||d.getDay()===6||madHol(iso))return 0;
   if(personOffDays(personId,iso,iso).length)return 0;
@@ -1012,7 +1015,7 @@ function tcWeekProgress(personId,mondayISO){
 const WEEK_ALARMS=[60,30,15,10,5,0]; // minutes-left marks
 function weekAlarmKey(){return 'dcWeekAlarms|'+(DB.currentUser?DB.currentUser.id:0)+'|'+toISO(monday(new Date()));}
 function weeklyGoalTick(){
-  if(!DB.currentUser||!DB.tcReady())return;
+  if(!DB.currentUser||!DB.tcReady()||isTeamAccount(DB.currentUser))return;
   const me=DB.currentUser, info=tcDayInfo(me.id,toISO(new Date()));
   const el=document.getElementById('weekAlarmToast');
   if(!info.open){if(el)el.remove();return;}
