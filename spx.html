@@ -191,6 +191,8 @@ function propEvents(p){return DB.spxLinesFor(p.id);}
    sheet import has its own createdBy marker and stays normal. */
 function byHand(p){return !p.fileName&&p.createdBy!=='spx-import-2026-07-13';}
 function isOverdueFU(p){const d=(p.fechaSeguimiento||'').slice(0,10);return p.salesStatus==='Sent'&&!!d&&d<toISO(new Date());}
+/* day-first display (Belén's standing date rule) — comparisons stay ISO, display never is */
+function dmy(iso){if(!iso)return '';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 function rowCls(p){return 'prow'+(byHand(p)?' byhand':'')+(p.salesStatus==='Confirmed'?' wonrow':'')+(isOverdueFU(p)?' overdue':'');}
 function rowTitle(p){return byHand(p)?' title="Added by hand on the board — not from the Proposal Builder"':'';}
 /* the authoritative value of a proposal = Σ its children, or its own value when it has none (General/single-with-value) */
@@ -382,7 +384,7 @@ function exportSpx(){
     return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',
       Status:p.salesStatus||'',Stage:p.stage||'',Source:p.source||'',
       'Account type':p.accountType||'','Product/Package':p.productPackage||'',Package:p.packageTier||'',
-      'Value €':+p.valueEur||0,Sent:p.fechaEnvio||'','Follow-up':p.fechaSeguimiento||'',
+      'Value €':+p.valueEur||0,Sent:dmy(p.fechaEnvio),'Follow-up':dmy(p.fechaSeguimiento),
       'Reason for loss':p.reasonForLoss||'',
       Invoicing:(acc&&acc.state&&acc.state!=='none')?acc.state:'',
       'Main contact':(((c.first||'')+' '+(c.last||'')).trim()),'Contact email':c.email||'','Contact phone':c.phone||'',
@@ -497,7 +499,7 @@ function proposalsTableGeneral(props){
       +'<td class="num">'+probCell(p)+'</td>'
       +'<td><span class="clip" title="'+esc(p.contents||'')+'">'+esc(p.contents||'—')+'</span></td>'
       +'<td class="num">'+valCell+'</td>'
-      +'<td>'+esc((p.fechaEnvio||'').slice(0,10)||'—')+'</td>'
+      +'<td>'+(dmy(p.fechaEnvio)||'—')+'</td>'
       +'<td>'+fuCell(p)+'</td>'
       +'<td>'+contactCell(p)+'</td>'
       +'<td>'+notesCell(p,editable)+'</td>'
@@ -572,8 +574,8 @@ function fuCell(p){
   const d=(p.fechaSeguimiento||'').slice(0,10);
   if(!d)return '<span style="color:var(--muted)">—</span>';
   if(p.salesStatus==='Sent'&&d<toISO(new Date()))
-    return '<span style="color:#D32230;font-weight:700" title="Next touchpoint expired — time to follow up!">⏰ '+esc(d)+'</span>';
-  return esc(d);
+    return '<span style="color:#D32230;font-weight:700" title="Next touchpoint expired — time to follow up!">⏰ '+dmy(d)+'</span>';
+  return dmy(d);
 }
 function accBadge(p){const a=accountingFor(p);
   /* Jesús (Invoicing 2.0): "not invoiced" only means something on a WON proposal —
@@ -910,7 +912,7 @@ function openPanel(id){
   if(p.stage==='Lost')b+='<div class="kv"><span class="k">Reason for loss</span><span>'+esc(p.reasonForLoss||'—')+'</span></div>';
   b+='<div class="kv"><span class="k">Accounting (derived)</span>'+(a.noEvent?'<span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>':'<span class="accb '+ACC[a.state].cls+'">'+ACC[a.state].txt+'</span>')+'</div>';
   b+='<div class="kv"><span class="k">Value</span><b>'+money(propValue(p))+'</b></div>';
-  b+='<div class="kv"><span class="k">Created</span><span>'+esc((p.createdAt||'').slice(0,16).replace('T',' '))+(p.createdBy?' · '+esc(p.createdBy):'')+'</span></div>';
+  b+='<div class="kv"><span class="k">Created</span><span>'+(dmy(p.createdAt)+((p.createdAt||'').length>10?' '+(''+p.createdAt).slice(11,16):''))+(p.createdBy?' · '+esc(p.createdBy):'')+'</span></div>';
   b+='</div>';
   // events / lines — editable proposals can edit each line's amount AND add lines (multi-event)
   b+='<div class="sec"><h5>Events</h5>';
@@ -958,7 +960,7 @@ function openPanel(id){
       +kv('Company',p.company)+kv('Owner',p.responsableName||p.responsable)
       +kv('Account type',p.accountType)+kv('Source',p.source)
       +kv('Product/Package',p.productPackage)+kv('Package',p.packageTier)
-      +kv('Sent date',(p.fechaEnvio||'').slice(0,10))+kv('Follow up',(p.fechaSeguimiento||'').slice(0,10))
+      +kv('Sent date',dmy(p.fechaEnvio))+kv('Follow up',dmy(p.fechaSeguimiento))
       +'<div class="kv"><span class="k">Included</span></div><div class="msgbox" style="white-space:pre-wrap;background:#fbfaf8;border:1px dashed var(--line);border-radius:9px;padding:10px;margin-top:4px">'+esc(p.contents||'—')+'</div>'
       +(p.notas?'<div class="kv" style="margin-top:8px"><span class="k">Notas</span></div><div class="ro-note">'+esc(p.notas)+'</div>':'')
       +'<p class="ro-note" style="margin-top:10px">Read-only — this is '+esc(p.responsableName||'someone else')+'\'s proposal. The sales lead and Belén can edit any.</p></div>';

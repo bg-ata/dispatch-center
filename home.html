@@ -279,7 +279,7 @@ function renderAllocAlarm(){
   const miss=missingWeeks(me.id);
   box.innerHTML=miss.length
     ?'<div class="alarm">⏰ <b>'+miss.length+' week'+(miss.length===1?'':'s')+' without your hours:</b> '+
-      miss.map(w=>'<a href="#" data-goto="'+w+'">'+w+'</a>').join(' · ')+' — filling them in is mandatory.</div>'
+      miss.map(w=>'<a href="#" data-goto="'+w+'">'+fmtHumanShort(w)+'</a>').join(' · ')+' — filling them in is mandatory.</div>'
     :'';
   box.querySelectorAll('[data-goto]').forEach(a=>a.onclick=e=>{e.preventDefault();weekISO=a.dataset.goto;renderWeek();});
 }
@@ -936,7 +936,7 @@ function wireReport(){
 }
 function threadHtml(r){
   return '<div style="background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12.5px">'+
-    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
+    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+fmtStamp(m.at)+'</span><br>'+deIso(esc(m.text))+'</div>').join('')+'</div>';
 }
 function reportChip(r){
   if(r.ratify==='pending')return '<span class="chip" style="background:var(--blue)">Applied — Belén reviewing</span>';
@@ -976,7 +976,7 @@ function monthTable(personId){
     if(exp<=0&&!info.entries.length)continue;
     any=true;wSum+=info.total;eSum+=exp*60;
     const diff=info.total-exp*60;
-    h+='<tr><td>'+iso+'</td><td>'+(info.entries.length?info.entries.map(entryLabel).join(' · '):'<span style="color:var(--red)">no punches</span>')+'</td>'+
+    h+='<tr><td>'+fmtHumanShort(iso)+'</td><td>'+(info.entries.length?info.entries.map(entryLabel).join(' · '):'<span style="color:var(--red)">no punches</span>')+'</td>'+
       '<td class="num">'+(info.total?fmtMin(info.total):'—')+'</td><td class="num">'+(exp||'—')+'</td>'+
       '<td class="num" style="color:'+(diff<-15?'var(--red)':diff>15?'var(--green)':'var(--muted)')+'">'+(info.total?((diff>=0?'+':'−')+fmtMin(Math.abs(diff))):'')+'</td></tr>';
   }

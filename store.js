@@ -290,7 +290,7 @@ function personStatusNow(p){
   const lv=currentLeave(id);
   if(lv){const isHol=lv.type==='vacation';
     return {key:isHol?'holiday':'leave',label:isHol?'Holiday':lv.label,emoji:lv.emoji,
-            color:isHol?'#3E8C28':'#C77800',detail:'until '+lv.until,private:!isHol};}
+            color:isHol?'#3E8C28':'#C77800',detail:'until '+fmtHumanShort(lv.until),private:!isHol};}
   const rem=DB.holidays.find(x=>x.personId==id&&x.status==='approved'&&x.type==='remote'&&x.dateFrom<=today&&x.dateTo>=today);
   const ev=atEventNow(id);
   /* punches are only visible to the person themselves and HR-admins (RLS) —
@@ -690,6 +690,11 @@ window._claimReady = true;      // flipped off at boot if dispatch_hr11_claims.s
 window._inv2Ready = true;       // flipped off at boot if dispatch_invoicing2.sql has not run
 /* claim = {type, time?, from?, to?, entryId?, text?}
    types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
+/* display-time de-ISO (Belén, 20 Jul): stored texts written BEFORE the date rule reached
+   every writer still carry yyyy-mm-dd — rewrite them to dd/mm/yyyy wherever they render.
+   Only touches digit-dash-digit patterns, safe to run on escaped HTML. */
+function deIso(s){return (''+(s==null?'':s)).replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g,'$3/$2/$1');}
+function fmtStamp(at){if(!at)return '';const s=''+at;return deIso(s.slice(0,10))+(s.length>10?' '+s.slice(11,16):'');}
 function claimDescribe(c, day) {
   const d = fmtHuman(day); // Belén's date format everywhere: day, month and year — never ISO
   switch (c.type) {

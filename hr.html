@@ -331,7 +331,7 @@ function exportHolidayPack(y){
   people.forEach(p=>{
     DB.holidays.filter(h=>h.personId==p.id&&h.status!=='cancelled'&&(h.type||'vacation')!=='adjust')
       .sort((a,b)=>(a.dateFrom||'').localeCompare(b.dateFrom||''))
-      .forEach(h=>ledger.push({Person:p.name,From:h.dateFrom,To:h.dateTo,'Working days':+h.workDays||0,
+      .forEach(h=>ledger.push({Person:p.name,From:deIso(h.dateFrom),To:deIso(h.dateTo),'Working days':+h.workDays||0,
         Type:(TYPE_LABEL[h.type]||h.type||'Holiday'),Status:h.status,'Charged year':holYearOf(h)}));
     DB.holidays.filter(h=>h.personId==p.id&&h.type==='adjust'&&h.status!=='cancelled')
       .forEach(h=>carry.push({Person:p.name,Year:(h.dateFrom||'').slice(0,4),Days:+h.workDays||0,Note:h.note||''}));
@@ -556,6 +556,7 @@ function exportAllocRange(fromISO,toISO_,personId,projId){
     }
   });
   lines.sort((a,b)=>a.Week===b.Week?(a.Person===b.Person?String(a.Project).localeCompare(String(b.Project)):a.Person.localeCompare(b.Person)):a.Week.localeCompare(b.Week));
+  lines.forEach(l=>l.Week=deIso(l.Week)); // day-first for humans — sort happened on ISO above
   /* per-project and per-person totals — the two questions actually asked of this data */
   const byProj={},byPers={};
   lines.forEach(l=>{
@@ -748,6 +749,9 @@ function exportTimeclockRange(fromISO,toISO_,personId){
     }
   });
   days.sort((a,b)=>a.Date===b.Date?a.Person.localeCompare(b.Person):a.Date.localeCompare(b.Date));
+  /* Days = the human summary → day-first dates. The Punches sheet stays RAW ISO on purpose:
+     it is the inspection/hash-verification record and must match the stored fields exactly. */
+  days.forEach(r=>r.Date=deIso(r.Date));
   const who=personId==null?'everybody':DB.personName(personId).replace(/\s+/g,'_');
   const msg=document.getElementById('dl_msg');
   if(!days.length){if(msg)msg.textContent='Nothing recorded in that range.';return;}
@@ -835,7 +839,7 @@ function renderEventAway(){
 }
 function threadHtml(r){
   return '<div style="background:#faf9f6;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;font-size:12.5px">'+
-    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+(m.at||'').slice(0,16).replace('T',' ')+'</span><br>'+esc(m.text)+'</div>').join('')+'</div>';
+    (r.thread||[]).map(m=>'<div style="margin-bottom:4px"><b>'+esc(m.by)+'</b> <span style="color:var(--muted);font-size:11px">'+fmtStamp(m.at)+'</span><br>'+deIso(esc(m.text))+'</div>').join('')+'</div>';
 }
 function reportChip(r){
   if(r.ratify==='pending')return '<span class="chip" style="background:var(--blue)">Applied — review</span>';
@@ -859,7 +863,7 @@ function monthTable(personId,refDate){
     if(exp<=0&&!info.entries.length)continue;
     any=true;wSum+=info.total;eSum+=exp*60;
     const diff=info.total-exp*60;
-    h+='<tr><td>'+iso+'</td><td>'+(info.entries.length?info.entries.map(entryLabel).join(' · '):'<span style="color:var(--red)">no punches</span>')+'</td>'+
+    h+='<tr><td>'+fmtHumanShort(iso)+'</td><td>'+(info.entries.length?info.entries.map(entryLabel).join(' · '):'<span style="color:var(--red)">no punches</span>')+'</td>'+
       '<td class="num">'+(info.total?fmtMin(info.total):'—')+'</td><td class="num">'+(exp||'—')+'</td>'+
       '<td class="num" style="color:'+(diff<-15?'var(--red)':diff>15?'var(--green)':'var(--muted)')+'">'+(info.total?((diff>=0?'+':'−')+fmtMin(Math.abs(diff))):'')+'</td></tr>';
   }
@@ -1025,7 +1029,7 @@ function exportTcMonth(){
       const iso=toISO(new Date(y,m,d));if(iso>today)break;
       const exp=tcExpectedDay(p.id,iso),info=tcDayInfo(p.id,iso);
       if(exp<=0&&!info.entries.length)continue;
-      rows.push({Person:p.name,Day:iso,Punches:info.entries.map(entryLabel).join(' · '),
+      rows.push({Person:p.name,Day:deIso(iso),Punches:info.entries.map(entryLabel).join(' · '),
         'Worked (h)':Math.round(info.total/60*100)/100,'Expected (h)':exp,'Diff (h)':Math.round((info.total/60-exp)*100)/100});
       const effIdsM=new Set(info.entries.map(e=>e.id));   // H3: complete record incl. voided originals + void rows
       DB.timeclock.filter(x=>x.personId==p.id&&x.day===iso)
