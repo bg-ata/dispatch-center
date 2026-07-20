@@ -125,8 +125,10 @@ function render(){
      € Dashboard correctly excluded them — the two screens disagreed) */
   const live=rows.filter(i=>i.status!=='cancelado');
   const base=live.reduce((a,i)=>a+(+i.importe_base||0),0), tot=live.reduce((a,i)=>a+(+i.total_factura||0),0);
-  const cob=live.reduce((a,i)=>a+cobrado(i),0);
-  const pend=live.reduce((a,i)=>a+Math.max(0,(+i.total_factura||0)-cobrado(i)),0);
+  /* Collected (Jesús 2.5): cancelled invoices AND credit notes sum in, so a credited pair
+     nets to 0 and a partial credit shows the true difference (450 − 180 = 270). */
+  const cob=rows.reduce((a,i)=>a+(i.status==='cancelado'||i.status==='abono'?(+i.total_factura||0):cobrado(i)),0);
+  const pend=live.reduce((a,i)=>a+(i.status==='abono'?0:Math.max(0,(+i.total_factura||0)-cobrado(i))),0);
   /* the item filter lists only items actually used in an analítica (E1) — so Webinars/ATA are filterable too */
   const usedIds={};DB.invoiceAllocs.forEach(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);if(c)usedIds[c.id]=1;});
   const itemOpts=codsSorted().filter(c=>usedIds[c.id]).map(c=>'<option value="'+c.id+'" '+(flt.item==c.id?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
@@ -138,7 +140,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected</div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding</div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button></h3>'+
+    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
@@ -154,6 +156,7 @@ function render(){
   renderTable(rows);
   document.getElementById('addInv').onclick=()=>openModal(null);
   document.getElementById('addCredit').onclick=openCreditPicker;
+  document.getElementById('histLoad').onclick=openImportModal;
   document.getElementById('cfgCod').onclick=()=>{showCodigos=!showCodigos;render();};
   document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
@@ -182,16 +185,19 @@ function prodCell(i){
   return out.join(' + ');
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal $</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Comments</th><th>Entered by</th><th style="width:50px"></th></tr>';
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal US$</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Comments</th><th>Entered by</th><th style="width:50px"></th></tr>';
   if(!rows.length)h+='<tr><td colspan="16" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
       const label=c?(esc(c.item||'?')+(c.codigo?' · '+esc(c.codigo):'')):(f?esc(finLabelClean(f)):('#'+(a.eventId||'?')));
-      return '<span class="allocchip">'+label+' · '+eurF(a.amount)+((+a.passes||0)?' · '+a.passes+'🎟':'')+'</span>';}).join('')||'<span class="hint">—</span>';
-    /* C2: Cancelled is NOT offered by hand — it only arrives via a total credit note */
-    const stOpts=Object.keys(INV_STATUS).filter(s=>s!=='cancelado'||i.status==='cancelado');
-    const stSel='<select class="inl" data-st="'+i.id+'" '+(i.status==='cancelado'?'disabled title="Cancelled via credit note — final"':'')+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
+      /* passes live in their own column (Jesús 2.5) — the chip stays item · código · amount */
+      return '<span class="allocchip">'+label+' · '+eurF(a.amount)+'</span>';}).join('')||'<span class="hint">—</span>';
+    /* C2: Cancelled is NOT offered by hand — it only arrives via a total credit note.
+       Credit-note rows are locked too (Jesús 2.5): an R-document is always a credit note. */
+    const stOpts=Object.keys(INV_STATUS).filter(s=>(s!=='cancelado'||i.status==='cancelado')&&(s!=='abono'||i.status==='abono'));
+    const stLock=i.status==='cancelado'?'disabled title="Cancelled via credit note — final"':i.status==='abono'?'disabled title="Credit note — status is fixed"':'';
+    const stSel='<select class="inl" data-st="'+i.id+'" '+stLock+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
     const passes=invPasses(i);
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
       '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
@@ -223,7 +229,12 @@ function renderTable(rows){
   document.querySelectorAll('[data-kill]').forEach(b=>b.onclick=()=>{
     const i=DB.invoice(b.dataset.kill);if(!i)return;
     const dl=DB.delegates.filter(d=>d.invoice_id==i.id).length;
-    if(!confirm('Delete invoice '+(i.numero_factura||'')+' with its analítica lines'+(dl?' and its '+dl+' delegate seats':'')+'? (recoverable from the audit log)'))return;
+    /* Jesús 2.5: deleting the credit note that cancelled an invoice brings the invoice back
+       to Unpaid — the cancellation existed only because of that credit note. */
+    const orig=(i.status==='abono'&&i.abono_de)?DB.invoice(i.abono_de):null;
+    const revert=orig&&orig.status==='cancelado';
+    if(!confirm('Delete invoice '+(i.numero_factura||'')+' with its analítica lines'+(dl?' and its '+dl+' delegate seats':'')+'?'+(revert?' Invoice '+(orig.numero_factura||'')+' will go back to Unpaid.':'')+' (recoverable from the audit log)'))return;
+    if(revert){orig.status='no_pagado';orig.fecha_cobro=null;}
     DB.data.invoices=DB.invoices.filter(x=>x.id!=i.id);
     DB.data.invalloc=DB.invoiceAllocs.filter(a=>a.invoice_id!=i.id);
     DB.data.delegates=DB.delegates.filter(d=>d.invoice_id!=i.id);
@@ -296,8 +307,10 @@ function openModal(inv,preset){
   if(!allocRows.length)allocRows=[blankRow()];
   const i=Object.assign({fecha:todayISO(),vencimiento:todayISO(),iva_pct:21,status:'no_pagado',metodo_pago:'transferencia',en_usd:false,entered_by:actorName()},inv||{},preset&&preset.fields||{});
   const invOpts=sel=>'<option value="">—</option>'+DB.invoices.filter(x=>x.id!=editingId).map(x=>'<option value="'+x.id+'" '+(x.id==sel?'selected':'')+'>'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+'</option>').join('');
-  /* C2: no manual Cancelled — the status only exists via a total credit note */
+  /* C2: no manual Cancelled — the status only exists via a total credit note.
+     A credit note's status is fixed (Jesús 2.5) — the select renders locked on R-documents. */
   const stOpts=Object.keys(INV_STATUS).filter(s=>s!=='cancelado'||i.status==='cancelado');
+  const stFixed=i.status==='abono'?'disabled title="Credit note — status is fixed"':'';
   document.getElementById('modalbody').innerHTML=
     '<h3>'+(preset&&preset.title?preset.title:(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice'))+'</h3>'+
     '<div class="frm">'+
@@ -318,8 +331,9 @@ function openModal(inv,preset){
       '<div style="flex:1;min-width:260px">'+
         '<div class="sect">Payment</div>'+
         '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
-        '<label>Status<select id="m_st">'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
-        '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono','na'].map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
+        '<label>Status<select id="m_st" '+stFixed+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
+        /* N/A retired (Jesús 2.5) — only still offered on a legacy invoice that already has it */
+        '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono'].concat(i.metodo_pago==='na'?['na']:[]).map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
         '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
         '<label class="w2">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
         '</div>'+
@@ -344,7 +358,7 @@ function renderLines(){
   const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('');
   const paseOpts=sel=>'<option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(t===sel?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+')</option>').join('');
   const usd=document.getElementById('m_usd')&&document.getElementById('m_usd').checked;
-  let h='<tr><th style="min-width:120px">Product *</th><th style="width:110px">Pass type</th><th style="width:56px" class="num">Qty</th><th style="width:84px" class="num">Price '+(usd?'$':'€')+'</th><th style="width:92px" class="num">Amount '+(usd?'$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Passes</th><th style="width:24px"></th></tr>';
+  let h='<tr><th style="min-width:120px">Product *</th><th style="width:110px">Pass type</th><th style="width:56px" class="num">Qty</th><th style="width:84px" class="num">Price '+(usd?'US$':'€')+'</th><th style="width:92px" class="num">Amount '+(usd?'US$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Passes</th><th style="width:24px"></th></tr>';
   allocRows.forEach((a,ix)=>{
     const warn=a.codigoId&&!a.codigo;
     h+='<tr><td><select data-lf="producto" data-ix="'+ix+'">'+prodOpts(a.producto)+'</select></td>'+
@@ -644,7 +658,7 @@ function exportExcel(){
       'Product':prodCell(i),
       'Passes':invPasses(i)||'',
       'Subtotal €':+i.importe_base||0,
-      'Subtotal $ (USD)':(i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='')?+i.importe_usd:'',
+      'Subtotal US$':(i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='')?+i.importe_usd:'',
       'VAT %':i.iva_pct!=null?+i.iva_pct:'',
       'VAT €':+i.iva_importe||0,
       'Total €':+i.total_factura||0,
@@ -666,6 +680,180 @@ function exportExcel(){
       'Passes':+a.passes||0
     };}))}
   ]);
+}
+
+/* ---------- ⬆ Load history: Jesús's Excel template → historical invoices ----------
+   ONE template covers simple AND multi-line invoices: each row is one analítica line;
+   rows sharing an invoice nº merge into one invoice. Credit notes (R…) and USD invoices
+   stay MANUAL — they need linking/judgement and history has few of them. Re-running a
+   file is safe: invoice numbers that already exist are skipped, never duplicated. */
+const IMP_HEADERS=['Nº factura','Fecha','Vencimiento','Razón social','Pedido','Producto','Tipo pase','Cantidad','Precio €','Código contable','IVA %','Motivo IVA 0%','Estado','Fecha cobro','Método pago','Comentarios'];
+function impNorm(s){return (''+(s==null?'':s)).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');}
+function impDate(v){ // Excel serial, ISO, or dd/mm/yyyy → ISO (null when unreadable)
+  if(v==null||v==='')return null;
+  if(typeof v==='number'&&isFinite(v))return new Date(Date.UTC(1899,11,30)+Math.round(v)*86400000).toISOString().slice(0,10);
+  const s=(''+v).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  const m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(s);
+  if(m){const y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+(''+m[2]).padStart(2,'0')+'-'+(''+m[1]).padStart(2,'0');}
+  return null;
+}
+function impProducto(v){
+  const n=impNorm(v);if(!n)return null;
+  for(const p of PRODUCTOS){if(p==='abono')continue;if(impNorm(p)===n||impNorm(PRODUCTO_LABEL[p]||'')===n)return p;}
+  return null;
+}
+function impEstado(v){
+  const n=impNorm(v);
+  if(!n||n==='pagado'||n==='paid')return 'pagado';           // history defaults to Paid (Léeme says so)
+  if(n==='nopagado'||n==='unpaid'||n==='no'||n==='pendiente')return 'no_pagado';
+  return null;
+}
+function downloadImportTemplate(){
+  const ex=[
+    {'Nº factura':'20250101','Fecha':'15/03/2025','Vencimiento':'14/04/2025','Razón social':'Empresa Ejemplo SL','Pedido':'P-1234','Producto':'sponsorship','Tipo pase':'','Cantidad':1,'Precio €':9000,'Código contable':'70316','IVA %':21,'Motivo IVA 0%':'','Estado':'pagado','Fecha cobro':'20/04/2025','Método pago':'transferencia','Comentarios':'Fila 1 de una factura con 2 líneas'},
+    {'Nº factura':'20250101','Fecha':'15/03/2025','Vencimiento':'','Razón social':'Empresa Ejemplo SL','Pedido':'','Producto':'tickets','Tipo pase':'double','Cantidad':2,'Precio €':500,'Código contable':'70316','IVA %':'','Motivo IVA 0%':'','Estado':'','Fecha cobro':'','Método pago':'','Comentarios':'misma factura → segunda línea'},
+    {'Nº factura':'20250102','Fecha':'02/04/2025','Vencimiento':'','Razón social':'Otra Empresa SA','Pedido':'','Producto':'webinar','Tipo pase':'','Cantidad':1,'Precio €':450,'Código contable':'01','IVA %':0,'Motivo IVA 0%':'Exenta','Estado':'pagado','Fecha cobro':'','Método pago':'','Comentarios':'factura simple de 1 línea'}
+  ];
+  const readme=[
+    'Cada FILA es una línea de analítica. Las filas que comparten Nº factura se convierten en UNA factura con varias líneas.',
+    'Los datos de cabecera (fecha, razón social, IVA, estado…) se leen de la PRIMERA fila de cada factura; en las demás filas puedes dejarlos vacíos.',
+    'Producto: sponsorship · tickets · ata · webinar · comisiones · upgrade · sitevisits · grabaciones · refacturacion.',
+    'Tipo pase (solo tickets): single · double · triple · quad — los passes se calculan solos (tipo × cantidad).',
+    'Código contable: debe existir en ⚙ Items & codes. Si falta alguno, créalo allí primero — el resumen de carga te dirá cuáles faltan.',
+    'IVA % vacío = 21. Con IVA 0 hay que indicar el motivo. Estado vacío = pagado. Fecha cobro vacía = fecha factura. Método pago vacío = transferencia.',
+    'Fechas: dd/mm/aaaa (o formato fecha de Excel).',
+    'NO van en esta plantilla (se meten a mano en la app): credit notes (R…) y facturas en USD.',
+    'Repetir una carga es seguro: los números de factura que ya existen se saltan, nunca se duplican.'
+  ].map(t=>({'Léeme — cómo funciona la plantilla':t}));
+  exportXLSX('Plantilla_carga_historico_facturas.xlsx',[{name:'Facturas',rows:ex},{name:'Léeme',rows:readme}]);
+}
+function openImportModal(){
+  document.getElementById('modalbody').innerHTML=
+    '<h3>⬆ Load historical invoices</h3>'+
+    '<p class="hint" style="margin:0 0 10px">1. Download the template · 2. Fill it (one row per analítica line; rows sharing an invoice nº = one invoice) · 3. Drop it back here. You get a full preview and nothing is written until you confirm. Credit notes and USD invoices are entered by hand.</p>'+
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+
+    '<button class="btn sm" id="imp_tpl">⬇ Download template</button>'+
+    '<input type="file" id="imp_file" accept=".xlsx,.xls" style="font-size:12.5px">'+
+    '</div>'+
+    '<div id="imp_prev" style="max-height:340px;overflow:auto"></div>'+
+    '<div class="mrow"><span class="amsg" id="imp_msg"></span><button class="btn" id="imp_cancel">Close</button><button class="btn primary" id="imp_go" disabled>Import</button></div>';
+  document.getElementById('modal').classList.add('on');
+  document.getElementById('imp_tpl').onclick=downloadImportTemplate;
+  document.getElementById('imp_cancel').onclick=closeModal;
+  document.getElementById('imp_file').onchange=e=>{const f=e.target.files[0];if(f)parseImportFile(f);};
+}
+let _impGroups=null;
+function parseImportFile(file){
+  const msg=document.getElementById('imp_msg');msg.style.color='var(--muted)';msg.textContent='Reading…';
+  loadXLSX(()=>{
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const wb=XLSX.read(new Uint8Array(rd.result),{type:'array'});
+        const ws=wb.Sheets['Facturas']||wb.Sheets[wb.SheetNames[0]];
+        const raw=XLSX.utils.sheet_to_json(ws,{defval:''});
+        buildImportPreview(raw);
+      }catch(e){msg.style.color='var(--red)';msg.textContent='Could not read that file: '+(e.message||e);}
+    };
+    rd.readAsArrayBuffer(file);
+  });
+}
+function buildImportPreview(raw){
+  const msg=document.getElementById('imp_msg'),prev=document.getElementById('imp_prev');
+  /* map whatever headers the sheet has onto our keys, accent/case/space-insensitive */
+  const KEY={nfactura:'num',fecha:'fecha',vencimiento:'venc',razonsocial:'rs',pedido:'pedido',producto:'prod',tipopase:'tp',cantidad:'qty',precio:'price',codigocontable:'cod',iva:'iva',motivoiva0:'motivo',estado:'st',fechacobro:'cobro',metodopago:'pago',comentarios:'com'};
+  const rows=raw.map(r=>{const o={};Object.keys(r).forEach(h=>{const k=KEY[impNorm(h)];if(k)o[k]=r[h];});return o;})
+    .filter(r=>impNorm(r.num)!==''); // blank lines out
+  if(!rows.length){msg.style.color='var(--red)';msg.textContent='No rows found — is the sheet called "Facturas" with the template headers?';return;}
+  const existing={};DB.invoices.forEach(i=>{existing[(''+(i.numero_factura||'')).trim().toLowerCase()]=1;});
+  const byNum={},order=[];
+  rows.forEach(r=>{const k=(''+r.num).trim();if(!byNum[k]){byNum[k]=[];order.push(k);}byNum[k].push(r);});
+  const groups=[];
+  order.forEach(num=>{
+    const rs=byNum[num],first=rs[0],errs=[],warns=[];
+    if(/^R\d+$/i.test(num)){groups.push({num,skip:'credit note — enter by hand',rows:rs});return;}
+    if(existing[num.toLowerCase()]){groups.push({num,skip:'already exists — skipped',rows:rs});return;}
+    const fecha=impDate(first.fecha);
+    if(!fecha)errs.push('unreadable date "'+first.fecha+'"');
+    else{const y=+fecha.slice(0,4);if(y<2020||y>new Date().getFullYear())errs.push('date year '+y+' out of range');}
+    const razon=(''+(first.rs||'')).trim();if(!razon)errs.push('missing razón social');
+    const st=impEstado(first.st);if(!st)errs.push('unknown estado "'+first.st+'"');
+    const ivaRaw=impNorm(first.iva)===''?21:+first.iva;
+    if(ivaRaw!==21&&ivaRaw!==0)errs.push('IVA must be 21 or 0');
+    let motivo=null;
+    if(ivaRaw===0){
+      const mn=impNorm(first.motivo);
+      /* the stored motivos are English — accept Jesús's Spanish too */
+      const ES2EN={exenta:'exempt',exento:'exempt',nosujeta:'not subject',nosujeto:'not subject',isp:'reverse charge (ISP)',inversiondelsujetopasivo:'reverse charge (ISP)',inversionsujetopasivo:'reverse charge (ISP)',exportacion:'export'};
+      const target=ES2EN[mn]||null;
+      motivo=IVA_MOTIVOS.find(m=>impNorm(m)===mn||m===target||(mn&&impNorm(m).includes(mn)))||null;
+      if(!motivo)errs.push('IVA 0% needs a valid motivo (exenta / no sujeta / ISP / exportación)');
+    }
+    ['fecha','rs','iva','st'].forEach(f=>{rs.slice(1).forEach(r2=>{if(impNorm(r2[f])!==''&&impNorm(r2[f])!==impNorm(first[f]))warns.push('row values for "'+f+'" differ — using the first row');});});
+    const lines=[];
+    rs.forEach((r,ix)=>{
+      const prod=impProducto(r.prod);
+      if(!prod){errs.push('line '+(ix+1)+': unknown producto "'+r.prod+'"');return;}
+      const qty=impNorm(r.qty)===''?1:+r.qty;
+      if(!(qty>0))errs.push('line '+(ix+1)+': cantidad must be > 0');
+      const price=+r.price;
+      if(impNorm(r.price)===''||!isFinite(price))errs.push('line '+(ix+1)+': missing precio');
+      const codStr=(''+(r.cod||'')).trim();
+      const c=DB.codigos.find(x=>(''+(x.codigo||'')).trim()===codStr)||DB.codigos.find(x=>impNorm(x.item)===impNorm(r.cod));
+      if(!c)errs.push('line '+(ix+1)+': código "'+codStr+'" not in Items & codes');
+      let tp='',passes=0;
+      if(prod==='tickets'){tp=impNorm(r.tp);if(tp&&!TIPO_PASES[tp]){errs.push('line '+(ix+1)+': tipo pase "'+r.tp+'"?');tp='';}passes=(TIPO_PASES[tp]||0)*(qty||0);}
+      lines.push({producto:prod,tipo_pase:tp||null,qty,price:num2(price),amount:num2(qty*price),passes,codigoId:c?c.id:null,codigo:c?(c.codigo||''):codStr,eventId:c&&c.eventId!=null&&c.eventId!==''?+c.eventId:null});
+    });
+    if(!lines.length&&!errs.length)errs.push('no readable lines');
+    const net=num2(lines.reduce((a,l)=>a+l.amount,0));
+    groups.push({num,rows:rs,errs,warns,lines,fecha,venc:impDate(first.venc)||fecha,razon,pedido:(''+(first.pedido||'')).trim(),
+      iva:ivaRaw,motivo,st,cobro:st==='pagado'?(impDate(first.cobro)||fecha):null,
+      pago:impNorm(first.pago)==='tarjeta'||impNorm(first.pago)==='card'?'tarjeta':'transferencia',
+      com:(''+(first.com||'')).trim(),net,iva_imp:num2(net*ivaRaw/100),tot:num2(net*(1+ivaRaw/100))});
+  });
+  _impGroups=groups;
+  const ready=groups.filter(g=>!g.skip&&!g.errs.length);
+  let h='<table class="lntbl"><tr><th>Invoice nº</th><th>Company</th><th>Date</th><th class="num">Lines</th><th class="num">Net €</th><th class="num">Total €</th><th>Status</th><th style="min-width:220px">Result</th></tr>';
+  groups.forEach(g=>{
+    const res=g.skip?'<span style="color:#8a6d1a">⏭ '+esc(g.skip)+'</span>'
+      :g.errs.length?'<span style="color:var(--red)">✗ '+esc(g.errs.join(' · '))+'</span>'
+      :'<span style="color:var(--green)">✓ ready'+(g.warns.length?' · ⚠ '+esc(g.warns.join(' · ')):'')+'</span>';
+    h+='<tr><td><b>'+esc(g.num)+'</b></td><td>'+esc(g.razon||(g.rows[0].rs||''))+'</td><td>'+(g.fecha?ddmmyyyy(g.fecha):'—')+'</td><td class="num">'+(g.lines?g.lines.length:g.rows.length)+'</td><td class="num">'+(g.net!=null?eurF(g.net):'—')+'</td><td class="num">'+(g.tot!=null?eurF(g.tot):'—')+'</td><td>'+(g.st?INV_STATUS[g.st]:'—')+'</td><td style="white-space:normal">'+res+'</td></tr>';
+  });
+  h+='</table>';
+  prev.innerHTML=h;
+  msg.style.color=ready.length?'var(--green)':'var(--red)';
+  msg.textContent=ready.length+' invoice(s) ready · '+groups.filter(g=>g.skip).length+' skipped · '+groups.filter(g=>!g.skip&&g.errs.length).length+' with errors (fix the file or the Items list and re-drop)';
+  const go=document.getElementById('imp_go');
+  go.disabled=!ready.length;go.textContent='Import '+ready.length+' invoice'+(ready.length===1?'':'s');
+  go.onclick=()=>commitImport(ready);
+}
+async function commitImport(ready){
+  const msg=document.getElementById('imp_msg'),go=document.getElementById('imp_go');
+  go.disabled=true;go.textContent='Importing…';msg.style.color='var(--muted)';msg.textContent='Writing…';
+  ready.forEach(g=>{
+    const lineProds=g.lines.map(l=>l.producto);
+    const producto=lineProds.includes('sponsorship')?'sponsorship':lineProds.includes('upgrade')?'upgrade':lineProds.includes('tickets')?'tickets':lineProds[0];
+    const row={id:DB.newId(),codigo_contable:g.lines[0].codigo||null,producto,cantidad:null,tipo_pase:null,pase_cantidad:null,
+      fecha:g.fecha,numero_factura:g.num,pedido:g.pedido||'N/A',vencimiento:g.venc,
+      responsable_comercial:null,spxProposalId:null,razon_social:g.razon,importe_base:g.net,
+      en_usd:false,importe_usd:null,usd_rate:null,usd_rate_date:null,
+      iva_pct:g.iva,iva_motivo:g.iva===0?g.motivo:null,iva_importe:g.iva_imp,total_factura:g.tot,
+      descuento_pct:null,status:g.st,fecha_cobro:g.cobro,importe_cobrado:null,metodo_pago:g.pago,
+      comentarios:g.com,abono_de:null,entered_by:actorName()+' · history load'};
+    DB.invoices.push(row);
+    g.lines.forEach(l=>DB.invoiceAllocs.push({id:DB.newId(),invoice_id:row.id,eventId:l.eventId,amount:l.amount,passes:l.passes,
+      codigo:l.codigo,codigoId:l.codigoId,producto:l.producto,tipo_pase:l.producto==='tickets'?l.tipo_pase:null,qty:l.qty,price:l.price}));
+    syncDelegates(row);
+  });
+  const ok=await DB.saveNow();
+  if(!ok){msg.style.color='var(--red)';msg.textContent='Saved locally but the database has not confirmed yet — it will retry automatically (banner). Do not re-drop the file.';go.textContent='Import';return;}
+  msg.style.color='var(--green)';msg.textContent='✓ '+ready.length+' invoice(s) imported.';
+  go.textContent='Done';
+  render();
+  document.getElementById('imp_cancel').textContent='Close';
 }
 
 boot(render);
