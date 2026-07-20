@@ -878,6 +878,8 @@ function renderReporting(app){
   const byWk={};
   props.forEach(p=>{const d=(p.createdAt||p.fechaEnvio||'').slice(0,10);if(!d)return;const wk=weekStart(d);byWk[wk]=byWk[wk]||{n:0,val:0};byWk[wk].n++;byWk[wk].val+=propValue(p);});
   const wk=Object.keys(byWk).sort();
+  // pipeline € evolution — new € each week + the running total, so week-to-week growth is visible (KPIs)
+  const wkNew=wk.map(k=>byWk[k].val);let _run=0;const wkCum=wk.map(k=>{_run+=byWk[k].val;return _run;});
   // aging (Sent, days since fechaEnvio/createdAt)
   const now=new Date();
   const aging={'0-14':0,'15-30':0,'31-60':0,'60+':0};
@@ -903,6 +905,7 @@ function renderReporting(app){
   h+='<div class="chartbox"><h3>By source — count & conversion</h3><div class="cw"><canvas id="c_src"></canvas></div></div>';
   h+='<div class="chartbox"><h3>Pipeline aging (Sent)</h3><div class="cw"><canvas id="c_age"></canvas></div></div>';
   h+='</div>';
+  h+='<div class="chartbox"><h3>Pipeline € — nuevo por semana + acumulado <span class="ro-note" style="font-weight:400">(evolución para KPIs)</span></h3><div class="cw"><canvas id="c_wkv"></canvas></div></div>';
   h+='<div class="chartbox"><h3>€ out by event</h3><div class="cw"><canvas id="c_ev"></canvas></div></div>';
   app.innerHTML=h;
 
@@ -916,6 +919,10 @@ function renderReporting(app){
     options:{maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}}}});
   mkChart('c_age',{type:'bar',data:{labels:Object.keys(aging),datasets:[{label:'proposals',data:Object.values(aging),backgroundColor:['#0CA30C','#B26A10','#B5541A','#C0392B']}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}}}});
+  mkChart('c_wkv',{data:{labels:wk,datasets:[
+      {type:'bar',label:'€ nuevo/semana',data:wkNew,backgroundColor:'#F3B0A0',order:2},
+      {type:'line',label:'€ acumulado',data:wkCum,borderColor:'#C0392B',backgroundColor:'#C0392B',borderWidth:2,tension:.25,pointRadius:2,order:1}]},
+    options:{maintainAspectRatio:false,animation:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},scales:{x:{ticks:{font:{size:9},maxRotation:0}},y:{ticks:{callback:v=>money(v)}}}}});
   mkChart('c_ev',{type:'bar',data:{labels:evK,datasets:[{label:'€ out',data:evK.map(k=>byEv[k].val),backgroundColor:'#4C3079'}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},scales:{y:{ticks:{callback:v=>money(v)}}}}});
 }
