@@ -71,7 +71,8 @@
   .mval.ro{cursor:default} .mval.ro:hover{border-bottom-color:transparent}
   input.money,input.dt{font:inherit;font-size:12.5px;padding:3px 5px;border:1px solid var(--orange);border-radius:6px;width:100px}
   .stbadge{font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap;text-transform:uppercase;letter-spacing:.03em}
-  .st-sent{background:#e9f0fb;color:var(--blue)} .st-approved{background:#e2f4e2;color:#0a7a0a} .st-lost{background:#f2e6e4;color:#9a4b40}
+  .st-sent{background:#e9f0fb;color:var(--blue)} .st-approved{background:#e2f4e2;color:#0a7a0a} .st-lost{background:#f2e6e4;color:#9a4b40} .st-silent{background:#ece9e2;color:#6b675f}
+  tr.silentrow td{background:#f6f5f2;color:#7a766e}
   select.stsel{font:inherit;font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:16px;padding:2px 6px;background:#fff;cursor:pointer}
   .accb{font-size:10px;font-weight:700;border-radius:6px;padding:1px 7px;white-space:nowrap;margin-left:5px}
   .acc-none{background:#f0eee7;color:var(--grey)} .acc-invoiced{background:#fbf1d6;color:#9a7100} .acc-paid{background:#e2f4e2;color:#0a7a0a}
@@ -139,15 +140,18 @@ const ST_CLASS={Sent:'st-sent',Confirmed:'st-approved',Lost:'st-lost'};
    salesStatus is DERIVED from it (Sent-* → Sent, Won → Confirmed, Lost → Lost)
    so Health-Check, Reporting and Invoiced/Paid keep working unchanged.
    Historical "Sent" proposals keep a BLANK stage — sales fill it by hand. */
-const SPX_STAGES=['Sent - Just email','Sent - 1st call','Sent - 2nd call','Sent - Initial negotiation','Sent - Final negotiation','Won','Lost'];
-const STAGE_PROB={'Sent - Just email':.15,'Sent - 1st call':.2,'Sent - 2nd call':.3,'Sent - Initial negotiation':.4,'Sent - Final negotiation':.7,'Won':1,'Lost':0};
+const SPX_STAGES=['Sent - Just email','Sent - 1st call','Sent - 2nd call','Sent - Initial negotiation','Sent - Final negotiation','Silent','Won','Lost'];
+const STAGE_PROB={'Sent - Just email':.15,'Sent - 1st call':.2,'Sent - 2nd call':.3,'Sent - Initial negotiation':.4,'Sent - Final negotiation':.7,'Silent':0,'Won':1,'Lost':0};
 const ACCOUNT_TYPES=['New Account','Transferred account','Existing Account'];
 const SOURCES=['Apollo','External Events','Inbound','LinkedHelper','AC brochure','AC webinar','Past delegate 2026','Past sponsor 2026','Past sponsor previous','Past delegate previous','Referral','Outreach'];
 const PRODUCT_PACKAGES=['Only Sponsorship Pack','Only Ticket','Only Content package','Bundle'];
 const PACKAGE_TIERS=['Multi-event','General','Diamond','Gold','Silver','Bronze','Standard panel','Standard stand'];
 const LOSS_REASONS=['No Budget','No Response','Timing','Not Relevant','Already Committed','Wrong Contact'];
 function statusOfStage(st){return st==='Won'?'Confirmed':st==='Lost'?'Lost':st?'Sent':null;}
-function stageClass(st){return st==='Won'?'st-approved':st==='Lost'?'st-lost':'st-sent';}
+function stageClass(st){return st==='Won'?'st-approved':st==='Lost'?'st-lost':st==='Silent'?'st-silent':'st-sent';}
+/* board bucket — Silent is a stage (salesStatus stays 'Sent', DB-valid) shown as its own
+   dormant column so it stops blurring the Sent numbers (Belén, 20 Jul). */
+function spxBucket(p){return (p.stage==='Silent')?'Silent':p.salesStatus;}
 const ACC={none:{cls:'acc-none',txt:'not invoiced'},invoiced:{cls:'acc-invoiced',txt:'✓ invoiced'},paid:{cls:'acc-paid',txt:'✓ paid'}};
 const money=n=>finFmt(n==null?0:n);
 const pct=x=>(x==null?'—':(Math.round(x*1000)/10)+'%');
@@ -190,10 +194,10 @@ function propEvents(p){return DB.spxLinesFor(p.id);}
    Builder-fed ones. Builder rows always carry the deck fileName; the 2026-07-13
    sheet import has its own createdBy marker and stays normal. */
 function byHand(p){return !p.fileName&&p.createdBy!=='spx-import-2026-07-13';}
-function isOverdueFU(p){const d=(p.fechaSeguimiento||'').slice(0,10);return p.salesStatus==='Sent'&&!!d&&d<toISO(new Date());}
+function isOverdueFU(p){const d=(p.fechaSeguimiento||'').slice(0,10);return p.salesStatus==='Sent'&&p.stage!=='Silent'&&!!d&&d<toISO(new Date());}
 /* day-first display (Belén's standing date rule) — comparisons stay ISO, display never is */
 function dmy(iso){if(!iso)return '';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
-function rowCls(p){return 'prow'+(byHand(p)?' byhand':'')+(p.salesStatus==='Confirmed'?' wonrow':'')+(isOverdueFU(p)?' overdue':'');}
+function rowCls(p){return 'prow'+(byHand(p)?' byhand':'')+(p.salesStatus==='Confirmed'?' wonrow':'')+(p.stage==='Silent'?' silentrow':'')+(isOverdueFU(p)?' overdue':'');}
 function rowTitle(p){return byHand(p)?' title="Added by hand on the board — not from the Proposal Builder"':'';}
 /* the authoritative value of a proposal = Σ its children, or its own value when it has none (General/single-with-value) */
 function propValue(p){const ls=DB.spxLinesFor(p.id);if(ls.length)return ls.reduce((s,l)=>s+(+l.valueEur||0),0);return +p.valueEur||0;}
@@ -314,13 +318,14 @@ function renderProposals(app,scope){
   const props=liveProps().filter(passFilters).filter(p=>scope==='before'?!propIsCurrent(p,cur):propIsCurrent(p,cur));
   // Event filter set → the tiles sum ONLY the lines of that event (not whole-proposal values)
   const val=p=>flt.event?DB.spxLinesFor(p.id).filter(l=>lineEvKey(l)===flt.event).reduce((s,l)=>s+(+l.valueEur||0),0):propValue(p);
-  const sum=st=>props.filter(p=>p.salesStatus===st).reduce((s,p)=>s+val(p),0);
-  const firmado=sum('Confirmed'),enviado=sum('Sent'),perdido=sum('Lost'),proceso=firmado+enviado;
-  // target/stretch: only where the event has a Money (dc_finance) row + a target set
+  const sumB=b=>props.filter(p=>spxBucket(p)===b).reduce((s,p)=>s+val(p),0);
+  const cntB=b=>props.filter(p=>spxBucket(p)===b).length;
+  const firmado=sumB('Confirmed'),enviado=sumB('Sent'),silente=sumB('Silent'),perdido=sumB('Lost'),proceso=firmado+enviado;
+  // target + tickets sold, over the events currently shown on the board
   const evObjs=spxEvents();
   const shownKeys=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
-  let tgt=0,str=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const t=hasReg()?(e.reg||{}):(e.financeId!=null?DB.spxTargetFor(e.financeId):null);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}});
-  const pctT=tgt?firmado/tgt:null,pctS=str?firmado/str:null;
+  let tgt=0,str=0,ticketsSold=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const t=hasReg()?(e.reg||{}):(e.financeId!=null?DB.spxTargetFor(e.financeId):null);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}if(e.financeId!=null)ticketsSold+=invoicedPases(e.financeId).total;});
+  const reachedT=tgt?firmado/tgt:null;
 
   const salespeople=distinctList(DB.spxProps.map(p=>p.responsableName||p.responsable));
   const scopeEvents=evObjs.filter(e=>scope==='before'?!evCurrent(e):evCurrent(e));
@@ -328,13 +333,14 @@ function renderProposals(app,scope){
   let h='';
   if(scope==='before')h+='<p class="lead">Events where selling is finished — nothing left in the pipeline. Kept for the record; the events you\'re selling now are on the <b>Proposals</b> tab.</p>';
   h+='<div class="tiles">'
-    +tile('Sent',money(enviado),props.filter(p=>p.salesStatus==='Sent').length+' props')
-    +tile('Won',money(firmado),props.filter(p=>p.salesStatus==='Confirmed').length+' props')
-    +tile('Lost',money(perdido),props.filter(p=>p.salesStatus==='Lost').length+' props')
+    +tile('Won (specs)',money(firmado),cntB('Confirmed')+' props','good')
+    +tile('Tickets vendidos',money(ticketsSold),'de Facturación')
+    +tile('Sent',money(enviado),cntB('Sent')+' props')
+    +tile('Silent',money(silente),cntB('Silent')+' dormidas')
+    +tile('Lost',money(perdido),cntB('Lost')+' props')
     +tile('Won + pipeline',money(proceso),'')
-    +tile('Target (sponsorship)',tgt?money(tgt):'—','where set in Money')
-    +tile('% to target',pctT==null?'—':pct(pctT),'')
-    +tile('% to stretch',pctS==null?'—':pct(pctS),'')
+    +tile('Target (specs)',tgt?money(tgt):'—','where set in Money')
+    +tile('% target',reachedT==null?'—':pct(reachedT),reachedT==null?'':'fuera '+pct(Math.max(0,1-reachedT)))
     +'</div>';
 
   if(scope!=='before'&&(DB.isSales()||DB.canSalesLead())){
