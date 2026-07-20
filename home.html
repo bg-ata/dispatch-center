@@ -236,7 +236,7 @@ function updateWeekBar(me){
   const note=document.getElementById('wkNote');if(!note)return;
   if(p.target<=0)note.innerHTML='<span style="color:var(--muted)">Holiday week — nothing to clock.</span>';
   else if(p.done)note.innerHTML='<span style="color:var(--green);font-weight:700">✓ Week complete — that’s your '+fmt(p.target)+'. Nice one.</span>';
-  else if(p.remaining<=WEEK_NEAR_H)note.innerHTML='<span style="color:var(--red);font-weight:700">🔔 Under 30 minutes to go this week!</span>';
+  else if(p.remaining<=0.5)note.innerHTML='<span style="color:var(--red);font-weight:700">🔔 Under 30 minutes to go this week!</span>';
   else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
 }
 
