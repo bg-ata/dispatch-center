@@ -370,13 +370,21 @@ function renderProposals(app,scope){
   if(flt.event||flt.sales||flt.stage||flt.accountType||flt.source||flt.productPackage||flt.packageTier||flt.reasonForLoss||flt.from||flt.to||flt.q)
     h+='<button class="chip" onclick="clearFilters()">clear</button>';
   h+='<button class="chip" onclick="exportSpx()" title="Download this list (respecting the filters above) to Excel">⬇ Excel</button>';
+  h+='<button class="chip" onclick="exportBackup()" title="Download EVERYTHING (all proposals, lines and a per-event summary) — the Friday backup, ignores filters">⬇ Backup (todo)</button>';
   h+='</div>';
 
   // table (wrapped in zoom + top-scroll chrome)
   h+=tableChrome(VIEW==='general'?proposalsTableGeneral(props):proposalsTableByEvent(props));
 
+  // #3 placement: the health-check as analysis right below the board, for the event in focus
+  if(scope!=='before'){
+    const fk=flt.event||((spxEvents().filter(evCurrent)[0]||{}).key);
+    const fev=fk?spxEvents().find(e=>e.key===fk):null;
+    if(fev)h+='<div style="margin-top:18px"><div class="ro-note" style="margin-bottom:6px">📊 Análisis — health-check · <b>'+esc(fev.name)+'</b>'+(flt.event?'':' (filtra por evento para cambiarlo · o abre la pestaña Dashboard)')+'</div>'+healthCard(fev)+'</div>';
+  }
   app.innerHTML=h;
   wireFilters();wireProposalTable();
+  if(document.querySelector('.hcgrid'))wireHC(_hcT);
 }
 function tile(l,n,s,cls){return '<div class="tile'+(cls?' '+cls:'')+'"><div class="l">'+esc(l)+'</div><div class="n">'+n+'</div><div class="s">'+esc(s||'')+'</div></div>';}
 /* ---------- Excel export of the board (respects the current tab + filters) ---------- */
@@ -402,6 +410,25 @@ function exportSpx(){
     Company:p.company||'',Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
   exportXLSX('RENMAD_SPX_'+scope+'_'+toISO(new Date())+'.xlsx',
     [{name:'Proposals',rows:proposals},{name:'Event lines',rows:lines}]);
+}
+/* #7: full "download everything" backup — ignores filters, for the Friday peace-of-mind copy */
+function exportBackup(){
+  const props=liveProps();
+  if(!props.length){alert('Nothing to back up yet.');return;}
+  const proposals=props.map(p=>{const c=(p.contacts||[])[0]||{};let acc=null;try{acc=accountingFor(p);}catch(e){}
+    return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',Bucket:spxBucket(p),Status:p.salesStatus||'',Stage:p.stage||'',Source:p.source||'',
+      'Account type':p.accountType||'','Product/Package':p.productPackage||'',Package:p.packageTier||'',
+      'Value €':propValue(p),Sent:dmy(p.fechaEnvio),'Follow-up':dmy(p.fechaSeguimiento),'Reason for loss':p.reasonForLoss||'',
+      Invoicing:(acc&&acc.state&&acc.state!=='none')?acc.state:'',General:p.isGeneral?'yes':'',Created:dmy(p.createdAt),
+      'Main contact':(((c.first||'')+' '+(c.last||'')).trim()),'Contact email':c.email||'',Notes:p.notas||''};});
+  const lines=[];props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>lines.push({Company:p.company||'',Bucket:spxBucket(p),Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
+  const evSummary=spxEvents().map(e=>{const fid=e.financeId;const reg=hasReg()?(e.reg||{}):(fid!=null?(DB.spxTargetFor(fid)||{}):{});
+    const won=eventBucketMoney(e.key,'Confirmed'),sent=eventBucketMoney(e.key,'Sent'),silent=eventBucketMoney(e.key,'Silent'),lost=eventBucketMoney(e.key,'Lost');
+    const tickets=fid!=null?invoicedPases(fid).total:0;const spT=+reg.sponsorshipTarget||0,tkT=+reg.pasesTarget||0,totT=spT+tkT;const closed=won+tickets;
+    return {Event:e.name,'Specs target €':spT,'Tickets target €':tkT,'Total target €':totT,'Specs Won €':won,'Tickets sold €':tickets,'Closed total €':closed,
+      '% target':totT?Math.round(1000*closed/totT)/10+'%':'','Sent €':sent,'Silent €':silent,'Lost €':lost,Current:evCurrent(e)?'yes':''};});
+  exportXLSX('RENMAD_SPX_BACKUP_'+toISO(new Date())+'.xlsx',
+    [{name:'Proposals (all)',rows:proposals},{name:'Event lines',rows:lines},{name:'Event summary',rows:evSummary}]);
 }
 function sel(id,label,opts,cur){
   return '<select id="'+id+'"><option value="">'+esc(label)+': all</option>'+
