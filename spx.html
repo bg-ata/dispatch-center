@@ -719,6 +719,24 @@ function finStartDate(f){
 }
 function finOngoing(f){const s=finStartDate(f);if(!s)return true;const end=new Date(s);end.setDate(end.getDate()+2);const t=new Date();t.setHours(0,0,0,0);return end>=t;}
 let _hcFid=null,_hcReg=null;
+/* a proposal parked as dormant — its own stage value; never counts as live pipeline */
+function isSilent(p){return p.stage==='Silent';}
+/* specs (sponsorship) money on one event, by sales-declared status. The board IS the
+   sponsorship pipeline. Silent proposals are excluded from the live 'Sent' pipeline. */
+function specsMoney(evKey,status){
+  let sum=0;
+  liveProps().forEach(p=>{
+    if(status==='Sent'){if(!(p.salesStatus==='Sent'&&!isSilent(p)))return;}
+    else if(p.salesStatus!==status)return;
+    DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===evKey)sum+=(+l.valueEur||0);});
+  });
+  return sum;
+}
+/* health-check target/stretch row — Specs | Tickets | TOTAL (editable cells wired by wireHC) */
+function hcRow2(label,specs,tickets,total,editable,specsF,ticketsF){
+  const c=(v,fld)=>editable?'<span class="mval" data-tf="'+fld+'" title="Click to edit">'+money(v)+'</span>':money(v);
+  return '<tr><td>'+esc(label)+'</td><td class="num">'+c(specs,specsF)+'</td><td class="num">'+c(tickets,ticketsF)+'</td><td class="num">'+money(total)+'</td></tr>';
+}
 function renderHealth(app){
   const evsAll=spxEvents();
   const cur=evsAll.filter(evCurrent).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
@@ -735,53 +753,58 @@ function renderHealth(app){
   const t=_hcReg||(fid!=null&&DB.spxTargetFor(fid))||{sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7}};
   let conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
   if(conv>1)conv=conv/100;conv=Math.max(0,Math.min(1,conv));   // "35" means 35%, always a 0–1 fraction
-  // pipeline (Sent sponsorship) for this event — proposals already Invoiced/Paid are
-  // excluded (their money already sits in Confirmado; counting both double-counts)
-  const sentLines=[];
-  liveProps().filter(p=>p.salesStatus==='Sent').forEach(p=>{
-    const acc=accountingFor(p).state;if(acc==='invoiced'||acc==='paid')return;
-    DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===HC)sentLines.push(+l.valueEur||0);});});
-  const pipeline=sentLines.reduce((a,b)=>a+b,0);
+  /* SIGNED = deals marked Won on the board (sales-declared), counted the moment they're Won
+     — NOT invoiced (Belén, 20 Jul: the Won deal, e.g. 19.275, must count immediately).
+     Invoiced is shown as an "of which" sub-line. Silent proposals never count as pipeline. */
+  const wonSpecs=specsMoney(HC,'Confirmed');
+  const pipeline=specsMoney(HC,'Sent');
   const expected=pipeline*conv;
-  // confirmed = sponsorship invoiced for this event (Invoiced/Paid), NOT sales-declared
-  const spInvoiced=fid!=null?invoicedSponsorship(fid):{total:0,paid:0};
-  const projection=spInvoiced.total+expected;
+  const invSpecs=fid!=null?invoicedSponsorship(fid).total:0;         // of-which-invoiced (info)
+  const tickets=fid!=null?invoicedPases(fid):{total:0,paid:0};       // tickets come from Facturación
   const spTarget=+t.sponsorshipTarget||0,spStretch=+t.sponsorshipStretch||0;
-  const gapT=projection-spTarget,gapS=projection-spStretch;
+  const tkTarget=+t.pasesTarget||0,tkStretch=+t.pasesStretch||0;
+  const totTarget=spTarget+tkTarget,totStretch=spStretch+tkStretch;
+  const signedNow=wonSpecs+tickets.total;                           // real money in: specs Won + tickets sold
+  const projection=wonSpecs+expected+tickets.total;                 // signed + expected pipeline + tickets
+  const reached=totTarget?signedNow/totTarget:null,toGo=(reached==null)?null:Math.max(0,1-reached);
+  const toGoMoney=Math.max(0,totTarget-signedNow),projPct=totTarget?projection/totTarget:null;
+  const gapT=projection-totTarget,gapS=projection-totStretch;
   const addT=gapT>=0?0:(conv>0?(-gapT)/conv:null),addS=gapS>=0?0:(conv>0?(-gapS)/conv:null);   // conv 0 → can't derive
-  const pasesInv=fid!=null?invoicedPases(fid):{total:0,paid:0};
   const editable=DB.canSalesLead()&&(_hcReg!=null||fid!=null);   // targets editable if the registry or a Money row holds them
 
   h+='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
-    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so <b>Invoiced/Paid</b> can\'t derive (targets &amp; pipeline still work). Link it in <b>⚙ Manage events</b> once it\'s in Money.</div>':'')
-    +'<p class="lead">Sponsorship projection = confirmed (from Facturación) + expected pipeline (proposals sent × conversion). '
-    +'Confirmed counts <b>Invoiced/Paid only</b>, never sales-declared.</p>';
+    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so tickets sold (Facturación) can\'t derive — targets &amp; the Won/pipeline sponsorship figures still work. Link it in <b>⚙ Manage events</b>.</div>':'')
+    +'<p class="lead"><b>Firmado</b> = deals marked <b>Won</b> on the board (the moment they\'re Won) + <b>tickets</b> vendidos (Facturación). La <b>proyección</b> añade el pipeline aún en Sent × conversión.</p>';
 
-  // targets table
-  h+='<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Pases</th><th class="num">Sponsorship</th><th class="num">TOTAL</th></tr></thead><tbody>';
-  h+=hcRow('Target',t.pasesTarget,spTarget,(+t.pasesTarget||0)+spTarget,editable,'pasesTarget','sponsorshipTarget');
-  h+=hcRow('Stretch',t.pasesStretch,spStretch,(+t.pasesStretch||0)+spStretch,editable,'pasesStretch','sponsorshipStretch');
-  h+='<tr class="section"><td colspan="4">Pipeline & confirmed</td></tr>';
-  h+='<tr><td>Confirmado (facturado)</td><td class="num">'+money(pasesInv.total)+'</td><td class="num">'+money(spInvoiced.total)+'</td><td class="num">'+money(pasesInv.total+spInvoiced.total)+'</td></tr>';
-  h+='<tr><td><span class="ro-note">— del cual pagado</span></td><td class="num">'+money(pasesInv.paid)+'</td><td class="num">'+money(spInvoiced.paid)+'</td><td class="num">'+money(pasesInv.paid+spInvoiced.paid)+'</td></tr>';
-  h+='<tr><td>En pipeline (propuestas enviadas)</td><td class="num">—</td><td class="num">'+money(pipeline)+'</td><td class="num">'+money(pipeline)+'</td></tr>';
-  h+='<tr><td>% de conversión asumido</td><td class="num">—</td><td class="num">'+convCell(conv,editable)+'</td><td class="num"></td></tr>';
-  h+='<tr><td>Ingreso esperado del pipeline</td><td class="num">—</td><td class="num">'+money(expected)+'</td><td class="num">'+money(expected)+'</td></tr>';
-  h+='<tr class="row-total"><td>PROYECCIÓN (confirmado + esperado)</td><td class="num">'+money(pasesInv.total)+'</td><td class="num">'+money(projection)+'</td><td class="num">'+money(pasesInv.total+projection)+'</td></tr>';
+  // headline — fixes the "15% of target" mislabel: reached AND still-to-go, both explicit
+  h+='<div class="tiles" style="margin-bottom:8px">'
+    +tile('Firmado ahora',money(signedNow),'specs Won + tickets vendidos',(reached!=null&&reached>=1)?'good':'')
+    +tile('Alcanzado del target',reached==null?'—':pct(reached),reached==null?'sin target':'de '+money(totTarget))
+    +tile('Fuera de target',toGo==null?'—':pct(toGo),toGo==null?'':'faltan '+money(toGoMoney)+' por firmar','bad')
+    +tile('Proyección',money(projection),projPct==null?'':pct(projPct)+' del target',gapT>=0?'good':'bad')
+    +'</div>';
+
+  // detail table: Specs | Tickets | TOTAL
+  h+='<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Specs (sponsorship)</th><th class="num">Tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
+  h+=hcRow2('Target',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget','pasesTarget');
+  h+=hcRow2('Stretch',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch','pasesStretch');
+  h+='<tr class="section"><td colspan="4">Firmado y pipeline</td></tr>';
+  h+='<tr class="row-total"><td>Firmado (Won en el tablero)</td><td class="num">'+money(wonSpecs)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(signedNow)+'</td></tr>';
+  h+='<tr><td><span class="ro-note">— del cual facturado</span></td><td class="num">'+money(invSpecs)+'</td><td class="num">'+money(tickets.paid)+'</td><td class="num">'+money(invSpecs+tickets.paid)+'</td></tr>';
+  h+='<tr><td>En pipeline (propuestas Sent)</td><td class="num">'+money(pipeline)+'</td><td class="num">—</td><td class="num">'+money(pipeline)+'</td></tr>';
+  h+='<tr><td>% de conversión asumido</td><td class="num">'+convCell(conv,editable)+'</td><td class="num">—</td><td class="num"></td></tr>';
+  h+='<tr><td>Ingreso esperado del pipeline</td><td class="num">'+money(expected)+'</td><td class="num">—</td><td class="num">'+money(expected)+'</td></tr>';
+  h+='<tr class="row-total"><td>PROYECCIÓN (firmado + esperado + tickets)</td><td class="num">'+money(wonSpecs+expected)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(projection)+'</td></tr>';
   h+='</tbody></table>';
 
-  // verdicts (sponsorship, consistent base)
+  // verdicts — projection now includes signed Won (fixes the −25.000 that ignored the Won deal)
   h+='<div class="tiles" style="margin-top:16px">'
-    +tile('¿Llega a Target?',gapT>=0?'SÍ ✔':'NO ✘',money(spTarget)+' target',gapT>=0?'good':'bad')
+    +tile('¿Proyección llega a Target?',gapT>=0?'SÍ ✔':'NO ✘',money(totTarget)+' target',gapT>=0?'good':'bad')
     +tile('Diferencia vs Target',money(gapT),gapT>=0?'holgura':'falta por cerrar',gapT>=0?'good':'bad')
-    +tile('¿Llega a Stretch?',gapS>=0?'SÍ ✔':'NO ✘',money(spStretch)+' stretch',gapS>=0?'good':'bad')
-    +tile('Diferencia vs Stretch',money(gapS),gapS>=0?'holgura':'falta por cerrar',gapS>=0?'good':'bad')
+    +tile('¿Llega a Stretch?',gapS>=0?'SÍ ✔':'NO ✘',money(totStretch)+' stretch',gapS>=0?'good':'bad')
+    +tile('€ propuestas ADIC. → target',addT==null?'—':'+'+money(addT),addT==null?'conversión 0%':'a firmar (÷ conv '+pct(conv)+')')
     +'</div>';
-  h+='<div class="tiles">'
-    +tile('€ propuestas ADIC. → target',addT==null?'—':'+'+money(addT),addT==null?'conversión 0% — no calculable':'a firmar (÷ conv '+pct(conv)+')')
-    +tile('€ propuestas ADIC. → stretch',addS==null?'—':'+'+money(addS),addS==null?'conversión 0% — no calculable':'a firmar (÷ conv '+pct(conv)+')')
-    +'</div>';
-  h+='<p class="ro-note">Lectura rápida: si la diferencia es negativa, ese es el volumen de propuestas NUEVAS que hay que mover (teniendo en cuenta la conversión) para cerrar el hueco.</p>';
+  h+='<p class="ro-note">«Alcanzado» = lo ya firmado (Won + tickets) sobre el target total. «Fuera de target» = lo que queda por firmar. La proyección añade el pipeline pendiente por su conversión.</p>';
   h+='</div>';
   app.innerHTML=h;
   const s=document.getElementById('hc_ev');if(s)s.onchange=()=>{HC=s.value;render();};
