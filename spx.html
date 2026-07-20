@@ -325,7 +325,7 @@ function renderProposals(app,scope){
   // target + tickets sold, over the events currently shown on the board
   const evObjs=spxEvents();
   const shownKeys=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
-  let tgt=0,str=0,ticketsSold=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const t=hasReg()?(e.reg||{}):(e.financeId!=null?DB.spxTargetFor(e.financeId):null);if(t){tgt+=(+t.sponsorshipTarget||0);str+=(+t.sponsorshipStretch||0);}if(e.financeId!=null)ticketsSold+=invoicedPases(e.financeId).total;});
+  let tgt=0,str=0,ticketsSold=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const T=eventTargets(e);tgt+=T.spTarget;str+=T.spStretch;if(e.financeId!=null)ticketsSold+=invoicedPases(e.financeId).total;});
   const reachedT=tgt?firmado/tgt:null;
 
   const salespeople=distinctList(DB.spxProps.map(p=>p.responsableName||p.responsable));
@@ -769,6 +769,31 @@ function specsMoney(evKey,status){
 /* money / count on one event by board bucket (Confirmed|Sent|Silent|Lost) */
 function eventBucketMoney(evKey,bucket){let s=0;liveProps().forEach(p=>{if(spxBucket(p)!==bucket)return;DB.spxLinesFor(p.id).forEach(l=>{if(lineEvKey(l)===evKey)s+=(+l.valueEur||0);});});return s;}
 function cntEventBucket(evKey,bucket){return liveProps().filter(p=>spxBucket(p)===bucket&&DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===evKey)).length;}
+/* TARGET SPLIT (Belén, 20 Jul): Money (dc_finance) is the MASTER total; specs = total ×
+   a per-event "specs %" that Cintia enters by hand (no benchmark hard-coded). The % lives
+   in the target row's convByStatus.specsPct jsonb → no schema change. Falls back to the
+   hand-entered SPX sponsorship/pases targets when no Money row or no % is set yet. */
+function eventTargets(ev){
+  const fid=ev.financeId;
+  const reg=hasReg()?(ev.reg||{}):(fid!=null?(DB.spxTargetFor(fid)||{}):{});
+  const fin=fid!=null?DB.finance.find(f=>f.id==fid):null;
+  let w=(reg.convByStatus&&reg.convByStatus.specsPct!=null)?+reg.convByStatus.specsPct:null;
+  if(w!=null){if(w>1)w=w/100;w=Math.max(0,Math.min(1,w));}
+  if(fin&&fin.target!=null&&w!=null){
+    const tot=+fin.target||0,totS=+fin.stretch||0;
+    return {source:'money',specsPct:w,moneyTotal:tot,totTarget:tot,totStretch:totS,
+      spTarget:tot*w,tkTarget:tot*(1-w),spStretch:totS*w,tkStretch:totS*(1-w)};
+  }
+  const spT=+reg.sponsorshipTarget||0,tkT=+reg.pasesTarget||0,spS=+reg.sponsorshipStretch||0,tkS=+reg.pasesStretch||0;
+  return {source:'spx',specsPct:w,moneyTotal:fin?(+fin.target||null):null,totTarget:spT+tkT,totStretch:spS+tkS,
+    spTarget:spT,tkTarget:tkT,spStretch:spS,tkStretch:tkS};
+}
+/* the editable "specs %" cell — Cintia enters it per event (whole %, stored 0–1) */
+function specsPctCell(w,editable){
+  const disp=w==null?'—':(Math.round(w*1000)/10)+'%';
+  if(!editable)return disp;
+  return '<input class="cvedit" id="hc_specs" type="number" step="1" min="0" max="100" style="width:64px" value="'+(w==null?'':Math.round(w*100))+'" placeholder="%"> ('+disp+')';
+}
 /* ================= DASHBOARD TAB (Belén #8 — the at-a-glance summary) ================= */
 function renderDashboard(app){
   const evsAll=spxEvents();
@@ -784,8 +809,8 @@ function renderDashboard(app){
   const fid=ev.financeId;
   const won=eventBucketMoney(ev.key,'Confirmed'),sent=eventBucketMoney(ev.key,'Sent'),silent=eventBucketMoney(ev.key,'Silent'),lost=eventBucketMoney(ev.key,'Lost');
   const tickets=fid!=null?invoicedPases(fid).total:0;
-  const reg=hasReg()?(ev.reg||{}):(fid!=null?(DB.spxTargetFor(fid)||{}):{});
-  const spTarget=+reg.sponsorshipTarget||0,tkTarget=+reg.pasesTarget||0,totTarget=spTarget+tkTarget;
+  const T=eventTargets(ev);
+  const spTarget=T.spTarget,tkTarget=T.tkTarget,totTarget=T.totTarget;
   const closed=won+tickets,reached=totTarget?closed/totTarget:null,toGoMoney=Math.max(0,totTarget-closed);
   // TOP block — the general view
   h+='<div class="card"><h3 style="margin:0 0 10px">'+esc(ev.name)+' — resumen</h3><div class="tiles">'
@@ -855,9 +880,8 @@ function healthCard(ev){
   const expected=pipeline*conv;
   const invSpecs=fid!=null?invoicedSponsorship(fid).total:0;         // of-which-invoiced (info)
   const tickets=fid!=null?invoicedPases(fid):{total:0,paid:0};       // tickets come from Facturación
-  const spTarget=+t.sponsorshipTarget||0,spStretch=+t.sponsorshipStretch||0;
-  const tkTarget=+t.pasesTarget||0,tkStretch=+t.pasesStretch||0;
-  const totTarget=spTarget+tkTarget,totStretch=spStretch+tkStretch;
+  const T=eventTargets(ev);                                          // money-master split (or fallback)
+  const spTarget=T.spTarget,spStretch=T.spStretch,tkTarget=T.tkTarget,tkStretch=T.tkStretch,totTarget=T.totTarget,totStretch=T.totStretch;
   const signedNow=wonSpecs+tickets.total;                           // real money in: specs Won + tickets sold
   const projection=wonSpecs+expected+tickets.total;                 // signed + expected pipeline + tickets
   const reached=totTarget?signedNow/totTarget:null,toGo=(reached==null)?null:Math.max(0,1-reached);
@@ -880,8 +904,17 @@ function healthCard(ev){
 
   // detail table: Specs | Tickets | TOTAL
   h+='<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Specs (sponsorship)</th><th class="num">Tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
-  h+=hcRow2('Target',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget','pasesTarget');
-  h+=hcRow2('Stretch',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch','pasesStretch');
+  if(T.source==='money'){
+    // Money is master: total read-only (edit in Money), specs/tickets DERIVED from the specs %
+    h+='<tr><td>Target <span class="ro-note">(total = Money)</span></td><td class="num">'+money(spTarget)+'</td><td class="num">'+money(tkTarget)+'</td><td class="num">'+money(totTarget)+'</td></tr>';
+    h+='<tr><td>Stretch</td><td class="num">'+money(spStretch)+'</td><td class="num">'+money(tkStretch)+'</td><td class="num">'+money(totStretch)+'</td></tr>';
+    h+='<tr><td>Specs % <span class="ro-note">(Cintia)</span></td><td class="num" colspan="3" style="text-align:left">'+specsPctCell(T.specsPct,editable)+' &nbsp;→&nbsp; specs '+money(spTarget)+' · tickets '+money(tkTarget)+'</td></tr>';
+  }else{
+    // fallback (no Money row or no % yet): the hand-entered SPX targets stay editable
+    h+=hcRow2('Target',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget','pasesTarget');
+    h+=hcRow2('Stretch',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch','pasesStretch');
+    if(T.moneyTotal!=null)h+='<tr><td colspan="4" class="ro-note" style="text-align:left">Money total del evento: <b>'+money(T.moneyTotal)+'</b> — fija el Specs % para dividirlo automáticamente: '+specsPctCell(T.specsPct,editable)+'</td></tr>';
+  }
   h+='<tr class="section"><td colspan="4">Firmado y pipeline</td></tr>';
   h+='<tr class="row-total"><td>Firmado (Won en el tablero)</td><td class="num">'+money(wonSpecs)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(signedNow)+'</td></tr>';
   h+='<tr><td><span class="ro-note">— del cual facturado</span></td><td class="num">'+money(invSpecs)+'</td><td class="num">'+money(tickets.paid)+'</td><td class="num">'+money(invSpecs+tickets.paid)+'</td></tr>';
@@ -927,6 +960,9 @@ function invoicedPases(finId){
 function wireHC(t){
   const conv=document.getElementById('hc_conv');
   if(conv)conv.onchange=()=>{let c=+conv.value;if(c>1)c=c/100;c=Math.max(0,Math.min(1,c));const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{Sent:c});DB.save();render();};
+  // specs % (Cintia) → convByStatus.specsPct (whole % in, stored 0–1); blank clears it
+  const spc=document.getElementById('hc_specs');
+  if(spc)spc.onchange=()=>{let v=spc.value===''?null:+spc.value;if(v!=null){if(v>1)v=v/100;v=Math.max(0,Math.min(1,v));}const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{specsPct:v});DB.save();render();};
   document.querySelectorAll('.mval[data-tf]').forEach(sp=>sp.onclick=()=>{
     const fld=sp.dataset.tf;const row=ensureTarget();
     const td=sp.parentElement;td.innerHTML='<input class="money" type="number" step="any" value="'+(row[fld]==null?'':row[fld])+'">';
