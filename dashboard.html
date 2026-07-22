@@ -236,9 +236,19 @@ function render(){
 }
 
 /* ================= TAB 1: YEAR STATUS ================= */
+/* a sortable month·day key so events list in true date order: prefer the linked
+   board event's ISO date, else parse the free-text "When" (e.g. "11-12 Feb") */
+function finDateKey(f){
+  if(f.eventId&&DB.event){const e=DB.event(f.eventId);const m=e&&/(\d{4})-(\d{2})-(\d{2})/.exec(e.date||'');if(m)return (+m[2])*100+(+m[3]);}
+  const w=(''+(f['when']||'')).toLowerCase();
+  const dm=/(\d{1,2})/.exec(w),day=dm?+dm[1]:1;
+  const MO={jan:1,ene:1,feb:2,mar:3,abr:4,apr:4,may:5,jun:6,jul:7,aug:8,ago:8,sep:9,oct:10,nov:11,dec:12,dic:12};
+  let mon=0;for(const k in MO){if(w.indexOf(k)>=0){mon=MO[k];break;}}
+  return (mon||99)*100+day;
+}
 function finGrouped(){
   const fs=DB.finance.slice().filter(f=>yearFilter==='all'||f.year==yearFilter)
-    .sort((a,b)=>(a.year-b.year)||(a.semester-b.semester)||((a.edition||0)-(b.edition||0))||(a.id-b.id));
+    .sort((a,b)=>(a.year-b.year)||(a.semester-b.semester)||(finDateKey(a)-finDateKey(b))||((a.edition||0)-(b.edition||0))||(a.id-b.id));
   const g={};fs.forEach(f=>{const k=f.year+'·S'+f.semester;(g[k]=g[k]||[]).push(f);});return g;
 }
 function fSum(list,fld){return list.reduce((a,f)=>a+(+f[fld]||0),0);}
