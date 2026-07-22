@@ -1852,7 +1852,9 @@ const DB={
      fill when accounting assigns it. So nobody is ever unable to log hours
      or raise an invoice against a new event. Only CURRENT-or-future events
      are swept (historic editions stay out of the curated lists). */
-  evCleanName(ev){return (''+(ev.name||'')).replace(/^E\d+\s*RENMAD\s*/i,'').trim();},
+  /* event name for a project/item label: drop the "E056"/"RENMAD" prefixes and any trailing
+     year, so the caller can append the year once (no "…27 27") — Belén, 22 Jul. */
+  evCleanName(ev){return (''+(ev.name||'')).replace(/^E\d+\s*/i,'').replace(/^RENMAD\s+/i,'').replace(/\s+(20)?\d{2}$/,'').trim();},
   ensureEventLines(){
     const out={items:0,projects:0,adopted:0};
     const curYear=new Date().getFullYear();
@@ -1879,7 +1881,9 @@ const DB={
         const match=this.projects.find(p=>!p.kind&&p.eventId==null&&(''+(p.label||'')).replace(/^\d+\.\s*/,'').trim().toLowerCase()===wanted);
         if(match){match.eventId=ev.id;out.adopted++;return;}
         const sort=Math.max(0,...this.projects.map(p=>p.sort||0))+1;
-        this.projects.push({id:this.newId(),label:pad2(sort)+'. '+clean+' '+yy,code:null,kind:null,sort,active:true,eventId:ev.id});
+        /* events are accounting category "02." — use it (not the running sort number) so new
+           projects read like the rest of the list, e.g. "02. Datacenters Italia 27". */
+        this.projects.push({id:this.newId(),label:'02. '+clean+' '+yy,code:null,kind:null,sort,active:true,eventId:ev.id});
         out.projects++;
       });
     }
