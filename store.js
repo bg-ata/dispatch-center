@@ -1394,7 +1394,7 @@ function buildSeed(){
    {id:15,item:'Biometano 27',codigo:'70321',eventId:null},
    {id:16,item:'Almacenamiento 27',codigo:'70322',eventId:null},
   ];
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,payments:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -1423,7 +1423,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
@@ -1448,6 +1448,10 @@ const COLS={
   invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId',
     'producto','tipo_pase','qty','price'], // Invoicing 2.0 line model (dispatch_invoicing2.sql)
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
+  /* split-payment ledger: one row per partial payment against a dc_invoices row
+     (deposit now, balance later…). The invoice's collected/outstanding + Paid
+     status are DERIVED from the sum of these (dispatch_invoice_payments.sql). */
+  payments:['id','invoice_id','fecha','importe','metodo','notas'],
   /* códigos = the item↔código-contable master Jesús maintains (item name + accounting
      code + optional link to a dc_finance event so RENMAD lines still roll into the € Dashboard) */
   codigos:['id','item','codigo','descripcion','eventId'],
@@ -1476,7 +1480,7 @@ const COLS={
      one column of a row the requester is allowed to read. */
   holmsgs:['id','holidayId','personId','byName','text','toRequester','created'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -1595,6 +1599,16 @@ const DB={
         catch(e){window._inv2Ready=false;
           ['producto','tipo_pase','qty','price'].forEach(c=>{const i2=COLS.invalloc.indexOf(c);if(i2>=0)COLS.invalloc.splice(i2,1);});}
       }catch(e){console.warn('facturación module not ready:',e.message||e);}
+      /* split-payment ledger (tolerant — its OWN try so a missing table never
+         aborts the invoices/allocs load above; run dispatch_invoice_payments.sql) */
+      this.data.payments=[];_payReady=false;
+      try{
+        const out=[];let from=0,page=1000;
+        for(;;){const r=await sb.from('dc_invoice_payments').select('*').eq('deleted',false).order('id').range(from,from+page-1);
+          if(r.error)throw r.error;out.push.apply(out,r.data||[]);
+          if(!r.data||r.data.length<page)break;from+=page;}
+        this.data.payments=out;_payReady=true;
+      }catch(e){console.warn('invoice payments module not ready:',e.message||e);}
       /* team request box (tolerant — app runs fine before dispatch_tickets.sql) */
       this.data.tickets=[];_tickReady=false;
       try{const tk=await sb.from('dc_tickets').select('*').eq('deleted',false).order('id');
@@ -1645,6 +1659,7 @@ const DB={
     }
     try{this.data=JSON.parse(localStorage.getItem('dispatchStore'));}catch(e){this.data=null;}
     if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
+    if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
     return this.data;
   },
   save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>{_saveTimer=null;this.syncNow();},700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
@@ -1676,6 +1691,7 @@ const DB={
         if((k==='timeclock'||k==='tcreports')&&!_tcReady)continue; // time clock tables not created yet
         if(k==='eventaway'&&!_eventReady)continue; // event-away table not created yet
         if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)continue; // facturación tables not created yet
+        if(k==='payments'&&!_payReady)continue; // split-payment ledger table not created yet
         if(k==='tickets'&&!_tickReady)continue; // requests table not created yet
         if(k==='todos'&&!_todoReady)continue; // to-dos table not created yet
         if(k==='inbox'&&!_inboxReady)continue; // inbox table not created yet
@@ -1788,6 +1804,18 @@ const DB={
   get delegates(){return this.data.delegates||[];},
   get codigos(){return this.data.codigos||[];},
   billReady(){return !USE_SUPABASE||_billReady;},
+  /* ---- split-payment ledger: partial payments against an invoice ---- */
+  get payments(){return this.data.payments||[];},
+  payReady(){return !USE_SUPABASE||_payReady;},
+  paymentsFor(invoiceId){return this.payments.filter(p=>p.invoice_id==invoiceId);},
+  /* total collected on an invoice: the ledger's sum when it has payments, else the
+     legacy single importe_cobrado (or the whole total if flagged pagado with nothing typed) */
+  paidTotal(inv){if(!inv)return 0;const ps=this.payReady()?this.paymentsFor(inv.id):[];
+    if(ps.length)return Math.round(ps.reduce((s,p)=>s+(+p.importe||0),0)*100)/100;
+    if(inv.importe_cobrado!=null&&inv.importe_cobrado!=='')return +inv.importe_cobrado;
+    return inv.status==='pagado'?(+inv.total_factura||0):0;},
+  remainingOf(inv){return Math.round(((+inv.total_factura||0)-this.paidTotal(inv))*100)/100;},
+  hasLedger(inv){return !!(inv&&this.payReady()&&this.paymentsFor(inv.id).length);},
   /* billing editor = the external invoicing freelancer (billing tick, provisioned by Belén)
      or an admin. Mirrors dc_can_bill() in SQL. Separate from the finance flag — Jesús
      keeps editing the € figures exactly as today. */
@@ -1943,6 +1971,7 @@ function subscribeRealtime(){
       if(k==='tcreports'&&!_tcReady)return;
       if(k==='eventaway'&&!_eventReady)return;
       if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)return;
+      if(k==='payments'&&!_payReady)return;
       if(k==='tickets'&&!_tickReady)return;
       if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)))return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));

@@ -42,6 +42,9 @@
   tr.cancelado td{background:#F8D7D7} /* Cancelado = red */
   td select.inl{font-size:11.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px}
   .allocchip{display:inline-block;background:#f0eee8;border:1px solid var(--line);border-radius:10px;padding:1px 8px;font-size:11px;margin:1px 2px}
+  .paybadge{display:inline-block;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700}
+  .paybadge.pd{background:#dff3e4;color:#1c7a3e}    /* paid in full */
+  .paybadge.pt{background:#fdeccb;color:#9a6a11}    /* partially paid */
   .stbadge{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700}
   .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}
   .del:hover{color:var(--red)}
@@ -81,7 +84,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=70"></script>
+<script src="store.js?v=71"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
@@ -95,7 +98,18 @@ function finLabelClean(f){return f?((f.name||'?')+' '+(f.year||'')).replace(/\s+
 function eurF(n){return finFmt(n);}
 function num2(v){return Math.round((+v||0)*100)/100;}
 function isAbono(i){return i.producto==='abono'||i.status==='abono';}
-function cobrado(i){if(i.importe_cobrado!=null&&i.importe_cobrado!=='')return +i.importe_cobrado;return i.status==='pagado'?(+i.total_factura||0):0;}
+/* collected on an invoice — the split-payment ledger when it has payments, else legacy */
+function cobrado(i){return DB.paidTotal(i);}
+function remainingOf(i){return DB.remainingOf(i);}
+function hasLedger(i){return DB.hasLedger(i);}
+/* status cell: an invoice with a payment ledger shows a derived Paid/Partial badge
+   (+ outstanding) instead of the manual dropdown — payments are edited in ✎ */
+function statusCell(i,stSel){
+  if(!hasLedger(i)||i.status==='cancelado'||i.status==='abono')return stSel;
+  const rem=remainingOf(i),full=rem<=0.005;
+  return '<span class="paybadge '+(full?'pd':'pt')+'" title="'+(full?'Paid in full via the payments ledger':'Partially paid — '+eurF(rem)+' outstanding')+'">'+
+    (full?'Pagado ✓':'Parcial')+'</span>'+(full?'':'<div class="hint" style="font-size:11px;margin-top:2px">'+eurF(rem)+' left</div>');
+}
 /* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
 function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
 function codLabel(c){return c.codigo?('('+c.codigo+') '+(c.item||'#'+c.id)):((c.item||'#'+c.id)+' — código pending');}
@@ -208,7 +222,7 @@ function renderTable(rows){
       '<td class="num">'+(i.en_usd&&i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'<span class="hint">—</span>')+'</td>'+
       '<td class="num">'+eurF(i.iva_importe)+' <span class="hint">'+(i.iva_pct!=null?i.iva_pct+'%':'')+'</span></td>'+
       '<td class="num"><b>'+eurF(i.total_factura)+'</b></td>'+
-      '<td>'+stSel+'</td>'+
+      '<td>'+statusCell(i,stSel)+'</td>'+
       '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td style="white-space:normal;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+esc(i.comentarios||'')+'">'+esc(i.comentarios||'')+'</td>'+
@@ -348,9 +362,12 @@ function openModal(inv,preset){
         '<div class="totline usdf" style="display:none;border-top:1px dashed var(--line);margin-top:6px;padding-top:8px"><span>EUR for accounting <span class="hint">(manual)</span></span><input id="m_eur" type="number" step="any" value="'+(i.en_usd&&i.importe_base!=null?i.importe_base:'')+'" style="width:110px;text-align:right"></div>'+
       '</div>'+
     '</div>'+
+    '<div class="sect" id="paysect" style="margin-top:12px">Cobros / Payments <span class="hint" style="text-transform:none;font-weight:400">— record each partial payment (deposit now, balance later…); the invoice turns Paid on its own when the outstanding balance reaches zero</span></div>'+
+    '<div id="paybox"></div>'+
     '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
   document.getElementById('modal').classList.add('on');
   wireModal(i);
+  renderPayments();
 }
 function renderLines(){
   const cods=codsSorted();
@@ -447,6 +464,63 @@ function wireModal(i){
 }
 function closeModal(){document.getElementById('modal').classList.remove('on');editingId=null;}
 document.getElementById('modal').onclick=e=>{if(e.target===document.getElementById('modal'))closeModal();};
+
+/* ---------- split-payment ledger (inside the invoice modal) ---------- */
+const PM_LABEL={tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'};
+/* re-derive the invoice's status / collected / stamp from its payment rows */
+function syncInvoiceFromPayments(invId){
+  const inv=DB.invoice(invId);if(!inv)return;
+  if(inv.status==='abono'||inv.status==='cancelado')return; // credit notes / cancelled aren't governed by the ledger
+  const ps=DB.paymentsFor(invId);
+  const total=+inv.total_factura||0,paid=num2(ps.reduce((s,p)=>s+(+p.importe||0),0));
+  const last=ps.slice().sort((a,b)=>(''+(a.fecha||'')).localeCompare(''+(b.fecha||''))).pop();
+  inv.importe_cobrado=ps.length?paid:null;
+  inv.status=ps.length?((total>0&&paid+0.005>=total)?'pagado':'no_pagado'):inv.status;
+  inv.fecha_cobro=(inv.status==='pagado'&&last)?last.fecha:(ps.length?null:inv.fecha_cobro);
+  if(last&&last.metodo)inv.metodo_pago=last.metodo;
+}
+function renderPayments(){
+  const box=document.getElementById('paybox');if(!box)return;
+  if(!DB.payReady()){box.innerHTML='<p class="hint">Split payments are not active yet — run <b>dispatch_invoice_payments.sql</b> in Supabase, then reload.</p>';return;}
+  if(!editingId){box.innerHTML='<p class="hint">Save the invoice first, then re-open it (✎) to record partial payments.</p>';return;}
+  const inv=DB.invoice(editingId);if(!inv){box.innerHTML='';return;}
+  if(inv.status==='abono'||inv.status==='cancelado'){box.innerHTML='<p class="hint">'+(inv.status==='abono'?'Credit note':'Cancelled invoice')+' — the payment ledger does not apply.</p>';return;}
+  const ps=DB.paymentsFor(editingId).slice().sort((a,b)=>(''+(a.fecha||'')).localeCompare(''+(b.fecha||'')));
+  const total=+inv.total_factura||0,paid=num2(ps.reduce((s,p)=>s+(+p.importe||0),0)),rem=num2(total-paid);
+  let h='<table class="lntbl"><tr><th style="width:120px">Date</th><th style="width:110px" class="num">Amount €</th><th style="width:130px">Method</th><th>Note</th><th style="width:24px"></th></tr>';
+  if(!ps.length)h+='<tr><td colspan="5" class="hint">No payments yet — add the first below.</td></tr>';
+  ps.forEach(p=>{h+='<tr><td>'+ddmmyyyy(p.fecha)+'</td><td class="num">'+eurF(p.importe)+'</td><td>'+(PM_LABEL[p.metodo]||'—')+'</td>'+
+    '<td style="white-space:normal">'+esc(p.notas||'')+'</td><td><button class="del" data-paydel="'+p.id+'" title="Remove this payment">×</button></td></tr>';});
+  h+='<tr style="background:#fbfaf7"><td><input type="date" id="np_fecha" value="'+todayISO()+'"></td>'+
+    '<td><input type="number" step="any" id="np_imp" placeholder="'+(rem>0.005?rem.toFixed(2):'0')+'" style="text-align:right"></td>'+
+    '<td><select id="np_met"><option value="transferencia">Bank transfer</option><option value="tarjeta">Card</option></select></td>'+
+    '<td><input id="np_note" placeholder="e.g. deposit / 1st instalment"></td>'+
+    '<td><button class="btn sm" id="np_add" title="Add payment">+</button></td></tr>';
+  h+='</table>'+
+    '<div class="totbox" style="margin-top:8px;max-width:320px">'+
+      '<div class="totline"><span>Invoice total</span><b>'+eurF(total)+'</b></div>'+
+      '<div class="totline"><span>Paid so far</span><span style="color:var(--green)">'+eurF(paid)+'</span></div>'+
+      '<div class="totline big"><span>Outstanding</span><span style="color:'+(rem>0.005?'var(--red)':'var(--green)')+'">'+eurF(rem)+(rem<=0.005&&paid>0?' ✓':'')+'</span></div>'+
+    '</div>';
+  box.innerHTML=h;
+  /* the manual Status dropdown is now governed by the ledger */
+  const stsel=document.getElementById('m_st');
+  if(stsel&&ps.length){stsel.value=inv.status;stsel.disabled=true;stsel.title='Set automatically by the payments ledger below';}
+  else if(stsel){stsel.disabled=false;stsel.title='';}
+  box.querySelectorAll('[data-paydel]').forEach(b=>b.onclick=()=>{
+    const arr=DB.data.payments,ix=arr.findIndex(x=>x.id==b.dataset.paydel);
+    if(ix>=0){arr.splice(ix,1);syncInvoiceFromPayments(editingId);DB.save();renderPayments();refreshModal();}
+  });
+  const add=document.getElementById('np_add');
+  if(add)add.onclick=()=>{
+    const imp=num2(+document.getElementById('np_imp').value);
+    if(!imp){alert('Enter the payment amount.');return;}
+    DB.data.payments.push({id:DB.newId(),invoice_id:editingId,
+      fecha:document.getElementById('np_fecha').value||todayISO(),importe:imp,
+      metodo:document.getElementById('np_met').value,notas:document.getElementById('np_note').value.trim()||null});
+    syncInvoiceFromPayments(editingId);DB.save();renderPayments();refreshModal();
+  };
+}
 
 /* ---------- draft safety (audit Critical 3): the form is stashed before the network
    is trusted; a failed sync (which alerts + reloads) can no longer eat typed work ---------- */
