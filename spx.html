@@ -210,7 +210,11 @@ function distinctList(arr){return Array.from(new Set(arr.filter(x=>x!=null&&x!==
    match, used only for targets / Invoiced-Paid when that money row exists). */
 function regEvents(){return (DB.spxEventReg||[]).filter(e=>!e.deleted);}
 function hasReg(){return regEvents().length>0;}
-function lineMapsReg(l,e){return (l.eventKey&&e.eventKey&&l.eventKey===e.eventKey)||(l.eventId!=null&&e.financeId!=null&&e.financeId==l.eventId);}
+/* a line belongs to a registry event by: its eventKey, its financeId, OR one of the event's
+   ALIASES (convByStatus.aliases) — the Builder emits its own keys (almacenamiento_27…) that
+   name the same event as the board's E-code, so aliases fold both into ONE bucket instead of
+   splitting the turnover (Belén, 22 Jul). */
+function lineMapsReg(l,e){return (l.eventKey&&e.eventKey&&l.eventKey===e.eventKey)||(l.eventId!=null&&e.financeId!=null&&e.financeId==l.eventId)||(!!l.eventKey&&!!(e.convByStatus&&e.convByStatus.aliases)&&e.convByStatus.aliases.indexOf(l.eventKey)>=0);}
 function lineEvKey(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.eventKey;}return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
 function lineEvName(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.name;}if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
 function evFinanceId(key,name){
@@ -373,15 +377,16 @@ function renderProposals(app,scope){
   h+='<button class="chip" onclick="exportBackup()" title="Download EVERYTHING (all proposals, lines and a per-event summary) — the Friday backup, ignores filters">⬇ Backup (todo)</button>';
   h+='</div>';
 
-  // table (wrapped in zoom + top-scroll chrome)
-  h+=tableChrome(VIEW==='general'?proposalsTableGeneral(props):proposalsTableByEvent(props));
-
-  // #3 placement: the health-check as analysis right below the board, for the event in focus
+  // #3 placement: the health-check as analysis ABOVE the board, for the event in focus (Belén, 22 Jul)
   if(scope!=='before'){
     const fk=flt.event||((spxEvents().filter(evCurrent)[0]||{}).key);
     const fev=fk?spxEvents().find(e=>e.key===fk):null;
-    if(fev)h+='<div style="margin-top:18px"><div class="ro-note" style="margin-bottom:6px">📊 Análisis — health-check · <b>'+esc(fev.name)+'</b>'+(flt.event?'':' (filtra por evento para cambiarlo · o abre la pestaña Dashboard)')+'</div>'+healthCard(fev)+'</div>';
+    if(fev)h+='<div style="margin-bottom:18px"><div class="ro-note" style="margin-bottom:6px">📊 Análisis — health-check · <b>'+esc(fev.name)+'</b>'+(flt.event?'':' (filtra por evento para cambiarlo · o abre la pestaña Dashboard)')+'</div>'+healthCard(fev)+'</div>';
   }
+
+  // table (wrapped in zoom + top-scroll chrome)
+  h+=tableChrome(VIEW==='general'?proposalsTableGeneral(props):proposalsTableByEvent(props));
+
   app.innerHTML=h;
   wireFilters();wireProposalTable();
   if(document.querySelector('.hcgrid'))wireHC(_hcT);
@@ -830,11 +835,14 @@ function renderDashboard(app){
     +'</div></div>';
   h+='<div class="chartbox"><h3>Evolución semanal del pipeline — '+esc(ev.name)+'</h3><div class="cw"><canvas id="c_dashwk"></canvas></div></div>';
   h+=healthCard(ev);
+  // the proposals list for THIS event, back under the summary (Belén, 22 Jul — summary/health on top, list below)
+  const evProps=liveProps().filter(p=>DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===ev.key));
+  h+='<div style="margin-top:18px"><div class="ro-note" style="margin-bottom:6px">📋 Propuestas de <b>'+esc(ev.name)+'</b></div>'+tableChrome(proposalsTableGeneral(evProps))+'</div>';
   app.innerHTML=h;
   const s=document.getElementById('db_ev');if(s)s.onchange=()=>{HC=s.value;render();};
   wireHC(_hcT);
+  wireProposalTable();
   // weekly evolution for THIS event's proposals (created-week € + running total)
-  const evProps=liveProps().filter(p=>DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===ev.key));
   const byWk={};evProps.forEach(p=>{const d=(p.createdAt||p.fechaEnvio||'').slice(0,10);if(!d)return;const wk=weekStart(d);const v=DB.spxLinesFor(p.id).filter(l=>lineEvKey(l)===ev.key).reduce((a,l)=>a+(+l.valueEur||0),0);byWk[wk]=(byWk[wk]||0)+v;});
   const wks=Object.keys(byWk).sort();let r=0;const cum=wks.map(k=>{r+=byWk[k];return r;});
   mkChart('c_dashwk',{data:{labels:wks,datasets:[
