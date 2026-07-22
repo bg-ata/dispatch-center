@@ -1013,6 +1013,27 @@ function tcWeekProgress(personId,mondayISO){
   const worked=sec/3600;
   return {target,worked,remaining:Math.max(0,target-worked),pct:target>0?Math.min(1,worked/target):1,done:target>0&&worked>=target-1e-6};
 }
+/* the last day of THIS week that still has expected hours (Fri normally, or Thu if Fri is
+   a bank holiday / full-leave day). Used so the "Today" view switches to week-remaining. */
+function tcLastWorkingDay(personId,mondayISO){
+  const mon=mondayISO||toISO(monday(new Date())),monD=ymd(mon);let last=null;
+  for(let i=0;i<5;i++){const iso=toISO(addDays(monD,i));if(tcExpectedDay(personId,iso)>0)last=iso;}
+  return last;
+}
+/* today's goal (Belén, 22 Jul): normally the day's expected hours; on the LAST working day
+   of the week it becomes the week's remainder, so the finish line is "complete the week",
+   not a full extra day. A helper, not an enforcer — doing more is fine. */
+function tcDayGoal(personId){
+  const today=toISO(new Date());
+  const dailyExp=tcExpectedDay(personId,today);
+  const worked=tcLiveSeconds(personId,today).seconds/3600;
+  if(dailyExp<=0)return {off:true,goal:0,worked,remaining:0,pct:1,done:true,isLastDay:false};
+  const isLast=tcLastWorkingDay(personId)===today;
+  let goal=dailyExp;
+  if(isLast){const wp=tcWeekProgress(personId);goal=wp.target-(wp.worked-worked);}  // so worked→goal ⇔ week complete
+  goal=Math.max(0,goal);
+  return {off:false,goal,worked,remaining:Math.max(0,goal-worked),pct:goal>0?Math.min(1,worked/goal):1,done:goal>0&&worked>=goal-1e-6,isLastDay:isLast};
+}
 /* escalating weekly-hours alarms — Belén's spec (18 Jul): "It's hard not to forget the
    time!" → alarm 1 h before the week's allotted hours are consumed, then 30 min, then
    15 min, then every 5 min till the end. Only while clocked in (the countdown only moves

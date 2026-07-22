@@ -211,7 +211,10 @@ function renderClock(){
     punchAckHtml()+
     '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+(info.entries.length?('Punches: '+info.entries.map(e=>e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')).join(' · ')):'No punches yet today.')+'</div>'+
     '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkLeft" style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums"></span></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><b style="font-size:12.5px;color:var(--charcoal)" id="dayLbl">Today</b><span id="dayLeft" style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums"></span></div>'+
+      '<div id="dayBarWrap" style="position:relative;height:14px;border-radius:8px;background:#ece9e2;overflow:hidden"><div id="dayBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div></div>'+
+      '<div id="dayTxt" style="font-size:11.5px;color:var(--muted);margin-top:5px"></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:14px 0 6px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkLeft" style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums"></span></div>'+
       '<div id="wkBarWrap" style="position:relative;height:16px;border-radius:8px;background:#ece9e2;overflow:hidden">'+
         '<div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div>'+
         '<div id="wkTicks" style="position:absolute;inset:0;pointer-events:none"></div>'+
@@ -230,12 +233,30 @@ function renderClock(){
   };
   document.getElementById('lnkMonth').onclick=e=>{e.preventDefault();openFold('monthFold');};
   document.getElementById('lnkReport').onclick=e=>{e.preventDefault();openFold('reportFold');};
-  const tick=()=>{try{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('liveWorked');if(el)el.textContent=fmtHMS(li.seconds);updateWeekBar(me);}catch(e){console.error('clock tick',e);if(typeof showJsErrBar==='function')showJsErrBar('clock tick: '+(e&&e.message));}};
+  const tick=()=>{try{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('liveWorked');if(el)el.textContent=fmtHMS(li.seconds);updateDayBar(me);updateWeekBar(me);}catch(e){console.error('clock tick',e);if(typeof showJsErrBar==='function')showJsErrBar('clock tick: '+(e&&e.message));}};
   tick();if(info.open)_clockTick=setInterval(tick,1000);
 }
 
 /* weekly-hours bar (same behaviour as the HR time-clock tab): fills red→green
    as hours are clocked, live, with a "N left / week complete / last 30 min" note */
+/* the "Today" bar — today's expected hours, or the week's remainder on the last working
+   day. A helper to stay on time; doing more is fine (Belén, 22 Jul). */
+function updateDayBar(me){
+  const bar=document.getElementById('dayBar');if(!bar||!me)return;
+  const g=tcDayGoal(me.id);
+  const fmt=h=>{const H=Math.floor(h+1e-9),M=Math.round((h-H)*60);return M?H+'h '+M+'m':H+'h';};
+  bar.style.width=Math.round(g.pct*100)+'%';
+  bar.style.background=g.off?'#cfcdc7':'hsl('+Math.round(g.pct*120)+',68%,42%)';
+  const lbl=document.getElementById('dayLbl');if(lbl)lbl.textContent=g.isLastDay?'Today · last day of the week':'Today';
+  const left=document.getElementById('dayLeft');
+  if(left){
+    if(g.off){left.textContent='—';left.style.color='var(--muted)';}
+    else if(g.done){left.textContent='✓ done';left.style.color='var(--green)';}
+    else{left.textContent='⏳ '+fmt(g.remaining)+(g.isLastDay?' left this week':' left today');left.style.color=g.remaining<=0.5?'#D32230':(g.remaining<=1?'#C77800':'var(--charcoal)');}
+  }
+  const txt=document.getElementById('dayTxt');
+  if(txt)txt.textContent=g.off?'no hours expected today':(fmt(g.worked)+' of '+fmt(g.goal)+(g.isLastDay?' · the week’s remainder':' expected today'));
+}
 /* tick marks in the week bar: faint hour lines (spaced out on long weeks so they don't
    crowd) + bolder ¼/½/¾ anchors. Rebuilt only when the target changes, not every second. */
 function buildWeekTicks(target){
