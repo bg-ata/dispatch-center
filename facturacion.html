@@ -45,6 +45,9 @@
   .paybadge{display:inline-block;border-radius:10px;padding:1px 9px;font-size:12px;font-weight:700}
   .paybadge.pd{background:#dff3e4;color:#1c7a3e}    /* paid in full */
   .paybadge.pt{background:#fdeccb;color:#9a6a11}    /* partially paid */
+  .ytabs{display:flex;gap:4px;margin:2px 0 10px;flex-wrap:wrap}
+  .ytab{border:1px solid var(--line);background:#f4f2ec;color:#6a675e;border-radius:8px 8px 0 0;padding:6px 16px;font-weight:700;font-size:13px;cursor:pointer}
+  .ytab.on{background:#fff;color:var(--charcoal);border-bottom-color:#fff;box-shadow:0 -2px 0 var(--orange) inset}
   .stbadge{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700}
   .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}
   .del:hover{color:var(--red)}
@@ -87,7 +90,15 @@
 <script src="store.js?v=71"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
-let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''}, showCodigos=false;
+let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')}, showCodigos=false;
+/* invoices are shown one YEAR at a time (by issue date) so 2025 cross-year invoices
+   don't clutter 2026 — the € Dashboard still aggregates each event across all years */
+function invYears(){return [...new Set(DB.invoices.map(i=>(''+(i.fecha||'')).slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();}
+function yearTabsHtml(){
+  const ys=invYears();if(flt.year!=='all'&&ys.length&&ys.indexOf(flt.year)<0)flt.year=ys[0];
+  const mk=(v,lab)=>'<button class="ytab'+(flt.year===v?' on':'')+'" data-year="'+v+'">'+lab+'</button>';
+  return ys.map(y=>mk(y,y)).join('')+mk('all','All years');
+}
 const todayISO=()=>toISO(new Date());
 /* European display format DD/MM/YYYY (inputs stay type=date; this is for tables/exports) */
 function ddmmyyyy(iso){if(!iso)return '';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
@@ -155,6 +166,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding</div></div>'+
     '</div>'+
     '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
+    '<div class="ytabs">'+yearTabsHtml()+'</div>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
@@ -175,8 +187,9 @@ function render(){
   document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
   set('f_item','item');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
+  document.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{flt.year=b.dataset.year;render();});
   const tx=document.getElementById('f_txt');tx.oninput=()=>{flt.text=tx.value;renderTable(filtered());};
-  document.getElementById('f_clear').onclick=()=>{flt={item:'all',prod:'all',status:'all',text:'',from:'',to:''};render();};
+  document.getElementById('f_clear').onclick=()=>{flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:flt.year};render();};
   if(showCodigos)wireCodigos();
 }
 function filtered(){
@@ -185,6 +198,7 @@ function filtered(){
     if(flt.item!=='all'&&!DB.allocsFor(i.id).some(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);return c&&c.id==flt.item;}))return false;
     if(flt.prod!=='all'&&i.producto!==flt.prod&&!DB.allocsFor(i.id).some(a=>a.producto===flt.prod))return false;
     if(flt.status!=='all'&&i.status!==flt.status)return false;
+    if(flt.year&&flt.year!=='all'&&(''+(i.fecha||'')).slice(0,4)!==flt.year)return false;
     if(flt.from&&(i.fecha||'')<flt.from)return false;
     if(flt.to&&(i.fecha||'')>flt.to)return false;
     if(t&&!([i.razon_social,i.numero_factura,i.pedido,i.comentarios,i.entered_by,i.codigo_contable,i.producto].join(' ').toLowerCase().includes(t)))return false;
