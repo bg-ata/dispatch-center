@@ -211,9 +211,13 @@ function renderClock(){
     punchAckHtml()+
     '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+(info.entries.length?('Punches: '+info.entries.map(e=>e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')).join(' · ')):'No punches yet today.')+'</div>'+
     '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkTxt" style="font-size:12px;color:var(--muted)"></span></div>'+
-      '<div style="height:14px;border-radius:8px;background:#ece9e2;overflow:hidden"><div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div></div>'+
-      '<div id="wkNote" style="font-size:12.5px;margin-top:6px;min-height:16px"></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><b style="font-size:12.5px;color:var(--charcoal)">This week’s hours</b><span id="wkLeft" style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums"></span></div>'+
+      '<div id="wkBarWrap" style="position:relative;height:16px;border-radius:8px;background:#ece9e2;overflow:hidden">'+
+        '<div id="wkBar" style="height:100%;width:0%;border-radius:8px;transition:width .4s ease,background .4s ease"></div>'+
+        '<div id="wkTicks" style="position:absolute;inset:0;pointer-events:none"></div>'+
+      '</div>'+
+      '<div id="wkTxt" style="font-size:11.5px;color:var(--muted);margin-top:5px"></div>'+
+      '<div id="wkNote" style="font-size:12.5px;margin-top:3px;min-height:16px"></div>'+
     '</div>'+
     '<div style="margin-top:12px;font-size:12px;color:var(--muted)"><a href="#" id="lnkMonth" style="color:var(--muted)">Full month ↓</a> &nbsp;·&nbsp; <a href="#" id="lnkReport" style="color:var(--muted)">report a mistake ↓</a></div>';
   /* 20 Jul 2026 outage lesson: wire the punch button BEFORE any decoration — a crash in
@@ -232,19 +236,43 @@ function renderClock(){
 
 /* weekly-hours bar (same behaviour as the HR time-clock tab): fills red→green
    as hours are clocked, live, with a "N left / week complete / last 30 min" note */
+/* tick marks in the week bar: faint hour lines (spaced out on long weeks so they don't
+   crowd) + bolder ¼/½/¾ anchors. Rebuilt only when the target changes, not every second. */
+function buildWeekTicks(target){
+  const wrap=document.getElementById('wkTicks');if(!wrap)return;
+  if(wrap.dataset.t===String(target))return;
+  wrap.dataset.t=String(target);
+  if(!(target>0)){wrap.innerHTML='';return;}
+  const step=target<=12?1:(target<=24?2:5);   // hours between ticks
+  let h='';
+  for(let hh=step;hh<target-1e-6;hh+=step){const x=100*hh/target;
+    if(Math.abs(x-25)<0.8||Math.abs(x-50)<0.8||Math.abs(x-75)<0.8)continue; // let the quarter anchor own that spot
+    h+='<div style="position:absolute;top:2px;bottom:2px;left:'+x+'%;width:1px;background:rgba(0,0,0,.16)"></div>';}
+  [25,50,75].forEach(x=>{h+='<div style="position:absolute;top:0;bottom:0;left:'+x+'%;width:1.5px;background:rgba(0,0,0,.30)"></div>';});
+  wrap.innerHTML=h;
+  const w=document.getElementById('wkBarWrap');if(w)w.title='cada marca = '+step+' h';
+}
 function updateWeekBar(me){
   const bar=document.getElementById('wkBar');if(!bar||!me)return;
   const p=tcWeekProgress(me.id);
   bar.style.width=Math.round(p.pct*100)+'%';
   bar.style.background='hsl('+Math.round(p.pct*120)+',68%,42%)';
+  buildWeekTicks(p.target);
   const fmt=h=>{const H=Math.floor(h+1e-9),M=Math.round((h-H)*60);return M?H+'h '+M+'m':H+'h';};
+  // the clear countdown, right of the label — colour ramps as the week runs out
+  const left=document.getElementById('wkLeft');
+  if(left){
+    if(p.target<=0){left.textContent='—';left.style.color='var(--muted)';}
+    else if(p.done){left.textContent='✓ complete';left.style.color='var(--green)';}
+    else{left.textContent='⏳ '+fmt(p.remaining)+' left';left.style.color=p.remaining<=0.5?'#D32230':(p.remaining<=1?'#C77800':'var(--charcoal)');}
+  }
   const txt=document.getElementById('wkTxt');
-  if(txt)txt.textContent=p.target<=0?'no hours expected this week':(fmt(p.worked)+' of '+fmt(p.target));
+  if(txt)txt.textContent=p.target<=0?'no hours expected this week':(fmt(p.worked)+' of '+fmt(p.target)+' · '+Math.round(p.pct*100)+'%');
   const note=document.getElementById('wkNote');if(!note)return;
   if(p.target<=0)note.innerHTML='<span style="color:var(--muted)">Holiday week — nothing to clock.</span>';
   else if(p.done)note.innerHTML='<span style="color:var(--green);font-weight:700">✓ Week complete — that’s your '+fmt(p.target)+'. Nice one.</span>';
   else if(p.remaining<=0.5)note.innerHTML='<span style="color:var(--red);font-weight:700">🔔 Under 30 minutes to go this week!</span>';
-  else note.innerHTML='<b style="color:var(--charcoal)">'+fmt(p.remaining)+'</b> <span style="color:var(--muted)">left to reach your '+fmt(p.target)+' this week.</span>';
+  else note.innerHTML='';   // the ⏳ countdown above already states what's left — no duplicate line
 }
 
 /* ================= my week allocation (ported from hr.html Allocation tab) ================= */
