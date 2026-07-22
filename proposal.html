@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>RENMAD Dispatch Center — Proposal Builder</title>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<style>
+  :root{--o:#FF4A00;--orange:#FF4A00;--ch:#1C2529;--charcoal:#2B2B2B;--mut:#7A7E84;--muted:#7c7c78;--line:#E3E1DA;--bg:#f3f2ee}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#2B2B2B;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+  .app{max-width:860px;margin:0 auto;padding:14px 22px 110px}
+  .nav{display:flex;align-items:center;gap:3px;margin-bottom:10px;flex-wrap:wrap}
+  .navburger{display:none}.navlinks{display:contents}
+  .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px;white-space:nowrap}
+  .nav a.on{background:var(--orange);color:#fff}
+  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
+  .hd{display:flex;align-items:center;gap:12px;margin:6px 0 2px}
+  .dot{width:30px;height:30px;border-radius:8px;background:var(--o)}
+  h1{font-size:22px;margin:0;color:var(--ch)}
+  .sub{color:var(--mut);font-size:13px;margin:2px 0 16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:14px}
+  label.lab{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin:0 0 6px;font-weight:700}
+  .req{color:var(--o)}
+  input[type=text],input[type=url],input[type=email],input[type=date],select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font:inherit;font-size:14px;background:#fff}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>div{flex:1;min-width:150px}
+  .evlist{max-height:230px;overflow-y:auto;border:1px solid var(--line);border-radius:9px;padding:4px}
+  .ev{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;cursor:pointer}
+  .ev:hover,.ev.on{background:#FFF3ED}
+  .ev .swatch{width:9px;height:26px;border-radius:3px;flex:none}
+  .ev .nm{font-weight:600;color:var(--ch);font-size:13.5px}.ev .meta{font-size:11.5px;color:var(--mut)}
+  .yh{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:800;padding:8px 9px 3px}
+  .pk{display:flex;align-items:center;gap:9px;padding:6px 0;font-size:14px}
+  .pk .pnm{font-weight:600;color:#2B2B2B}.pk .prc{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--ch);font-weight:700;font-size:13px}
+  .sp{display:flex;gap:8px;flex-wrap:wrap}
+  .sp label{flex:1;min-width:150px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ch);display:flex;align-items:center;gap:8px}
+  .sp label.on{border-color:var(--o);background:#FFF3ED}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{background:#fff;border:none;padding:8px 16px;font:inherit;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer}
+  .seg button.on{background:var(--ch);color:#fff}
+  .pill{display:inline-block;background:#FFF3ED;color:#b5390f;border:1px solid #ffd9c7;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700}
+  .ct{display:flex;gap:8px;margin-bottom:7px}
+  .btn{padding:12px 20px;border:none;border-radius:10px;background:var(--o);color:#fff;font:inherit;font-weight:700;font-size:15px;cursor:pointer}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ch);font-weight:600}
+  .hint{font-size:12px;color:var(--mut);margin-top:8px}
+  .ok{color:#0a7a0a;font-weight:600}.err{color:#C0392B;font-weight:600}
+  .beta{font-size:10px;font-weight:800;background:#FFE6DB;color:#b5390f;border-radius:8px;padding:2px 8px;margin-left:6px;vertical-align:3px}
+  h4{margin:0 0 8px;font-size:13px;color:var(--ch)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <div class="hd"><div class="dot"></div><h1>Proposal Builder <span class="beta">NEW · try it</span></h1></div>
+  <p class="sub">Builds the sponsorship deck <b>and</b> logs the proposal straight to the SPX board — right here in Dispatch, no Streamlit. This is the new browser version; tell Belén what breaks or feels off.</p>
+
+  <div class="card">
+    <div class="row" style="align-items:flex-end">
+      <div><label class="lab">Client (prepared for) <span class="req">*</span></label><input type="text" id="client" placeholder="e.g. Acme Energy"></div>
+      <div style="flex:none"><label class="lab">Language</label>
+        <span class="seg"><button id="lang_en" class="on" data-lang="en">English</button><button id="lang_es" data-lang="es">Español</button></span>
+      </div>
+    </div>
+    <div style="margin-top:12px"><label class="lab">Salesperson <span class="req">*</span></label><div class="sp" id="sp"></div></div>
+  </div>
+
+  <div class="card">
+    <label class="lab">Events <span class="req">*</span> — pick one, or several for a multi-event proposal</label>
+    <div class="hint" id="datemsg" style="margin:0 0 7px"></div>
+    <div class="evlist" id="evlist"></div>
+    <div class="hint" id="grpmsg"></div>
+  </div>
+
+  <div class="card">
+    <label class="lab">Packages to include <span class="req">*</span></label>
+    <div id="pks"></div>
+  </div>
+
+  <div class="card">
+    <h4>Lead &amp; contact <span style="font-weight:400;color:var(--mut)">— required for the SPX board (mirrors Zoho)</span></h4>
+    <div class="row">
+      <div><label class="lab">Source <span class="req">*</span></label><select id="src"></select></div>
+      <div><label class="lab">Account type <span class="req">*</span></label><select id="atype"></select></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div><label class="lab">Product/Package <span class="req">*</span></label><select id="ppack"></select></div>
+      <div><label class="lab">Package <span class="req">*</span></label><select id="ptier"></select></div>
+      <div style="flex:none;min-width:170px"><label class="lab">Follow-up date <span class="req">*</span></label><input type="date" id="fup"></div>
+    </div>
+    <label class="lab" style="margin-top:14px">Client contact(s) — the first is required (first name + email)</label>
+    <div id="contacts"></div>
+  </div>
+
+  <div class="card">
+    <label class="lab">Pull the client's brand from their website <span style="text-transform:none;font-weight:400;color:var(--mut)">(optional — adds a "prepared for" slide)</span></label>
+    <div class="row">
+      <div style="flex:3"><input type="url" id="site" placeholder="https://clientwebsite.com"></div>
+      <div style="flex:1"><button class="btn ghost" id="pull" style="width:100%">Pull</button></div>
+    </div>
+    <div class="hint" id="brandmsg"></div>
+  </div>
+
+  <button class="btn" id="gen">⬇ Generate proposal (.pptx) + log to SPX</button>
+  <div class="hint" id="msg"></div>
+</div>
+
+<script src="store.js?v=71"></script>
+<script src="pb_bundle.js"></script>
+<script>
+const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
+const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
+const PRODUCT_PACKAGES=["Only Sponsorship Pack","Only Ticket","Only Content package","Bundle"];
+const PACKAGE_TIERS=["Multi-event","General","Diamond","Gold","Silver","Bronze","Standard panel","Standard stand"];
+const SALESPEOPLE=(window.PB&&PB.salespeople)||{
+  cintia:{name:"Cintia Hernández",email:"cintia.hernandez@ata.email",role:{en:"Business Development",es:"Desarrollo de Negocio"}},
+  ian:{name:"Ian Casares",email:"ian.casares@ata.email",role:{en:"Business Development",es:"Desarrollo de Negocio"}},
+  sheetal:{name:"Sheetal Shamdasani",email:"sheetal.shamdasani@ata.email",role:{en:"Business Development",es:"Desarrollo de Negocio"}},
+};
+let LANG="en", BRAND=null, SP="cintia";
+let realEvents=[], y26=[], y27=[]; const selEvents=new Set();
+const money=(n)=>(window.RENMAD?RENMAD.money(n):("€"+n));
+
+function initBuilder(){
+  document.getElementById('nav').innerHTML=navBar('tools');
+  realEvents=PB.events.filter(e=>!e.portfolio);
+  y26=realEvents.filter(e=>e.name.includes("2026")); y27=realEvents.filter(e=>e.name.includes("2027"));
+  // default salesperson to the logged-in user if they are one
+  try{ const em=(DB.currentUser&&DB.currentUser.email||'').toLowerCase();
+    const k=Object.keys(SALESPEOPLE).find(k=>(SALESPEOPLE[k].email||'').toLowerCase()===em); if(k)SP=k; }catch(e){}
+
+  const opt=(v)=>'<option value="'+String(v).replace(/"/g,'&quot;')+'">'+v+'</option>';
+  const fillSel=(id,arr,ph)=>{document.getElementById(id).innerHTML='<option value="">'+ph+'</option>'+arr.map(opt).join('');};
+  fillSel('src',SOURCE_OPTIONS,'— pick —'); fillSel('atype',ACCOUNT_TYPES,'— pick —');
+  fillSel('ppack',PRODUCT_PACKAGES,'— pick —'); fillSel('ptier',PACKAGE_TIERS,'— pick —');
+  { const d=new Date(Date.now()+7*864e5); document.getElementById('fup').value=d.toISOString().slice(0,10); }
+  document.getElementById('sp').innerHTML=Object.keys(SALESPEOPLE).map(k=>
+    '<label data-sp="'+k+'" class="'+(k===SP?'on':'')+'"><input type="radio" name="sp" '+(k===SP?'checked':'')+'>'+SALESPEOPLE[k].name+'</label>').join('');
+  document.querySelectorAll('#sp label').forEach(l=>l.onclick=()=>{SP=l.dataset.sp;document.querySelectorAll('#sp label').forEach(x=>x.classList.toggle('on',x===l));l.querySelector('input').checked=true;});
+  document.getElementById('contacts').innerHTML=[0,1,2].map(i=>
+    '<div class="ct"><input type="text" id="cf'+i+'" placeholder="First name'+(i===0?' *':'')+'"><input type="text" id="cl'+i+'" placeholder="Last name"><input type="email" id="ce'+i+'" placeholder="Email'+(i===0?' *':'')+'"></div>').join('');
+
+  document.getElementById('lang_en').onclick=()=>setLang('en');
+  document.getElementById('lang_es').onclick=()=>setLang('es');
+  document.getElementById('pull').onclick=doPull;
+  document.getElementById('gen').onclick=doGenerate;
+
+  // wire the shared functions to the LOGGED-IN user's token, then cascade dates
+  (async function(){
+    const dm=document.getElementById('datemsg');
+    let tok=''; try{ tok=await dcToken(); }catch(e){}
+    const anon=(typeof SUPABASE_ANON_KEY!=='undefined')?SUPABASE_ANON_KEY:'';
+    const base=(typeof SUPABASE_URL!=='undefined')?SUPABASE_URL:'https://dxgvbufsifgowwfggvmr.supabase.co';
+    RENMAD.extractor.configure({endpoint:base+"/functions/v1/web-extractor",anonKey:anon,token:tok||anon});
+    PBTIMELINE.configure({endpoint:base+"/functions/v1/dc-events",anonKey:anon,token:tok||anon});
+    document.getElementById('brandmsg').textContent='Paste a client URL and hit Pull to add their brand to the deck.';
+    dm.textContent='📅 Checking the Dispatch timeline for live dates…';
+    let st; try{ st=await PBTIMELINE.applyDates(PB.events); }catch(e){ st={ok:false}; }
+    dm.innerHTML=(st&&st.ok)?('📅 <span class="ok">'+st.synced.length+' event dates live from the Dispatch timeline</span>')
+      :'📅 Using built-in dates (timeline unavailable this session).';
+    setLang('en');
+  })();
+}
+
+function evRow(e){return '<div class="ev" data-ev="'+e.key+'"><input type="checkbox"><span class="swatch" style="background:#'+e.color+'"></span><span><span class="nm">'+e.short+'</span><br><span class="meta">'+e.date[LANG]+' · '+e.city[LANG]+'</span></span></div>';}
+function renderEvents(){
+  const el=document.getElementById('evlist');
+  el.innerHTML=(y26.length?('<div class="yh">Still to come in 2026</div>'+y26.map(evRow).join('')):'')+'<div class="yh">The 2027 season</div>'+y27.map(evRow).join('');
+  el.querySelectorAll('.ev').forEach(row=>{const k=row.dataset.ev,cb=row.querySelector('input');cb.checked=selEvents.has(k);row.classList.toggle('on',cb.checked);
+    row.onclick=(ev)=>{if(ev.target!==cb)cb.checked=!cb.checked;cb.checked?selEvents.add(k):selEvents.delete(k);row.classList.toggle('on',cb.checked);updateGroup();};});
+}
+function currentFamily(){const c=realEvents.filter(e=>selEvents.has(e.key));return c.length?c[0].family:"storage";}
+function updateGroup(){const c=realEvents.filter(e=>selEvents.has(e.key));const g=document.getElementById('grpmsg');
+  g.innerHTML=!c.length?'Pick at least one event.':('Pricing group: <span class="pill">'+PB.families[currentFamily()]+'</span>'+(c.length>1?('  ·  <b>multi-event</b> ('+c.length+' events)'):''));renderPks();}
+function renderPks(){const fam=currentFamily();document.getElementById('pks').innerHTML=PB.packages.map(p=>
+  '<div class="pk"><input type="checkbox" id="pk_'+p.id+'" '+(['diamond','gold','silver'].includes(p.id)?'checked':'')+'><label for="pk_'+p.id+'" class="pnm" style="margin:0">'+p.name[LANG]+'</label><span class="prc">'+money(p.price[fam])+'</span></div>').join('');}
+function setLang(l){LANG=l;document.getElementById('lang_en').classList.toggle('on',l==='en');document.getElementById('lang_es').classList.toggle('on',l==='es');renderEvents();updateGroup();}
+
+function collectContacts(){const out=[];[0,1,2].forEach(i=>{const f=document.getElementById('cf'+i).value.trim(),l=document.getElementById('cl'+i).value.trim(),e=document.getElementById('ce'+i).value.trim();if(f||l||e)out.push({first:f,last:l,email:e});});return out;}
+function collect(){
+  const events=realEvents.filter(e=>selEvents.has(e.key)); const sp=SALESPEOPLE[SP];
+  return {client:document.getElementById('client').value.trim(),lang:LANG,spKey:SP,spName:sp.name,spEmail:sp.email,sp:Object.assign({key:SP},sp),
+    events,packages:PB.packages.map(p=>p.id).filter(id=>document.getElementById('pk_'+id).checked),family:currentFamily(),brand:BRAND,
+    source:document.getElementById('src').value,
+    zoho:{accountType:document.getElementById('atype').value,productPackage:document.getElementById('ppack').value,packageTier:document.getElementById('ptier').value,followUp:document.getElementById('fup').value},
+    contacts:collectContacts()};
+}
+function leadBad(o){
+  if(!o.client) return "Enter the **client name**.";
+  if(!o.events.length) return "Pick at least one **event**.";
+  if(!o.packages.length) return "Pick at least one **package**.";
+  if(!o.source) return "Choose the **Source**.";
+  if(!o.zoho.accountType) return "Choose the **Account type**.";
+  if(!o.zoho.productPackage) return "Choose the **Product/Package**.";
+  if(!o.zoho.packageTier) return "Choose the **Package**.";
+  if(!o.contacts.length) return "Add at least one **client contact**.";
+  if(!(o.contacts[0].first&&o.contacts[0].email)) return "The first contact needs a **first name and email**.";
+  return null;
+}
+async function doPull(){
+  const url=document.getElementById('site').value.trim(),m=document.getElementById('brandmsg');
+  if(!url){m.textContent='Enter a URL first.';return;}
+  m.textContent='Pulling…';
+  const info=await RENMAD.extractor.extract(url,{maxImages:4});
+  if(info.ok){BRAND=info;m.innerHTML='<span class="ok">✓ Pulled '+(info.images?info.images.length:0)+' image(s) + text from '+(info.title||url)+'</span>';}
+  else{BRAND=null;m.innerHTML='<span class="err">Couldn\'t pull ('+info.reason+').</span> The deck still generates without it.';}
+}
+async function doGenerate(){
+  const msg=document.getElementById('msg'); const o=collect();
+  const bad=leadBad(o);
+  if(bad){ msg.innerHTML='<span class="err">'+bad.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')+'</span>'; return; }
+  msg.textContent='Building the deck…';
+  let fileName;
+  try{
+    fileName="RENMAD_"+(o.events.length>1?"multi":o.events[0].short).replace(/\s+/g,"_")+"_"+o.client.replace(/\s+/g,"_")+".pptx";
+    const deck=(typeof PBDECK!=='undefined')?PBDECK.buildFullDeck(o):PB.buildDeck(o);
+    await RENMAD.save(deck,fileName); o.fileName=fileName;
+    msg.innerHTML='<span class="ok">✓ Deck downloaded.</span> Logging to the SPX board…';
+  }catch(e){ msg.innerHTML='<span class="err">Deck error: '+e+'</span>'; return; }
+  try{
+    const selections=o.events.map(e=>[e.key,o.packages]);
+    const quote=PBP.quote(selections,0,o.lang);
+    const parent=PBB.buildParent({spKey:o.spKey,spName:o.spName,spEmail:o.spEmail,client:o.client,source:o.source,zoho:o.zoho,contacts:o.contacts,mode:(o.events.length>1?"multi":"single"),fileName:o.fileName,quote,isGeneral:false});
+    const lines=PBB.buildLines(quote);
+    let tok=''; try{ tok=await dcToken(); }catch(e){}
+    const res=await PBB.submit({token:tok, parent, lines});
+    if(res.ok) msg.innerHTML='<span class="ok">✓ Deck downloaded &amp; proposal logged to the SPX board.</span>';
+    else msg.innerHTML='<span class="err">✓ Deck downloaded, but the SPX log FAILED ('+res.reason+').</span> Nothing was lost — tell Belén; you can also add it by hand on the SPX board.';
+  }catch(e){ msg.innerHTML='<span class="err">Deck downloaded, but logging errored: '+e+'</span>'; }
+}
+
+boot(initBuilder);
+</script>
+</body>
+</html>

@@ -48,6 +48,12 @@ function render(){
   rq.innerHTML='<span class="ic" style="background:#C77800">💡</span>'+
     '<span><h3>Requests</h3><p>The team request box — bugs, usability, changes and ideas. Also one tap away via the 💡 button on any page.</p></span>'+rqBadge;
   g.appendChild(rq);
+  /* NEW browser Proposal Builder — a real Dispatch page (opens directly, not embedded) */
+  const pb=document.createElement('a');pb.className='tile';pb.href='proposal.html';
+  pb.innerHTML='<span class="ic" style="background:#FF4A00">PB</span>'+
+    '<span><h3>Proposal Builder <span style="color:var(--muted);font-weight:400">(web)</span></h3><p>Build the sponsorship deck and log it straight to the SPX board — the new browser version, no Streamlit.</p></span>'+
+    '<span class="badge" style="background:#FFE6DB;color:#b5390f">NEW · try</span>';
+  g.appendChild(pb);
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
     const pending=!t.url;
