@@ -114,6 +114,11 @@ function render(){
     const ts=DB.tasksOf(p.id);
     const acc=p.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
     const s=personStatusNow(p);
+    /* sick/maternity/paternity is PRIVATE (personStatusNow sets .private) — the team
+       calendar hides the type, so the roster must too. Managers/HR/self see it. */
+    if(s.private&&!(DB.isHRAdmin()||DB.canManage()||(DB.currentUser&&DB.currentUser.id==p.id))){
+      s.label='Away';s.emoji='📆';
+    }
     let dtxt=s.detail||'';
     const um=dtxt.match(/^until (\d{4}-\d{2}-\d{2})$/); if(um)dtxt='until '+untilTxt(um[1]); // pretty-print the date
     const detail=dtxt?(' <span style="color:var(--muted);font-weight:400">· '+esc(dtxt)+'</span>'):'';
