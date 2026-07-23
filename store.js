@@ -498,7 +498,7 @@ function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vac
   for(let i=0;i<5;i++){const d=addDays(mon,i),iso=toISO(d),h=hoursPerDay(d);
     required+=h;
     const hol=madHol(iso);
-    if(hol){fest+=h;festNames.push(iso.slice(5)+' '+hol);}
+    if(hol){fest+=h;festNames.push(iso.slice(8,10)+'/'+iso.slice(5,7)+' '+hol);} // day-first, Belén's rule
     else if(vacDays.includes(iso))vac+=h;
     else if(leaveDays.includes(iso))leave+=h;
   }
@@ -936,7 +936,14 @@ async function flushPendingPunches(){
     for(const p of q){
       try{
         const {error}=await sb.from('dc_timeclock').insert([p]);
-        if(error&&!(error.code==='23505'||/duplicate key/i.test(error.message||''))){
+        if(error&&(error.code==='23505'||/duplicate key/i.test(error.message||''))){
+          /* duplicate id — either this punch already landed (retry after a lost ack), or a
+             COLLEAGUE's same-millisecond punch took the id (newId is per-device). Only treat
+             as saved if the existing row is really ours; otherwise re-mint and retry, else
+             this device's punch would be silently lost forever (append-only record). */
+          let ex=null;try{const r=await sb.from('dc_timeclock').select('id,personId').eq('id',p.id).maybeSingle();ex=r.data;}catch(_){}
+          if(!(ex&&ex.personId==p.personId)){p.id=DB.newId();left.push(p);continue;}
+        }else if(error){
           /* the server refused it as future-dated → the DEVICE clock was wrong when this
              punch was made, so its day/time can't be trusted and blind retry will loop
              forever (audit H2). Keep it (never lose a punch) but flag the real cause so the
@@ -981,9 +988,11 @@ function renderPunchBanner(){
 }
 function punchAckHtml(){ // confirmation line under the clock button (both clock cards)
   if(!_punchAck||Date.now()-_punchAck.at>20000)return '';
-  return _punchAck.ok
-    ?'<div style="color:var(--green,#1D6B34);font-weight:700;font-size:12.5px;margin-top:6px">✓ Saved in the record — '+_punchAck.kind.toUpperCase()+' '+_punchAck.time+'</div>'
-    :'<div style="color:#D32230;font-weight:700;font-size:12.5px;margin-top:6px">⚠ Could not reach the database — your punch is kept safe on this device and will retry automatically.</div>';
+  if(_punchAck.ok)
+    return '<div style="color:var(--green,#1D6B34);font-weight:700;font-size:12.5px;margin-top:6px">✓ Saved in the record — '+_punchAck.kind.toUpperCase()+' '+_punchAck.time+'</div>';
+  if(_punchAck.blocked) // refused on purpose (guard) — it was NOT queued, saying "will retry" here would be a lie
+    return '<div style="color:#B36B00;font-weight:700;font-size:12.5px;margin-top:6px">⚠ '+esc(_punchAck.msg||'This punch was not recorded.')+'</div>';
+  return '<div style="color:#D32230;font-weight:700;font-size:12.5px;margin-top:6px">⚠ Could not reach the database — your punch is kept safe on this device and will retry automatically.</div>';
 }
 window.addEventListener('online',()=>{try{flushPendingPunches();}catch(e){}});
 /* weekly overtime: hours clocked vs the hours ALLOWED that week (37.5, or 35 in Jul/Aug,
@@ -1020,6 +1029,21 @@ function tcLastWorkingDay(personId,mondayISO){
   for(let i=0;i<5;i++){const iso=toISO(addDays(monD,i));if(tcExpectedDay(personId,iso)>0)last=iso;}
   return last;
 }
+/* most recent PAST day this week whose punches end on an open IN — i.e. a forgotten
+   clock-out. Those hours count as 0 (an open pair only runs live on TODAY), so the
+   home clock card shows a banner pointing at the claims flow. */
+function tcOpenPastPair(personId){
+  const pid=personId||(DB.currentUser&&DB.currentUser.id);if(!pid)return null;
+  const monD=monday(new Date()),today=toISO(new Date());
+  let found=null;
+  for(let i=0;i<7;i++){
+    const iso=toISO(addDays(monD,i));
+    if(iso>=today)break;
+    const es=tcEffective(pid,iso),last=es[es.length-1];
+    if(last&&last.kind==='in')found={day:iso};
+  }
+  return found;
+}
 /* today's goal (Belén, 22 Jul): normally the day's expected hours; on the LAST working day
    of the week it becomes the week's remainder, so the finish line is "complete the week",
    not a full extra day. A helper, not an enforcer — doing more is fine. */
@@ -1032,7 +1056,7 @@ function tcDayGoal(personId){
   let goal=dailyExp;
   if(isLast){const wp=tcWeekProgress(personId);goal=wp.target-(wp.worked-worked);}  // so worked→goal ⇔ week complete
   goal=Math.max(0,goal);
-  return {off:false,goal,worked,remaining:Math.max(0,goal-worked),pct:goal>0?Math.min(1,worked/goal):1,done:goal>0&&worked>=goal-1e-6,isLastDay:isLast};
+  return {off:false,goal,worked,remaining:Math.max(0,goal-worked),pct:goal>0?Math.min(1,worked/goal):1,done:goal<=0||worked>=goal-1e-6,isLastDay:isLast};
 }
 /* escalating weekly-hours alarms — Belén's spec (18 Jul): "It's hard not to forget the
    time!" → alarm 1 h before the week's allotted hours are consumed, then 30 min, then
@@ -1146,13 +1170,14 @@ function spxTouchpointAlarms(){
   let sent=0;
   (DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded
       &&p.salesStatus==='Sent'
+      &&p.stage!=='Silent'                                    // dormant on purpose — the board suppresses these, so must the alarms
       &&(''+(p.responsableEmail||'')).toLowerCase()===(''+me.email).toLowerCase()
       &&p.fechaSeguimiento&&(''+p.fechaSeguimiento).slice(0,10)<today)
     .forEach(p=>{
       const due=(''+p.fechaSeguimiento).slice(0,10);
-      const key='spx.html?fu='+p.id+':'+due;
+      const key='spx.html?fu='+p.id+':'+due;                  // dedupe key stays ISO — only the display text changes
       if((DB.inbox||[]).some(m=>m.personId==me.id&&m.link===key))return;   // already alarmed for this date
-      sent+=notifySend(me.id,'alarm','⏰ Follow-up overdue: '+(p.company||'proposal')+' — next touchpoint was '+due+'. Time to chase.',key);
+      sent+=notifySend(me.id,'alarm','⏰ Follow-up overdue: '+(p.company||'proposal')+' — next touchpoint was '+deIso(due)+'. Time to chase.',key);
     });
   return sent;
 }
@@ -1742,12 +1767,12 @@ const DB={
     if(_last&&(_last.time||'')>_now){
       const msg='Your record already has a '+String(_last.kind).toUpperCase()+' at '+String(_last.time).slice(0,5)+
         ' today — later than right now, so clocking here would change nothing. Ask HR to correct the record (Me → “a punch is wrong”).';
-      _punchAck={ok:false,kind,time:_now,msg,at:Date.now()};
+      _punchAck={ok:false,blocked:true,kind,time:_now,msg,at:Date.now()};
       return {ok:false,blocked:true,msg};
     }
     if(_last&&_last.kind===kind){
       const msg='You are already clocked '+(kind==='in'?'in':'out')+' (since '+String(_last.time).slice(0,5)+').';
-      _punchAck={ok:false,kind,time:_now,msg,at:Date.now()};
+      _punchAck={ok:false,blocked:true,kind,time:_now,msg,at:Date.now()};
       return {ok:false,blocked:true,msg};
     }
     const row={id:this.newId(),personId:me.id,day:_day,time:_now,kind,manual:false,amends:null,reason:null,note:null,reportId:null};
@@ -1856,11 +1881,18 @@ const DB={
   allocsFor(invoiceId){return this.invoiceAllocs.filter(a=>a.invoice_id==invoiceId);},
   invoicesFor(finId){const ids={};this.invoiceAllocs.forEach(a=>{if(a.eventId==finId)ids[a.invoice_id]=1;});return this.invoices.filter(i=>ids[i.id]);},
   delegatesFor(finId){return this.delegates.filter(d=>d.eventId==finId);},
+  /* an allocation line in EUROS. USD invoices carry their lines in dollars and the
+     manual EUR figure in importe_base — scale by importe_base/importe_usd so dollar
+     amounts never leak into € sums (Money page, SPX, exports). */
+  allocEur(a){const inv=this.invoice(a.invoice_id);const amt=+a.amount||0;
+    if(inv&&inv.en_usd){const usd=+inv.importe_usd||0,eur=+inv.importe_base||0;
+      if(usd&&eur)return amt*(eur/usd);}
+    return amt;},
   /* the event's facturado = SUM of its invoice allocations (paid + unpaid; cancelled
      invoices excluded). null when the event has no lines yet → caller falls back. */
   invoicedTotal(finId){let sum=0,any=false;
     this.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=this.invoice(a.invoice_id);
-      if(!inv||inv.status==='cancelado')return;any=true;sum+=(+a.amount||0);});
+      if(!inv||inv.status==='cancelado')return;any=true;sum+=this.allocEur(a);});
     return any?sum:null;},
   /* what the money views show: invoice-line total when lines exist, else the typed
      dc_finance.invoiced (fallback for past events / before back-fill) */
@@ -1994,6 +2026,10 @@ function applyRemote(key,row){
     if(localS!==_shadow[key][row.id])return;                 // we have unsaved edits on this row — ours wins locally
     Object.assign(arr[i],p);                                 // in place: pages hold references to these objects
   }else{
+    /* row absent locally but still in the shadow = WE deleted it and the delete is
+       still in the debounced sync queue. A colleague's update arriving in that window
+       must not resurrect it (the delete will still be sent from the shadow diff). */
+    if(_shadow[key][row.id]!==undefined)return;
     arr.push(p);
   }
   _shadow[key][row.id]=s;

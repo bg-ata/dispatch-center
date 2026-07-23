@@ -54,7 +54,7 @@
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
 <div id="tip"></div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
 document.getElementById('nav').innerHTML=navBar('people');
@@ -137,7 +137,7 @@ function render(){
       el.style.cssText='left:'+(it.x+2)+'px;top:'+(ROWPAD+it.row*(TASKH+TGAP))+'px;width:'+(it.w)+'px;height:'+TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
       el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
       const sub=DB.substages.find(s=>s.id==t.substageId);
-      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage))+(sub?' · '+esc(sub.name):'')+'<br>'+(t.deadline?('due '+t.deadline):('week of '+fmtD(taskDate(t))))+' · '+esc(t.status)));
+      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage))+(sub?' · '+esc(sub.name):'')+'<br>'+(t.deadline?('due '+deIso(t.deadline)):('week of '+fmtD(taskDate(t))))+' · '+esc(t.status)));
       el.addEventListener('mouseleave',hideTip);
       el.onclick=()=>location.href='event.html?id='+ev.id;
       body.appendChild(el);});

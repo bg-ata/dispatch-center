@@ -87,17 +87,52 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')}, showCodigos=false;
 /* invoices are shown one YEAR at a time (by issue date) so 2025 cross-year invoices
    don't clutter 2026 — the € Dashboard still aggregates each event across all years */
 function invYears(){return [...new Set(DB.invoices.map(i=>(''+(i.fecha||'')).slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();}
+/* outstanding € on invoices ISSUED in a year (credit notes netted against their invoice) —
+   used to badge the other year tabs so old unpaid money is never silently hidden */
+function yearOutstanding(y){
+  let s=0;
+  DB.invoices.forEach(i=>{
+    if(i.status==='abono'||i.status==='cancelado')return;
+    if((''+(i.fecha||'')).slice(0,4)!==y)return;
+    const credits=DB.invoices.filter(x=>x.abono_de==i.id&&x.status==='abono').reduce((a,x)=>a+(+x.total_factura||0),0);
+    s+=Math.max(0,(+i.total_factura||0)+credits-cobrado(i));
+  });
+  return Math.round(s*100)/100;
+}
 function yearTabsHtml(){
   const ys=invYears();if(flt.year!=='all'&&ys.length&&ys.indexOf(flt.year)<0)flt.year=ys[0];
-  const mk=(v,lab)=>'<button class="ytab'+(flt.year===v?' on':'')+'" data-year="'+v+'">'+lab+'</button>';
-  return ys.map(y=>mk(y,y)).join('')+mk('all','All years');
+  const mk=(v,lab,tip)=>'<button class="ytab'+(flt.year===v?' on':'')+'" data-year="'+v+'"'+(tip?' title="'+esc(tip)+'"':'')+'>'+lab+'</button>';
+  return ys.map(y=>{const out=flt.year===y?0:yearOutstanding(y);
+    return mk(y,y+(out>0.005?' <span style="color:#D32230">●</span>':''),out>0.005?(eurF(out)+' still outstanding on '+y+' invoices'):'');}).join('')+mk('all','All years','');
+}
+/* Collected = CASH view: ledger payments count in the year they were PAID (a 2026
+   instalment on a 2025 invoice belongs to 2026); legacy invoices without a ledger
+   attribute their cobrado to fecha_cobro (or issue date as last resort). Credit notes
+   only count as cash when a refund was actually recorded. */
+function collectedFor(year){
+  let s=0;
+  DB.invoices.forEach(i=>{
+    if(hasLedger(i)){
+      DB.paymentsFor(i.id).forEach(p=>{const y=(''+(p.fecha||i.fecha||'')).slice(0,4);
+        if(year==='all'||y===year)s+=(+p.importe||0);});
+      return;
+    }
+    let amt;
+    if(i.status==='abono')amt=(i.importe_cobrado!=null&&i.importe_cobrado!=='')?+i.importe_cobrado:0;
+    else if(i.status==='cancelado')amt=(i.importe_cobrado!=null&&i.importe_cobrado!=='')?+i.importe_cobrado:0;
+    else amt=cobrado(i);
+    if(!amt)return;
+    const y=(''+(i.fecha_cobro||i.fecha||'')).slice(0,4);
+    if(year==='all'||y===year)s+=amt;
+  });
+  return Math.round(s*100)/100;
 }
 const todayISO=()=>toISO(new Date());
 /* European display format DD/MM/YYYY (inputs stay type=date; this is for tables/exports) */
@@ -150,10 +185,17 @@ function render(){
      € Dashboard correctly excluded them — the two screens disagreed) */
   const live=rows.filter(i=>i.status!=='cancelado');
   const base=live.reduce((a,i)=>a+(+i.importe_base||0),0), tot=live.reduce((a,i)=>a+(+i.total_factura||0),0);
-  /* Collected (Jesús 2.5): cancelled invoices AND credit notes sum in, so a credited pair
-     nets to 0 and a partial credit shows the true difference (450 − 180 = 270). */
-  const cob=rows.reduce((a,i)=>a+(i.status==='cancelado'||i.status==='abono'?(+i.total_factura||0):cobrado(i)),0);
-  const pend=live.reduce((a,i)=>a+(i.status==='abono'?0:Math.max(0,(+i.total_factura||0)-cobrado(i))),0);
+  /* Collected: CASH received in the tab's year, whatever year its invoice was issued
+     (see collectedFor). Outstanding: what is still owed on the invoices ISSUED in the
+     tab's year, with credit notes netted against their invoice — a partial abono on an
+     unpaid invoice reduces the debt instead of faking negative cash. */
+  const cob=collectedFor(flt.year||'all');
+  const pend=live.reduce((a,i)=>{
+    if(i.status==='abono')return a;
+    const credits=DB.invoices.filter(x=>x.abono_de==i.id&&x.status==='abono').reduce((s,x)=>s+(+x.total_factura||0),0);
+    return a+Math.max(0,(+i.total_factura||0)+credits-cobrado(i));
+  },0);
+  const yearLab=(flt.year&&flt.year!=='all')?flt.year:'all years';
   /* the item filter lists only items actually used in an analítica (E1) — so Webinars/ATA are filterable too */
   const usedIds={};DB.invoiceAllocs.forEach(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);if(c)usedIds[c.id]=1;});
   const itemOpts=codsSorted().filter(c=>usedIds[c.id]).map(c=>'<option value="'+c.id+'" '+(flt.item==c.id?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
@@ -162,8 +204,8 @@ function render(){
       '<div class="cardk"><div class="v">'+rows.length+'</div><div class="k">Invoices</div></div>'+
       '<div class="cardk"><div class="v">'+eurF(base)+'</div><div class="k">Net</div></div>'+
       '<div class="cardk"><div class="v">'+eurF(tot)+'</div><div class="k">Total (incl. VAT)</div></div>'+
-      '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected</div></div>'+
-      '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding</div></div>'+
+      '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected <span style="font-weight:400;opacity:.75">— cash in '+yearLab+'</span></div></div>'+
+      '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding <span style="font-weight:400;opacity:.75">— invoices of '+yearLab+'</span></div></div>'+
     '</div>'+
     '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
     '<div class="ytabs">'+yearTabsHtml()+'</div>'+
@@ -220,7 +262,7 @@ function renderTable(rows){
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
       const label=c?(esc(c.item||'?')+(c.codigo?' · '+esc(c.codigo):'')):(f?esc(finLabelClean(f)):('#'+(a.eventId||'?')));
       /* passes live in their own column (Jesús 2.5) — the chip stays item · código · amount */
-      return '<span class="allocchip">'+label+' · '+eurF(a.amount)+'</span>';}).join('')||'<span class="hint">—</span>';
+      return '<span class="allocchip">'+label+' · '+eurF(DB.allocEur(a))+'</span>';}).join('')||'<span class="hint">—</span>'; // USD lines shown in their € value
     /* C2: Cancelled is NOT offered by hand — it only arrives via a total credit note.
        Credit-note rows are locked too (Jesús 2.5): an R-document is always a credit note. */
     const stOpts=Object.keys(INV_STATUS).filter(s=>(s!=='cancelado'||i.status==='cancelado')&&(s!=='abono'||i.status==='abono'));
@@ -633,6 +675,9 @@ async function saveInvoice(){
   };
   if(editingId){const old=DB.invoice(editingId);Object.assign(old,row);}
   else DB.invoices.push(row);
+  /* an edit can change the total (add a line, fix a price) — a fully-paid invoice may
+     no longer be fully paid. Re-derive status from the payments ledger when one exists. */
+  syncInvoiceFromPayments(row.id);
   /* sync allocations: update kept rows, add new, drop removed */
   const keep={};
   lines.forEach(a=>{
@@ -698,6 +743,15 @@ function openCreditPicker(){
       const scaledAmt=num2(lineAmount(r)*ratio);
       return Object.assign({},r,{id:null,price:-num2(scaledAmt/q),passes:-(Math.round((+r.passes||0)*ratio)),amount:-scaledAmt});
     }).filter(r=>lineAmount(r)!==0||(+r.passes||0)!==0);
+    /* price = amount/qty rounds per line, so with odd qtys the note can drift cents off
+       the promised credit — enough to miss the 0,01 auto-cancel tolerance on a TOTAL
+       note. Fold the remainder into the last line's price (unrounded: qty×price is
+       re-rounded downstream, so the line amount lands exactly). */
+    if(lines.length){
+      const sum=lines.reduce((s,r)=>s+lineAmount(r),0);        // negative
+      const rem=num2(-credit-sum);
+      if(Math.abs(rem)>0.001){const L=lines[lines.length-1];const q=+L.qty||1;L.price=(+L.price)+rem/q;L.amount=num2((+L.qty||0)*L.price);}
+    }
     openModal(null,{title:'New credit note for '+esc(inv.numero_factura||''),lines,fields:{
       numero_factura:nextRNumber(),fecha:todayISO(),vencimiento:todayISO(),
       razon_social:inv.razon_social,pedido:inv.pedido,en_usd:!!inv.en_usd,
@@ -764,7 +818,7 @@ function exportExcel(){
       'Código contable':a.codigo||(c?(c.codigo||''):''),
       'Qty':a.qty!=null&&a.qty!==''?+a.qty:'',
       'Price':a.price!=null&&a.price!==''?+a.price:'',
-      'Amount €':+a.amount||0,
+      'Amount €':DB.allocEur(a),   // USD lines converted — this column promises euros
       'Passes':+a.passes||0
     };}))}
   ]);
@@ -783,8 +837,17 @@ function impDate(v){ // Excel serial, ISO, or dd/mm/yyyy → ISO (null when unre
   const s=(''+v).trim();
   if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
   const m=/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/.exec(s);
-  if(m){const y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+(''+m[2]).padStart(2,'0')+'-'+(''+m[1]).padStart(2,'0');}
+  if(m){const d=+m[1],mo=+m[2];if(d<1||d>31||mo<1||mo>12)return null; // 13/25/2025-style junk must not become "valid" ISO
+    const y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+(''+m[2]).padStart(2,'0')+'-'+(''+m[1]).padStart(2,'0');}
   return null;
+}
+/* Spanish-aware number: Excel sometimes hands prices as TEXT — "9.000" is nine thousand,
+   "1.234,56" is 1234.56. A plain +"9.000" silently imported 9 € (1000× off). */
+function impNum(v){
+  if(typeof v==='number')return v;
+  const s=(''+(v==null?'':v)).trim();if(!s)return NaN;
+  if(/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)||/,\d+$/.test(s))return +s.replace(/\./g,'').replace(',','.');
+  return +s;
 }
 function impProducto(v){
   const n=impNorm(v);if(!n)return null;
@@ -867,7 +930,7 @@ function buildImportPreview(raw){
     else{const y=+fecha.slice(0,4);if(y<2020||y>new Date().getFullYear())errs.push('date year '+y+' out of range');}
     const razon=(''+(first.rs||'')).trim();if(!razon)errs.push('missing razón social');
     const st=impEstado(first.st);if(!st)errs.push('unknown estado "'+first.st+'"');
-    const ivaRaw=impNorm(first.iva)===''?21:+first.iva;
+    const ivaRaw=impNorm(first.iva)===''?21:impNum(first.iva);
     if(ivaRaw!==21&&ivaRaw!==0)errs.push('IVA must be 21 or 0');
     let motivo=null;
     if(ivaRaw===0){
@@ -883,10 +946,10 @@ function buildImportPreview(raw){
     rs.forEach((r,ix)=>{
       const prod=impProducto(r.prod);
       if(!prod){errs.push('line '+(ix+1)+': unknown producto "'+r.prod+'"');return;}
-      const qty=impNorm(r.qty)===''?1:+r.qty;
+      const qty=impNorm(r.qty)===''?1:impNum(r.qty);
       if(!(qty>0))errs.push('line '+(ix+1)+': cantidad must be > 0');
-      const price=+r.price;
-      if(impNorm(r.price)===''||!isFinite(price))errs.push('line '+(ix+1)+': missing precio');
+      const price=impNum(r.price);
+      if(impNorm(r.price)===''||!isFinite(price))errs.push('line '+(ix+1)+': precio unreadable ("'+r.price+'")');
       const codStr=(''+(r.cod||'')).trim();
       const c=DB.codigos.find(x=>(''+(x.codigo||'')).trim()===codStr)||DB.codigos.find(x=>impNorm(x.item)===impNorm(r.cod));
       if(!c)errs.push('line '+(ix+1)+': código "'+codStr+'" not in Items & codes');

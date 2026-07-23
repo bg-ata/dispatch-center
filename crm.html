@@ -161,7 +161,7 @@
 <div id="ov"></div>
 <div class="panel" id="panel"></div>
 
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('crm');
 
@@ -674,7 +674,7 @@ function renderContacts(){
         '<td>'+barCell(v.fit,t.color)+'</td>'+
         '<td>'+barCell(v.eng,'#5f6b70')+'</td>'+
         '<td><span class="qtag" style="background:'+q.color+'22;color:'+q.color+'">'+q.label+'</span></td>'+
-        '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(lt?lt:'—')+' / '+(v.c.nextTouch?'<b style="color:var(--ink)">'+v.c.nextTouch+'</b>':'—')+'</td>'+
+        '<td style="font-size:12px;color:var(--muted);white-space:nowrap">'+(lt?lt:'—')+' / '+(v.c.nextTouch?'<b style="color:var(--ink)">'+esc(v.c.nextTouch)+'</b>':'—')+'</td>'+
         '<td style="text-align:right;font-variant-numeric:tabular-nums">'+(v.value?fmt(v.expected):'<span style="color:#9aa2a6">reach</span>')+'</td></tr>';
     }).join('')+'</table>'+pager;
   document.querySelectorAll('[data-f]').forEach(c=>c.onclick=()=>{FILTER=c.dataset.f;PAGEN=0;renderContacts();});
@@ -739,11 +739,11 @@ function renderPanel(){
         '<div class="taginput"><input id="tagIn" placeholder="Add a tag (e.g. warm, replied, met at event)" onkeydown="if(event.key===\'Enter\')addTagUI()"><button class="btn" onclick="addTagUI()">Add</button></div></div>'+
       '<div class="sec"><h5>Next touch</h5>'+
         '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
-          '<input type="date" id="ntIn" value="'+(c.nextTouch||'')+'" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px">'+
+          '<input type="date" id="ntIn" value="'+esc(c.nextTouch||'')+'" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px">'+
           '<button class="btn" onclick="bumpNT(7)">+1w</button><button class="btn" onclick="bumpNT(14)">+2w</button><button class="btn" onclick="bumpNT(30)">+1m</button>'+
           '<button class="btn" onclick="saveNT()">Set</button>'+(c.nextTouch?'<button class="btn" onclick="clearNT()" style="color:#A32D2D">Clear</button>':'')+
         '</div>'+
-        (c.nextTouch?'<div style="font-size:12px;color:var(--muted);margin-top:7px">Follow up on <b style="color:var(--ink)">'+c.nextTouch+'</b>'+(c.nextTouchAuto?' <span style="color:#9aa2a6">(auto-set after your last touch — adjust freely)</span>':'')+'</div>':'<div style="font-size:12px;color:#9aa2a6;margin-top:7px">No follow-up set — Court contacts go cold without one.</div>')+
+        (c.nextTouch?'<div style="font-size:12px;color:var(--muted);margin-top:7px">Follow up on <b style="color:var(--ink)">'+esc(c.nextTouch)+'</b>'+(c.nextTouchAuto?' <span style="color:#9aa2a6">(auto-set after your last touch — adjust freely)</span>':'')+'</div>':'<div style="font-size:12px;color:#9aa2a6;margin-top:7px">No follow-up set — Court contacts go cold without one.</div>')+
       '</div>'+
       '<div class="sec"><h5>Activity — log as you talk; "they replied / call / meeting" moves them on the map</h5>'+
         '<div class="taginput"><select id="actType" style="padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:13px">'+
@@ -751,7 +751,7 @@ function renderPanel(){
         '</select><input id="noteIn" placeholder="e.g. Interested in the H2 webinar — send invite" onkeydown="if(event.key===\'Enter\')addNoteUI()"><button class="btn p" onclick="addNoteUI()">Log</button></div>'+
         '<div id="notebox" style="margin-top:8px">'+((c.notes||[]).length?c.notes.map(n=>{
           const at=ACT_TYPES[n.type||'note']||ACT_TYPES.note;
-          return '<div class="note"><span class="d">'+n.date+' · '+at.label+(at.sig?' <span style="color:#0a7a0a">↗ scored</span>':'')+'</span><br>'+esc(n.text)+'</div>';
+          return '<div class="note"><span class="d">'+esc(n.date)+' · '+at.label+(at.sig?' <span style="color:#0a7a0a">↗ scored</span>':'')+'</span><br>'+esc(n.text)+'</div>';
         }).join(''):'<div style="color:#9aa2a6;font-size:12.5px">No activity logged yet.</div>')+'</div></div>'+
       '<div class="sec"><h5>Draft message '+
         '<span class="lang" style="float:right;margin-top:-4px"><button class="'+(LANG==='es'?'on':'')+'" onclick="setLang(\'es\')">ES</button><button class="'+(LANG==='en'?'on':'')+'" onclick="setLang(\'en\')">EN</button></span></h5>'+
@@ -768,7 +768,7 @@ function renderPanel(){
       '<div class="sec"><h5>Profile</h5>'+
         kv('Email',esc(c.email))+
         kv('Phone',c.phone?esc(c.phone):'<span style="color:#c9c6bd">— add it when you get it</span>')+
-        kv('LinkedIn',c.linkedin?'<a href="'+esc(c.linkedin)+'" target="_blank" rel="noopener" style="color:var(--blue)">profile ↗</a>':'<span style="color:#c9c6bd">—</span>')+
+        kv('LinkedIn',c.linkedin?(/^https?:\/\//i.test(c.linkedin)?'<a href="'+esc(c.linkedin)+'" target="_blank" rel="noopener" style="color:var(--blue)">profile ↗</a>':esc(c.linkedin)):'<span style="color:#c9c6bd">—</span>')+
         kv('Country',esc(c.country||'—'))+kv('Sector',esc(c.sector||'—'))+kv('Seniority',esc(c.seniority||'—'))+kv('Relationship',esc(c.rel||'none'))+kv('Came here to',esc(c.intent||'—'))+
       '</div>'+
     '</div>';

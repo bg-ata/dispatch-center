@@ -34,7 +34,7 @@
   <div class="bar" id="bar"></div>
 </div>
 <div id="stage"></div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
 async function render(){
@@ -56,15 +56,16 @@ async function render(){
       '<a href="tools.html">Back to the tools board</a>.</p></div>';
     return;
   }
+  const token=t.dcAuth?await dcToken():'';   // dispatch session token → the app's dc_auth gate
   bar.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
     '<div><h1>'+t.name+'</h1><p class="sub">'+t.desc+'</p></div>'+
     '<div class="actions">'+
       (t.ownLogin?'<span class="badge">own login</span>':'')+
       '<a class="btn" href="tools.html">← All tools</a>'+
-      '<a class="btn primary" href="'+t.url+'" target="_blank" rel="noopener">Open in new tab ↗</a>'+
+      // same URL as the iframe — a bare t.url would drop the dc_token and fail the tool's auth gate
+      '<a class="btn primary" href="'+toolEmbedUrl(t,token)+'" target="_blank" rel="noopener">Open in new tab ↗</a>'+
     '</div>';
   stage.className='frameWrap';
-  const token=t.dcAuth?await dcToken():'';   // dispatch session token → the app's dc_auth gate
   stage.innerHTML='<iframe src="'+toolEmbedUrl(t,token)+'" allow="clipboard-read; clipboard-write; fullscreen" '+
     'sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals allow-popups-to-escape-sandbox"></iframe>';
 }

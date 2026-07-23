@@ -127,7 +127,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -214,9 +214,21 @@ function hasReg(){return regEvents().length>0;}
    ALIASES (convByStatus.aliases) — the Builder emits its own keys (almacenamiento_27…) that
    name the same event as the board's E-code, so aliases fold both into ONE bucket instead of
    splitting the turnover (Belén, 22 Jul). */
-function lineMapsReg(l,e){return (l.eventKey&&e.eventKey&&l.eventKey===e.eventKey)||(l.eventId!=null&&e.financeId!=null&&e.financeId==l.eventId)||(!!l.eventKey&&!!(e.convByStatus&&e.convByStatus.aliases)&&e.convByStatus.aliases.indexOf(l.eventKey)>=0);}
-function lineEvKey(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.eventKey;}return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
-function lineEvName(l){if(hasReg()){const e=regEvents().find(x=>lineMapsReg(l,x));if(e)return e.name;}if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
+function normKey(k){return (''+(k==null?'':k)).trim().toLowerCase();} // Builder keys arrive from outside — never trust case/spacing
+function lineMapsReg(l,e){const lk=normKey(l.eventKey);return (!!lk&&normKey(e.eventKey)===lk)||(l.eventId!=null&&e.financeId!=null&&e.financeId==l.eventId)||(!!lk&&!!(e.convByStatus&&e.convByStatus.aliases)&&(e.convByStatus.aliases||[]).some(a=>normKey(a)===lk));}
+/* precedence across the WHOLE registry: exact eventKey first, then financeId, then aliases.
+   Without it, a key that is one event's own key AND another's alias resolves by registry
+   order and the turnover splits/doubles again — the exact bug the aliases fixed. */
+function lineRegEvent(l){
+  if(!hasReg())return null;
+  const evs=regEvents(),lk=normKey(l.eventKey);
+  let e=lk?evs.find(x=>normKey(x.eventKey)===lk):null;
+  if(!e&&l.eventId!=null)e=evs.find(x=>x.financeId!=null&&x.financeId==l.eventId);
+  if(!e&&lk)e=evs.find(x=>((x.convByStatus&&x.convByStatus.aliases)||[]).some(a=>normKey(a)===lk));
+  return e||null;
+}
+function lineEvKey(l){const e=lineRegEvent(l);if(e)return e.eventKey;return l.eventKey||(l.eventId!=null?('fin'+l.eventId):(l.eventName?('nm:'+normCompany(l.eventName)):'?'));}
+function lineEvName(l){const e=lineRegEvent(l);if(e)return e.name;if(l.eventName)return l.eventName;if(l.eventId!=null){const f=DB.finance.find(f=>f.id==l.eventId);if(f)return f.name+' '+(f.year||'');}return l.eventKey||'—';}
 function evFinanceId(key,name){
   const l=DB.spxLines.find(x=>!x.deleted&&lineEvKey(x)===key&&x.eventId!=null);
   if(l)return l.eventId;
@@ -271,7 +283,12 @@ function accountingFor(p){
   //    types the legal name at Won) — kept so pre-link history still derives
   const cm=canonicalFor(p.company);
   if(!cm)return {state:'none',linked:false};
-  const scope=DB.spxLinesFor(p.id).map(l=>l.eventId).filter(x=>x!=null);   // ONLY event-linked lines — never [null]
+  // ONLY event-linked lines — never [null]. Builder lines carry no eventId, but the
+  // alias fold may still resolve them to a registry event with a Money row: use it.
+  const scope=distinctList(DB.spxLinesFor(p.id).map(l=>{
+    if(l.eventId!=null)return l.eventId;
+    const e=lineRegEvent(l);return (e&&e.financeId!=null)?e.financeId:null;
+  }).filter(x=>x!=null));
   if(!scope.length)return {state:'none',linked:true,noEvent:true};         // no €-Dashboard event → derivation impossible
   let inv=false,paid=false;
   scope.forEach(ev=>invMatches(cm,ev).forEach(i=>{inv=true;if(i.status==='pagado'||i.fecha_cobro)paid=true;}));
@@ -328,7 +345,9 @@ function renderProposals(app,scope){
   const firmado=sumB('Confirmed'),enviado=sumB('Sent'),silente=sumB('Silent'),perdido=sumB('Lost'),proceso=firmado+enviado;
   // target + tickets sold, over the events currently shown on the board
   const evObjs=spxEvents();
-  const shownKeys=distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
+  // Event filter set → targets/tickets must match the same scope as the € tiles (one event),
+  // not every event the shown multi-event proposals touch
+  const shownKeys=flt.event?[flt.event]:distinctList(props.flatMap(p=>DB.spxLinesFor(p.id).map(lineEvKey)));
   let tgt=0,str=0,ticketsSold=0;evObjs.forEach(e=>{if(shownKeys.indexOf(e.key)<0)return;const T=eventTargets(e);tgt+=T.spTarget;str+=T.spStretch;if(e.financeId!=null)ticketsSold+=invoicedPases(e.financeId).total;});
   const reachedT=tgt?firmado/tgt:null;
 
@@ -427,9 +446,10 @@ function exportBackup(){
       Invoicing:(acc&&acc.state&&acc.state!=='none')?acc.state:'',General:p.isGeneral?'yes':'',Created:dmy(p.createdAt),
       'Main contact':(((c.first||'')+' '+(c.last||'')).trim()),'Contact email':c.email||'',Notes:p.notas||''};});
   const lines=[];props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>lines.push({Company:p.company||'',Bucket:spxBucket(p),Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
-  const evSummary=spxEvents().map(e=>{const fid=e.financeId;const reg=hasReg()?(e.reg||{}):(fid!=null?(DB.spxTargetFor(fid)||{}):{});
+  const evSummary=spxEvents().map(e=>{const fid=e.financeId;
+    const T=eventTargets(e);   // includes the Money-master × specs-% split — raw reg fields would show stale/blank targets
     const won=eventBucketMoney(e.key,'Confirmed'),sent=eventBucketMoney(e.key,'Sent'),silent=eventBucketMoney(e.key,'Silent'),lost=eventBucketMoney(e.key,'Lost');
-    const tickets=fid!=null?invoicedPases(fid).total:0;const spT=+reg.sponsorshipTarget||0,tkT=+reg.pasesTarget||0,totT=spT+tkT;const closed=won+tickets;
+    const tickets=fid!=null?invoicedPases(fid).total:0;const spT=T.spTarget,tkT=T.tkTarget,totT=T.totTarget;const closed=won+tickets;
     return {Event:e.name,'Specs target €':spT,'Tickets target €':tkT,'Total target €':totT,'Specs Won €':won,'Tickets sold €':tickets,'Closed total €':closed,
       '% target':totT?Math.round(1000*closed/totT)/10+'%':'','Sent €':sent,'Silent €':silent,'Lost €':lost,Current:evCurrent(e)?'yes':''};});
   exportXLSX('RENMAD_SPX_BACKUP_'+toISO(new Date())+'.xlsx',
@@ -612,7 +632,7 @@ function probCell(p){const pr=STAGE_PROB[p.stage];return pr==null?'<span style="
 function fuCell(p){
   const d=(p.fechaSeguimiento||'').slice(0,10);
   if(!d)return '<span style="color:var(--muted)">—</span>';
-  if(p.salesStatus==='Sent'&&d<toISO(new Date()))
+  if(p.salesStatus==='Sent'&&p.stage!=='Silent'&&d<toISO(new Date()))   // Silent = dormant on purpose, no red alarm
     return '<span style="color:#D32230;font-weight:700" title="Next touchpoint expired — time to follow up!">⏰ '+dmy(d)+'</span>';
   return dmy(d);
 }
@@ -721,6 +741,10 @@ function doLinkEvent(lineId){
    Cancel = the status still changes, nothing is written to the ledger. */
 function askLegalOnSigned(p,prevStatus){
   if(!p||p.salesStatus!=='Confirmed'||prevStatus==='Confirmed')return;
+  /* dc_company_map RLS only accepts writes from the sales lead / finance — for anyone
+     else the prompt's answer was silently REFUSED by the server (red save banner after
+     a legit Won). Until the policy is widened, only ask people whose answer will save. */
+  if(!((DB.canSalesLead&&DB.canSalesLead())||(DB.canFinance&&DB.canFinance())))return;
   const cm=canonicalFor(p.company);
   const pre=cm?(cm.invoiceClientKey||(Array.isArray(cm.legalAliases)&&cm.legalAliases[0])||''):'';
   const ans=prompt('Contract signed 🎉 — type the client\'s FULL LEGAL NAME (razón social) exactly as it appears on the contract. Required: it is what invoicing uses to bill the deal.',pre);
@@ -845,7 +869,7 @@ function renderDashboard(app){
   // weekly evolution for THIS event's proposals (created-week € + running total)
   const byWk={};evProps.forEach(p=>{const d=(p.createdAt||p.fechaEnvio||'').slice(0,10);if(!d)return;const wk=weekStart(d);const v=DB.spxLinesFor(p.id).filter(l=>lineEvKey(l)===ev.key).reduce((a,l)=>a+(+l.valueEur||0),0);byWk[wk]=(byWk[wk]||0)+v;});
   const wks=Object.keys(byWk).sort();let r=0;const cum=wks.map(k=>{r+=byWk[k];return r;});
-  mkChart('c_dashwk',{data:{labels:wks,datasets:[
+  mkChart('c_dashwk',{data:{labels:wks.map(k=>deIso(k).slice(0,5)),datasets:[
       {type:'bar',label:'€ nuevo/semana',data:wks.map(k=>byWk[k]),backgroundColor:'#F3B0A0',order:2},
       {type:'line',label:'€ acumulado',data:cum,borderColor:'#C0392B',backgroundColor:'#C0392B',borderWidth:2,tension:.25,pointRadius:2,order:1}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},scales:{x:{ticks:{font:{size:9},maxRotation:0}},y:{ticks:{callback:v=>money(v)}}}}});
@@ -955,14 +979,14 @@ function invoicedSponsorship(finId){
   let total=0,paid=0;
   DB.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=DB.invoice(a.invoice_id);
     if(!inv||inv.status==='cancelado')return;if(inv.producto!=='sponsorship'&&inv.producto!=='upgrade')return;
-    total+=(+a.amount||0);if(inv.status==='pagado'||inv.fecha_cobro)paid+=(+a.amount||0);});
+    const eu=DB.allocEur(a);total+=eu;if(inv.status==='pagado'||inv.fecha_cobro)paid+=eu;});
   return {total,paid};
 }
 function invoicedPases(finId){
   let total=0,paid=0;
   DB.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=DB.invoice(a.invoice_id);
     if(!inv||inv.status==='cancelado')return;if(inv.producto!=='tickets')return;
-    total+=(+a.amount||0);if(inv.status==='pagado'||inv.fecha_cobro)paid+=(+a.amount||0);});
+    const eu=DB.allocEur(a);total+=eu;if(inv.status==='pagado'||inv.fecha_cobro)paid+=eu;});
   return {total,paid};
 }
 function wireHC(t){
@@ -1041,7 +1065,7 @@ function renderReporting(app){
 
   mkChart('c_sp',{type:'bar',data:{labels:sp,datasets:[{label:'€ out',data:sp.map(k=>bySp[k].out),backgroundColor:'#FF4A00'}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>money(c.parsed.y)}}},scales:{y:{ticks:{callback:v=>money(v)}}}}});
-  mkChart('c_wk',{type:'bar',data:{labels:wk,datasets:[{label:'proposals',data:wk.map(k=>byWk[k].n),backgroundColor:'#2A78D6'}]},
+  mkChart('c_wk',{type:'bar',data:{labels:wk.map(k=>deIso(k).slice(0,5)),datasets:[{label:'proposals',data:wk.map(k=>byWk[k].n),backgroundColor:'#2A78D6'}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:9},maxRotation:0}}}}});
   mkChart('c_src',{type:'bar',data:{labels:srcK,datasets:[
       {label:'proposals',data:srcK.map(k=>bySrc[k].n),backgroundColor:'#8A8781'},
@@ -1049,7 +1073,7 @@ function renderReporting(app){
     options:{maintainAspectRatio:false,animation:false,scales:{y:{beginAtZero:true}}}});
   mkChart('c_age',{type:'bar',data:{labels:Object.keys(aging),datasets:[{label:'proposals',data:Object.values(aging),backgroundColor:['#0CA30C','#B26A10','#B5541A','#C0392B']}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}}}});
-  mkChart('c_wkv',{data:{labels:wk,datasets:[
+  mkChart('c_wkv',{data:{labels:wk.map(k=>deIso(k).slice(0,5)),datasets:[
       {type:'bar',label:'€ nuevo/semana',data:wkNew,backgroundColor:'#F3B0A0',order:2},
       {type:'line',label:'€ acumulado',data:wkCum,borderColor:'#C0392B',backgroundColor:'#C0392B',borderWidth:2,tension:.25,pointRadius:2,order:1}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},scales:{x:{ticks:{font:{size:9},maxRotation:0}},y:{ticks:{callback:v=>money(v)}}}}});
@@ -1260,6 +1284,8 @@ function saveNew(){
     notas:document.getElementById('nc_notas').value.trim(),contacts:contacts,fileName:null,sentLink:null,
     isGeneral:general,mode:general?'general':(lines.length>1?'multi':'single'),active:true,superseded:false});
   lines.forEach(l=>DB.spxLines.push(l));
+  const _np=DB.spxProps[DB.spxProps.length-1];
+  if(_np.salesStatus==='Confirmed')askLegalOnSigned(_np,null);   // hand-created Won deals capture the legal name too
   DB.saveNow().then(ok=>{if(ok){closePanel();render();}}); // keep the form open until the board confirms
 }
 /* ---------- event lines on an existing proposal (multi-event) ---------- */
@@ -1287,7 +1313,11 @@ function panelLineVal(lineId,v){
 function deleteProposal(id){
   const p=DB.spxProps.find(x=>x.id==id);if(!p)return;
   if(!DB.canEditProp(p)){alert('You can only delete your own proposals (the sales lead and Belén can delete any).');return;}
-  if(!confirm('Delete the proposal for “'+(p.company||'')+'”? It can be recovered from the audit log.'))return;
+  const linked=DB.invoices.filter(i=>i.spxProposalId==id);
+  const msg=linked.length
+    ?'⚠ '+linked.length+' invoice(s) in Facturación ('+linked.map(i=>i.numero_factura||i.id).join(', ')+') are linked to this proposal — deleting it orphans Jesús\'s invoice↔contract link. Delete anyway?'
+    :'Delete the proposal for “'+(p.company||'')+'”? It can be recovered from the audit log.';
+  if(!confirm(msg))return;
   DB.data.spxProps=DB.spxProps.filter(x=>x.id!=id);
   DB.data.spxLines=DB.spxLines.filter(l=>l.parentId!=id);
   DB.saveNow().then(ok=>{if(ok){closePanel();render();}});
@@ -1334,6 +1364,9 @@ function addMevRow(){
   const key=(document.getElementById('mev_key').value||'').trim(),name=(document.getElementById('mev_newname').value||'').trim();
   if(!key||!name){alert('Enter a key and a name.');return;}
   if(regEvents().some(e=>(''+e.eventKey).toLowerCase()===key.toLowerCase())){alert('That key already exists.');return;}
+  const _nk=key.toLowerCase();
+  const _owner=regEvents().find(e=>((e.convByStatus&&e.convByStatus.aliases)||[]).some(a=>(''+a).trim().toLowerCase()===_nk));
+  if(_owner){alert('That key is already an ALIAS of “'+_owner.name+'” — adding it as its own event would split that event\'s turnover in two.');return;}
   saveManageEvents(true);   // persist current edits first
   const sort=regEvents().reduce((m,e)=>Math.max(m,+e.sort||0),0)+1;
   DB.spxEventReg.push({id:DB.newId(),eventKey:key,name:name,financeId:null,sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,convByStatus:{Sent:0.35,Confirmed:0.7},active:true,sort});

@@ -65,7 +65,7 @@
   <p class="cnt" id="cnt"></p>
   <div id="list"></div>
 </div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tickets');
 let openId=null; // which ticket is expanded
@@ -122,11 +122,11 @@ function renderBody(t,p){
   const me=DB.currentUser, adm=DB.isAdmin(), mine=me&&t.personId==me.id;
   let h='<div class="body">';
   if(t.description)h+='<p class="desc">'+esc(t.description)+'</p>';
-  h+='<div style="font-size:11.5px;color:var(--muted)">opened by '+esc(p.name)+' · '+esc(t.created||'')+'</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted)">opened by '+esc(p.name)+' · '+fmtCreated(t.created)+'</div>';
   (t.thread||[]).forEach(c=>{
     const w=DB.person(c.who);
-    if(c.sys)h+='<div class="cmt sys">'+esc((w?w.name.split(' ')[0]:'?')+' · '+c.when+' — ')+esc(c.sys)+'</div>';
-    else h+='<div class="cmt"><div class="w">'+esc(w?w.name:'?')+' · '+esc(c.when)+'</div>'+esc(c.text)+'</div>';
+    if(c.sys)h+='<div class="cmt sys">'+esc((w?w.name.split(' ')[0]:'?')+' · '+fmtCreated(c.when)+' — ')+esc(c.sys)+'</div>';
+    else h+='<div class="cmt"><div class="w">'+esc(w?w.name:'?')+' · '+fmtCreated(c.when)+'</div>'+esc(c.text)+'</div>';
   });
   if(me)h+='<div class="cbox"><input id="cm_'+t.id+'" maxlength="500" placeholder="Add a comment — a +1, more detail, a workaround…"><button class="btn" data-cmt="'+t.id+'">Comment</button></div>';
   if(adm){

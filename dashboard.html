@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -194,7 +194,7 @@ const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if
     ctx.save();ctx.strokeStyle=l.color;ctx.lineWidth=l.w||1;ctx.setLineDash(l.dash||[4,3]);
     ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();
     ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});}};
-Chart.register(vlines);
+if(window.Chart)Chart.register(vlines);
 /* draw the exact value inside each stacked bar segment (used when charts show % mix) */
 const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins||{}).barlabels;if(!o)return;
   const cmp=v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v);
@@ -211,8 +211,12 @@ const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins|
       const v=ds.data[i];if(v==null||v<(o.min||6)||h<13)return;
       ctx.font='700 10px Segoe UI';ctx.fillText((o.fmt==='pct'?(Math.round(v*10)/10)+'%':cmp(v)),bar.x,cy);});});
   ctx.restore();}};
-Chart.register(barlabels);
-function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
+if(window.Chart)Chart.register(barlabels);
+/* if the CDN is unreachable, the page must still work chartless (Year table etc.) */
+function noChartNote(){if(document.getElementById('nochartnote'))return;
+  const w=document.getElementById('warnbox')||document.body;
+  w.insertAdjacentHTML('beforeend','<div id="nochartnote" style="color:var(--muted);font-size:12px;margin:4px 0">Charts unavailable — chart library could not load.</div>');}
+function mkChart(id,cfg){if(!window.Chart){noChartNote();return null;}if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
 /* esc() comes from store.js (full &<>"' escaping) — no local override. */
 /* dd/mm/yyyy for DISPLAY only — stored values and option/input values stay ISO */
 function ddmmyyyy(iso){if(!iso)return'';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso)}
@@ -254,7 +258,7 @@ function finGrouped(){
 function fSum(list,fld){return list.reduce((a,f)=>a+(+f[fld]||0),0);}
 function chipHtml(r){return r?'<span class="chip" style="background:'+r.color+'">'+r.label+'</span>':'<span style="color:#b4b1a8;font-size:11px">pending</span>';}
 function finRowHtml(f,canF){
-  const nameCell=(f.eventId&&DB.event(f.eventId))?('<a class="evlink" href="event.html?id='+f.eventId+'">'+f.name+'</a>'):f.name;
+  const nameCell=(f.eventId&&DB.event(f.eventId))?('<a class="evlink" href="event.html?id='+f.eventId+'">'+esc(f.name)+'</a>'):esc(f.name);
   const ed=f.edition?('<span class="ed">'+f.edition+'ª</span>'):'';
   /* invoiced: summed from the Facturación invoice allocations when the event has lines
      (then it can't be typed here any more); typed dc_finance.invoiced as fallback */
@@ -262,7 +266,7 @@ function finRowHtml(f,canF){
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
   const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
   if(!canF){
-    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+(f.city||'')+'</td><td>'+(f['when']||'')+'</td><td>'+(f.pm||'')+'</td><td>'+(f.sales||'')+'</td>'+
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+esc(f.pm||'')+'</td><td>'+esc(f.sales||'')+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
@@ -573,7 +577,7 @@ function drawWeekTable(ev){
     ['telesalesEur','Telesales €',1],['grabacionesEur','Recordings €',1],['siteVisitsEur','Site visits €',1],
     ['totalEur','Total week €',1],['soFarEur','SO FAR €',1]];
   const fmt=(v,money)=>v==null?'':(money?new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v):new Intl.NumberFormat('es-ES').format(v));
-  let h='<table><tr><th class="m"></th>'+rows.map(r=>'<th class="'+(isNow(r)?'td-today':'')+'">W'+(r.week<0?r.week:'+'+r.week)+'<br><span style="font-weight:400">'+(r.date?r.date.slice(5):'')+'</span></th>').join('')+'</tr>';
+  let h='<table><tr><th class="m"></th>'+rows.map(r=>'<th class="'+(isNow(r)?'td-today':'')+'">W'+(r.week<0?r.week:'+'+r.week)+'<br><span style="font-weight:400">'+(r.date?(r.date.slice(8,10)+'/'+r.date.slice(5,7)):'')+'</span></th>').join('')+'</tr>';
   METRICS.forEach(([k,label,money])=>{
     if(!rows.some(r=>r[k]!=null&&+r[k]!==0))return;
     const big=k==='soFarEur';
@@ -702,7 +706,7 @@ function yearAnalysis(){
     ms.filter(e=>!e.completed&&e.target).forEach(e=>{
       const cw=e.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
       if(!cw)return;const i=WEEKS.indexOf(cw.week);if(i<0||pace[i]==null||pace[i]<=0)return;
-      const exp=e.target*pace[i];(e.final>=exp?cls.g:e.final>=exp*0.75?cls.a:cls.r).push(e.name);
+      const exp=e.target*pace[i];(e.final>=exp?cls.g:e.final>=exp*0.75?cls.a:cls.r).push(esc(e.name));
     });
     if(cls.g.length+cls.a.length+cls.r.length)
       lines.push('Portfolio pace right now: <b>'+cls.g.length+'</b> on pace'+
@@ -739,7 +743,7 @@ function detailAnalysis(ms,ev){
   const today=new Date().toISOString().slice(0,10);
   const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
   if(ev.completed){
-    lines.push(ev.name+' finished at <b>'+eur(ev.final)+'</b>'+
+    lines.push(esc(ev.name)+' finished at <b>'+eur(ev.final)+'</b>'+
       (ev.target?' = '+Math.round(100*ev.final/ev.target)+' % of its '+eur(ev.target)+' target':'')+'.');
   }else if(cur){
     const i=WEEKS.indexOf(cur.week),med=(i>=0&&pc.med[i]!=null)?pc.med[i]/100:null;
@@ -767,7 +771,7 @@ function compareAnalysis(ms,ev){
     const i=WEEKS.indexOf(cur.week),v=+cur.soFarEur||0;
     others.slice(0,3).forEach(o=>{const ov=curve(o)[i];if(ov==null||ov<=0)return;
       const d=Math.round(100*v/ov)-100;
-      lines.push(ev.name+' is <b>'+Math.abs(d)+' % '+(d>=0?'ahead of':'behind')+'</b> '+o.name+' at the same week ('+eur(v)+' vs '+eur(ov)+' at W'+cur.week+').');});
+      lines.push(esc(ev.name)+' is <b>'+Math.abs(d)+' % '+(d>=0?'ahead of':'behind')+'</b> '+esc(o.name)+' at the same week ('+eur(v)+' vs '+eur(ov)+' at W'+cur.week+').');});
     if(ev.target&&v<ev.target){
       const done=doneOf(ms),pc=pctCurve(done,'soFarEur','final');
       const rest=(i>=0&&pc.med[i]!=null)?Math.round(100-pc.med[i]):null;
@@ -776,7 +780,7 @@ function compareAnalysis(ms,ev){
     }
   }else if(ev.completed){
     others.slice(0,3).forEach(o=>{if(!o.final)return;const d=Math.round(100*ev.final/o.final)-100;
-      lines.push(ev.name+' finished <b>'+Math.abs(d)+' % '+(d>=0?'above':'below')+'</b> '+o.name+' ('+eur(ev.final)+' vs '+eur(o.final)+').');});
+      lines.push(esc(ev.name)+' finished <b>'+Math.abs(d)+' % '+(d>=0?'above':'below')+'</b> '+esc(o.name)+' ('+eur(ev.final)+' vs '+eur(o.final)+').');});
   }
   return anaBox(lines);
 }
@@ -1089,7 +1093,7 @@ function liveTable(ms,done){
           :'<span style="color:#D32230;font-weight:700">At risk</span>';}
       else verdict='<span style="color:#b4b1a8">Too early to call</span>';
     }
-    h+='<tr><td class="evname">'+e.name+'</td><td>'+(w==null?'—':'W'+(w<0?w:'+'+w))+'</td>'+
+    h+='<tr><td class="evname">'+esc(e.name)+'</td><td>'+(w==null?'—':'W'+(w<0?w:'+'+w))+'</td>'+
       '<td class="num">'+(e.eventLeads?new Intl.NumberFormat('es-ES').format(e.eventLeads):'—')+'</td>'+
       '<td class="num">'+eur(e.final)+'</td>'+
       '<td class="num">'+(paceProj?'~'+eur(Math.round(paceProj)):'—')+'</td>'+

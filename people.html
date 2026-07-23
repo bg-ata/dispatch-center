@@ -99,7 +99,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -128,7 +128,7 @@ function render(){
        '<td>'+(adm?'<button class="del" data-del="'+p.id+'">×</button> <button class="del" data-edit="'+p.id+'" style="color:#bdbab2">✎</button>':'')+'</td></tr>';
     if(expanded==p.id){
       if(ts.length) ts.forEach(t=>{const e=DB.event(t.eventId);
-        h+='<tr class="assign"><td colspan="8"><span class="ev">'+esc(e?e.name:'?')+'</span> · '+esc(t.lane)+' · '+esc(t.title)+(t.deadline?' · due '+t.deadline:'')+' · '+esc(t.status)+'</td></tr>';});
+        h+='<tr class="assign"><td colspan="8"><span class="ev">'+esc(e?e.name:'?')+'</span> · '+esc(t.lane)+' · '+esc(t.title)+(t.deadline?' · due '+deIso(t.deadline):'')+' · '+esc(t.status)+'</td></tr>';});
       else h+='<tr class="assign"><td colspan="8">No tasks assigned yet.</td></tr>';
     }
   });

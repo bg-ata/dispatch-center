@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -152,7 +152,7 @@ function render(){
   if(!ev.team)ev.team=[];
   document.getElementById('content').innerHTML=
     '<h1><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span>'+esc(ev.name)+'</h1>'+
-    '<p class="sub">'+(ev.city||'')+(ev.city&&ev.country?', ':'')+(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html'+(evKind(ev)==='external'?'#external':'')+'">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>'+
+    '<p class="sub">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+' &nbsp; <a href="gantt.html'+(evKind(ev)==='external'?'#external':'')+'">← overview</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>'+
     (function(){const f=DB.financeFor(ev.id);if(!f)return'';const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});const r=finResult(fx);
       return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
       (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
@@ -212,7 +212,7 @@ function renderEuroTab(){
     const isNow=r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today;
     h+='<div class="panel"><h3>Money week by week</h3><table class="etbl"><tr><th>Week</th><th>Date</th><th>Sponsors €</th><th>Tickets €</th><th>Week total</th><th>So far</th>'+(target?'<th>vs Target</th>':'')+'</tr>';
     money.forEach(r=>{const d=target!=null&&r.soFarEur!=null?(+r.soFarEur-target):null;
-      h+='<tr'+(isNow(r)?' class="now"':'')+'><td>W'+(r.week<0?r.week:'+'+r.week)+'</td><td>'+(r.date||'')+'</td>'+
+      h+='<tr'+(isNow(r)?' class="now"':'')+'><td>W'+(r.week<0?r.week:'+'+r.week)+'</td><td>'+deIso(r.date||'')+'</td>'+
       '<td>'+(+r.sponsorsEur?finFmt(+r.sponsorsEur):'')+'</td><td>'+(+r.ticketsEur?finFmt(+r.ticketsEur):'')+'</td>'+
       '<td><b>'+(+r.totalEur?finFmt(+r.totalEur):'')+'</b></td><td>'+finFmt(r.soFarEur)+'</td>'+
       (target?'<td class="'+(d<0?'neg':'pos')+'">'+(d==null?'':(d>0?'+':'')+new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(d))+'</td>':'')+'</tr>';});
@@ -444,8 +444,10 @@ function renderTimeline(){
           const fill=darken(subColor(sub,st.color),0.78);
           const pill=document.createElement('div');pill.className='subpill open'+(selSub===sub.id?' sel':'');
           pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+(OPENH-4)+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
-          pill.textContent=sub.name;pill.title=sub.name+' — drag to move · +/− to resize · click to edit tasks';
-          pill.addEventListener('mousedown',e=>{dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:sub.week,moved:false};e.preventDefault();});
+          pill.textContent=sub.name;pill.title=sub.name+(mg?' — drag to move · +/− to resize · click to edit tasks':' — click to see tasks');
+          pill.addEventListener('mousedown',e=>{
+            if(!mg){selSub=(selSub===sub.id?null:sub.id);renderTimeline();renderTasks();return;} // members: click opens tasks, no dragging (server would refuse the move)
+            dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:sub.week,moved:false};e.preventDefault();});
           tl.appendChild(pill);
           if(mg){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+(OPENH-4)+'px;line-height:'+(OPENH-8)+'px';b.title=tip+' '+sub.name;
             b.addEventListener('mousedown',e=>e.stopPropagation());
@@ -468,8 +470,9 @@ function renderTimeline(){
     const band=document.createElement('div');band.className='colband';band.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+colTop+'px;height:'+colH+'px;background:'+color;tl.appendChild(band);
     const chip=document.createElement('div');chip.className='colchip';chip.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+(TOPH-16)+'px;background:'+color;
     chip.innerHTML='<span style="pointer-events:none">'+label+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
-    chip.title=label+' (W-'+off+')'+(kind==='w0'?' — drag to reschedule':' — drag to move');
-    const st=e=>{if(e.target.classList.contains('x'))return;if(kind==='w0')dragW0={ev,startX:e.clientX,dx:0,band,chip};else dragMk={ev,field,kind,startX:e.clientX,dx:0,band,chip};e.preventDefault();};
+    chip.title=label+' (W-'+off+')'+(mg?(kind==='w0'?' — drag to reschedule':' — drag to move'):'');
+    const st=e=>{if(!mg)return; // members can't move milestones/W0 (server would refuse)
+      if(e.target.classList.contains('x'))return;if(kind==='w0')dragW0={ev,startX:e.clientX,dx:0,band,chip};else dragMk={ev,field,kind,startX:e.clientX,dx:0,band,chip};e.preventDefault();};
     chip.addEventListener('mousedown',st);band.addEventListener('mousedown',st);
     const xb=chip.querySelector('.x');if(xb)xb.onclick=ev2=>{ev2.stopPropagation();ev.alerts.LD.on=false;DB.save();renderTimeline();};
     tl.appendChild(chip);
@@ -522,7 +525,7 @@ function renderTasks(){
   tks.forEach(t=>{const canS=DB.canEditStatus(t);h+='<tr>'+
     '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+esc(t.title||'')+'">':esc(t.title||''))+'</td>'+
     '<td>'+(mg?'<select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select>':esc(DB.personName(t.assignee)))+'</td>'+
-    '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline||'—'))+'</td>'+
+    '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline?deIso(t.deadline):'—'))+'</td>'+
     '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>'):('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
     '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';});
   h+='</table>';
@@ -549,7 +552,7 @@ document.addEventListener('mouseup',()=>{
 
 function wire(){
   document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(ev.name.replace(/[^\w]+/g,'_')+'.xlsx',[
-    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage),Substage:s?s.name:'',Task:t.title,Responsible:DB.personName(t.assignee),Deadline:t.deadline,Status:t.status};})},
+    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage),Substage:s?s.name:'',Task:t.title,Responsible:DB.personName(t.assignee),Deadline:deIso(t.deadline||''),Status:t.status};})},
     {name:'Team',rows:ev.team.map(m=>({Name:DB.personName(m.personId),Role:m.role}))}]);};
   document.getElementById('addmem').onclick=()=>{const v=document.getElementById('newp').value;if(!v)return;ev.team.push({personId:+v,role:document.getElementById('newr').value});DB.save();renderTeam();};
 }

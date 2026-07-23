@@ -47,7 +47,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=71"></script>
+<script src="store.js?v=72"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('impact');
 let heroCode=null,cmpCodes=[],funMode='now';
@@ -115,7 +115,7 @@ function drawFunnel(ms){
   });
   const maxTop=Math.max.apply(null,cols.map(c=>c.stages[0].v||1));
   document.getElementById('funnel').innerHTML=cols.map(c=>{
-    return '<div class="funcol"><h4>'+c.e.name+'</h4>'+c.stages.map(s=>{
+    return '<div class="funcol"><h4>'+esc(c.e.name)+'</h4>'+c.stages.map(s=>{
       const w=Math.max(1.5,100*(s.v||0)/maxTop);
       const dark=(s.v||0)/maxTop>0.04;
       return '<div class="fstage"><div class="fbar" style="width:'+w.toFixed(1)+'%;background:'+s.c+(dark?'':';color:#8a4a12')+'">'+nf(s.v)+'</div>'+
