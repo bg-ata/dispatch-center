@@ -2102,6 +2102,13 @@ window.PB = {
     (_data().packages || []).forEach(function (p) { m[p.id] = p; });
     return m;
   }
+  // RENMAD Talks carry their OWN packages (flat price, not per-family) — data.js
+  // PB.talksPackages. Events flagged type:"talks" price against this map instead.
+  function _talksPkgById() {
+    const m = {};
+    (_data().talksPackages || []).forEach(function (p) { m[p.id] = p; });
+    return m;
+  }
 
   // Python round(): round half to even. All our values are positive.
   function pyRound(x) {
@@ -2115,8 +2122,13 @@ window.PB = {
   // that package's price for the event's family.
   function linePrice(eventKey, pid) {
     const ev = _evByKey()[eventKey];
+    if (!ev) return 0;
+    if (ev.type === "talks") {                       // Talks: flat, own package list
+      const tp = _talksPkgById()[pid];
+      return tp ? tp.price : 0;
+    }
     const pkg = _pkgById()[pid];
-    if (!ev || !pkg) return 0;
+    if (!pkg) return 0;
     return pkg.price[ev.family];
   }
 
@@ -2132,20 +2144,22 @@ window.PB = {
   // already replicates D.event_short).
   function linesFromSelections(selections, lang) {
     lang = lang || "en";
-    const EV = _evByKey(), PKG = _pkgById();
+    const EV = _evByKey(), PKG = _pkgById(), TPK = _talksPkgById();
     const out = [];
     (selections || []).forEach(function (sel) {
       const ek = sel[0], pids = sel[1] || [];
       if (!(ek in EV)) return;
       const ev = EV[ek];
+      const isTalks = ev.type === "talks";
       pids.forEach(function (pid) {
-        if (!(pid in PKG)) return;
+        const pkg = isTalks ? TPK[pid] : PKG[pid];
+        if (!pkg) return;
         out.push({
           event_key: ek,
           event: ev.name,
           event_short: ev.short,
           package: pid,
-          package_label: PKG[pid].name[lang],
+          package_label: pkg.name[lang],
           price: linePrice(ek, pid),
         });
       });
