@@ -15,7 +15,6 @@
   .navburger{display:none}.navlinks{display:contents}
   .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px;white-space:nowrap}
   .nav a.on{background:var(--orange);color:#fff}
-  .nav .brandlet{margin-left:auto;font-size:13px;color:var(--muted)}
   .hd{display:flex;align-items:center;gap:12px;margin:6px 0 2px}
   .dot{width:30px;height:30px;border-radius:8px;background:var(--o)}
   h1{font-size:22px;margin:0;color:var(--ch)}
@@ -36,8 +35,9 @@
   .sp{display:flex;gap:8px;flex-wrap:wrap}
   .sp label{flex:1;min-width:150px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ch);display:flex;align-items:center;gap:8px}
   .sp label.on{border-color:var(--o);background:#FFF3ED}
-  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-  .seg button{background:#fff;border:none;padding:8px 16px;font:inherit;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;flex-wrap:wrap}
+  .seg button{background:#fff;border:none;padding:8px 16px;font:inherit;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:none}
   .seg button.on{background:var(--ch);color:#fff}
   .pill{display:inline-block;background:#FFF3ED;color:#b5390f;border:1px solid #ffd9c7;border-radius:20px;padding:3px 11px;font-size:12px;font-weight:700}
   .ct{display:flex;gap:8px;margin-bottom:7px}
@@ -47,49 +47,73 @@
   .ok{color:#0a7a0a;font-weight:600}.err{color:#C0392B;font-weight:600}
   .beta{font-size:10px;font-weight:800;background:#FFE6DB;color:#b5390f;border-radius:8px;padding:2px 8px;margin-left:6px;vertical-align:3px}
   h4{margin:0 0 8px;font-size:13px;color:var(--ch)}
+  .hide{display:none}
 </style>
 </head>
 <body>
 <div class="app">
   <div id="nav"></div>
   <div class="hd"><div class="dot"></div><h1>Proposal Builder <span class="beta">NEW · try it</span></h1></div>
-  <p class="sub">Builds the sponsorship deck <b>and</b> logs the proposal straight to the SPX board — right here in Dispatch, no Streamlit. This is the new browser version; tell Belén what breaks or feels off.</p>
+  <p class="sub">Sponsorship decks, the Webinar Program deck and the RENMAD Talks deck — all in the browser, and sponsorship/Talks proposals log straight to the SPX board. This is the new version; tell Belén what breaks or feels off.</p>
+
+  <div class="card">
+    <label class="lab">What are you building?</label>
+    <span class="seg" id="modeseg">
+      <button data-mode="events" class="on">📅 Event sponsorship</button>
+      <button data-mode="webinar">🎙 Webinar Program</button>
+      <button data-mode="talks">🎤 RENMAD Talks</button>
+    </span>
+    <div class="hint" id="modehint"></div>
+  </div>
 
   <div class="card">
     <div class="row" style="align-items:flex-end">
-      <div><label class="lab">Client (prepared for) <span class="req">*</span></label><input type="text" id="client" placeholder="e.g. Acme Energy"></div>
-      <div style="flex:none"><label class="lab">Language</label>
+      <div><label class="lab">Client (prepared for) <span class="req" id="clientReq">*</span></label><input type="text" id="client" placeholder="e.g. Acme Energy"></div>
+      <div style="flex:none" id="langWrap"><label class="lab">Language</label>
         <span class="seg"><button id="lang_en" class="on" data-lang="en">English</button><button id="lang_es" data-lang="es">Español</button></span>
       </div>
     </div>
     <div style="margin-top:12px"><label class="lab">Salesperson <span class="req">*</span></label><div class="sp" id="sp"></div></div>
   </div>
 
-  <div class="card">
-    <label class="lab">Events <span class="req">*</span> — pick one, or several for a multi-event proposal</label>
-    <div class="hint" id="datemsg" style="margin:0 0 7px"></div>
-    <div class="evlist" id="evlist"></div>
-    <div class="hint" id="grpmsg"></div>
+  <!-- ===== EVENT SPONSORSHIP mode ===== -->
+  <div id="mode-events">
+    <div class="card">
+      <label class="lab">Events <span class="req">*</span> — pick one, or several for a multi-event proposal</label>
+      <div class="hint" id="datemsg" style="margin:0 0 7px"></div>
+      <div class="evlist" id="evlist"></div>
+      <div class="hint" id="grpmsg"></div>
+    </div>
+    <div class="card">
+      <label class="lab">Packages to include <span class="req">*</span></label>
+      <div id="pks"></div>
+    </div>
+    <div class="card">
+      <h4>Lead &amp; contact <span style="font-weight:400;color:var(--mut)">— required for the SPX board (mirrors Zoho)</span></h4>
+      <div class="row">
+        <div><label class="lab">Source <span class="req">*</span></label><select id="src"></select></div>
+        <div><label class="lab">Account type <span class="req">*</span></label><select id="atype"></select></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label class="lab">Product/Package <span class="req">*</span></label><select id="ppack"></select></div>
+        <div><label class="lab">Package <span class="req">*</span></label><select id="ptier"></select></div>
+        <div style="flex:none;min-width:170px"><label class="lab">Follow-up date <span class="req">*</span></label><input type="date" id="fup"></div>
+      </div>
+      <label class="lab" style="margin-top:14px">Client contact(s) — the first is required (first name + email)</label>
+      <div id="contacts"></div>
+    </div>
   </div>
 
-  <div class="card">
-    <label class="lab">Packages to include <span class="req">*</span></label>
-    <div id="pks"></div>
-  </div>
-
-  <div class="card">
-    <h4>Lead &amp; contact <span style="font-weight:400;color:var(--mut)">— required for the SPX board (mirrors Zoho)</span></h4>
-    <div class="row">
-      <div><label class="lab">Source <span class="req">*</span></label><select id="src"></select></div>
-      <div><label class="lab">Account type <span class="req">*</span></label><select id="atype"></select></div>
+  <!-- ===== RENMAD TALKS mode ===== -->
+  <div id="mode-talks" class="hide">
+    <div class="card">
+      <h4>RENMAD Talks 2026 (×PwC) <span style="font-weight:400;color:var(--mut)">— one Spanish deck carries all three encuentros; delete the ones you don't need before sending</span></h4>
+      <label class="lab">Log to the SPX board (optional) — which encuentro(s) &amp; package(s) is this for?</label>
+      <div id="talksEvs"></div>
+      <label class="lab" style="margin-top:12px">Package(s) offered</label>
+      <div id="talksPkgs"></div>
+      <div class="hint" id="talksRec"></div>
     </div>
-    <div class="row" style="margin-top:10px">
-      <div><label class="lab">Product/Package <span class="req">*</span></label><select id="ppack"></select></div>
-      <div><label class="lab">Package <span class="req">*</span></label><select id="ptier"></select></div>
-      <div style="flex:none;min-width:170px"><label class="lab">Follow-up date <span class="req">*</span></label><input type="date" id="fup"></div>
-    </div>
-    <label class="lab" style="margin-top:14px">Client contact(s) — the first is required (first name + email)</label>
-    <div id="contacts"></div>
   </div>
 
   <div class="card">
@@ -101,7 +125,7 @@
     <div class="hint" id="brandmsg"></div>
   </div>
 
-  <button class="btn" id="gen">⬇ Generate proposal (.pptx) + log to SPX</button>
+  <button class="btn" id="gen">⬇ Generate</button>
   <div class="hint" id="msg"></div>
 </div>
 
@@ -117,15 +141,18 @@ const SALESPEOPLE=(window.PB&&PB.salespeople)||{
   ian:{name:"Ian Casares",email:"ian.casares@ata.email",role:{en:"Business Development",es:"Desarrollo de Negocio"}},
   sheetal:{name:"Sheetal Shamdasani",email:"sheetal.shamdasani@ata.email",role:{en:"Business Development",es:"Desarrollo de Negocio"}},
 };
-let LANG="en", BRAND=null, SP="cintia";
+const MODE_HINT={events:"Full sponsorship deck for one or several RENMAD events — logs to the SPX board.",
+  webinar:"Standalone Webinar Program deck — no event packages; just salesperson + optional client brand. (Deck only, not logged to SPX.)",
+  talks:"The three ATA×PwC half-day encuentros in one Spanish deck. Mark the encuentro(s) + package(s) to log it on the SPX board."};
+let LANG="en", BRAND=null, SP="cintia", MODE="events";
 let realEvents=[], y26=[], y27=[]; const selEvents=new Set();
+const talkEvSel=new Set(), talkPkgSel=new Set();
 const money=(n)=>(window.RENMAD?RENMAD.money(n):("€"+n));
 
 function initBuilder(){
   document.getElementById('nav').innerHTML=navBar('tools');
   realEvents=PB.events.filter(e=>!e.portfolio);
   y26=realEvents.filter(e=>e.name.includes("2026")); y27=realEvents.filter(e=>e.name.includes("2027"));
-  // default salesperson to the logged-in user if they are one
   try{ const em=(DB.currentUser&&DB.currentUser.email||'').toLowerCase();
     const k=Object.keys(SALESPEOPLE).find(k=>(SALESPEOPLE[k].email||'').toLowerCase()===em); if(k)SP=k; }catch(e){}
 
@@ -140,12 +167,21 @@ function initBuilder(){
   document.getElementById('contacts').innerHTML=[0,1,2].map(i=>
     '<div class="ct"><input type="text" id="cf'+i+'" placeholder="First name'+(i===0?' *':'')+'"><input type="text" id="cl'+i+'" placeholder="Last name"><input type="email" id="ce'+i+'" placeholder="Email'+(i===0?' *':'')+'"></div>').join('');
 
+  // Talks encuentros + packages
+  const tEvs=(PB.talksEvents||[]), tPkgs=(PB.talksPackages||[]);
+  document.getElementById('talksEvs').innerHTML=tEvs.map(e=>
+    '<div class="pk"><input type="checkbox" id="te_'+e.key+'"><label for="te_'+e.key+'" class="pnm" style="margin:0">'+e.name+'</label><span class="prc" style="font-weight:400;color:var(--mut)">'+(e.date_es||'')+'</span></div>').join('');
+  document.getElementById('talksPkgs').innerHTML=tPkgs.map(p=>
+    '<div class="pk"><input type="checkbox" id="tp_'+p.id+'"><label for="tp_'+p.id+'" class="pnm" style="margin:0">'+p.name.es+'</label><span class="prc">'+money(p.price)+'</span></div>').join('');
+  document.getElementById('talksEvs').querySelectorAll('input').forEach(cb=>cb.onchange=()=>{const k=cb.id.slice(3);cb.checked?talkEvSel.add(k):talkEvSel.delete(k);updateTalksRec();});
+  document.getElementById('talksPkgs').querySelectorAll('input').forEach(cb=>cb.onchange=()=>{const k=cb.id.slice(3);cb.checked?talkPkgSel.add(k):talkPkgSel.delete(k);updateTalksRec();});
+
   document.getElementById('lang_en').onclick=()=>setLang('en');
   document.getElementById('lang_es').onclick=()=>setLang('es');
   document.getElementById('pull').onclick=doPull;
   document.getElementById('gen').onclick=doGenerate;
+  document.querySelectorAll('#modeseg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 
-  // wire the shared functions to the LOGGED-IN user's token, then cascade dates
   (async function(){
     const dm=document.getElementById('datemsg');
     let tok=''; try{ tok=await dcToken(); }catch(e){}
@@ -158,8 +194,26 @@ function initBuilder(){
     let st; try{ st=await PBTIMELINE.applyDates(PB.events); }catch(e){ st={ok:false}; }
     dm.innerHTML=(st&&st.ok)?('📅 <span class="ok">'+st.synced.length+' event dates live from the Dispatch timeline</span>')
       :'📅 Using built-in dates (timeline unavailable this session).';
-    setLang('en');
+    setLang('en'); setMode('events');
   })();
+}
+
+function setMode(m){ MODE=m;
+  document.querySelectorAll('#modeseg button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  document.getElementById('mode-events').classList.toggle('hide',m!=='events');
+  document.getElementById('mode-talks').classList.toggle('hide',m!=='talks');
+  document.getElementById('langWrap').classList.toggle('hide',m==='talks'); // Talks is ES-only
+  document.getElementById('clientReq').style.visibility=(m==='events')?'visible':'hidden';
+  document.getElementById('modehint').textContent=MODE_HINT[m];
+  document.getElementById('gen').innerHTML=(m==='webinar')?'⬇ Generate webinar deck (.pptx)':(m==='talks'?'⬇ Generate Talks deck (.pptx) + log to SPX':'⬇ Generate proposal (.pptx) + log to SPX');
+  if(m==='talks')setLang('es');
+  document.getElementById('msg').innerHTML='';
+}
+function updateTalksRec(){
+  const c=document.getElementById('talksRec');
+  if(talkEvSel.size&&talkPkgSel.size){ const n=talkEvSel.size;
+    c.innerHTML='✅ On generate this records <b>'+n+' board line'+(n>1?'s':'')+'</b> (value = the smallest selected package, per encuentro).'; }
+  else c.innerHTML='Leave empty to just download the deck without logging it. To log: pick a client (above) + at least one encuentro + one package.';
 }
 
 function evRow(e){return '<div class="ev" data-ev="'+e.key+'"><input type="checkbox"><span class="swatch" style="background:#'+e.color+'"></span><span><span class="nm">'+e.short+'</span><br><span class="meta">'+e.date[LANG]+' · '+e.city[LANG]+'</span></span></div>';}
@@ -205,14 +259,21 @@ async function doPull(){
   if(info.ok){BRAND=info;m.innerHTML='<span class="ok">✓ Pulled '+(info.images?info.images.length:0)+' image(s) + text from '+(info.title||url)+'</span>';}
   else{BRAND=null;m.innerHTML='<span class="err">Couldn\'t pull ('+info.reason+').</span> The deck still generates without it.';}
 }
+async function boardWrite(parent, lines){
+  let tok=''; try{ tok=await dcToken(); }catch(e){}
+  return PBB.submit({token:tok, parent, lines});
+}
 async function doGenerate(){
-  const msg=document.getElementById('msg'); const o=collect();
-  const bad=leadBad(o);
+  const msg=document.getElementById('msg');
+  if(MODE==='webinar') return genWebinar(msg);
+  if(MODE==='talks')   return genTalks(msg);
+  return genEvents(msg);
+}
+async function genEvents(msg){
+  const o=collect(); const bad=leadBad(o);
   if(bad){ msg.innerHTML='<span class="err">'+bad.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')+'</span>'; return; }
-  msg.textContent='Building the deck…';
-  let fileName;
-  try{
-    fileName="RENMAD_"+(o.events.length>1?"multi":o.events[0].short).replace(/\s+/g,"_")+"_"+o.client.replace(/\s+/g,"_")+".pptx";
+  msg.textContent='Building the deck…'; let fileName;
+  try{ fileName="RENMAD_"+(o.events.length>1?"multi":o.events[0].short).replace(/\s+/g,"_")+"_"+o.client.replace(/\s+/g,"_")+".pptx";
     const deck=(typeof PBDECK!=='undefined')?PBDECK.buildFullDeck(o):PB.buildDeck(o);
     await RENMAD.save(deck,fileName); o.fileName=fileName;
     msg.innerHTML='<span class="ok">✓ Deck downloaded.</span> Logging to the SPX board…';
@@ -221,12 +282,46 @@ async function doGenerate(){
     const selections=o.events.map(e=>[e.key,o.packages]);
     const quote=PBP.quote(selections,0,o.lang);
     const parent=PBB.buildParent({spKey:o.spKey,spName:o.spName,spEmail:o.spEmail,client:o.client,source:o.source,zoho:o.zoho,contacts:o.contacts,mode:(o.events.length>1?"multi":"single"),fileName:o.fileName,quote,isGeneral:false});
-    const lines=PBB.buildLines(quote);
-    let tok=''; try{ tok=await dcToken(); }catch(e){}
-    const res=await PBB.submit({token:tok, parent, lines});
-    if(res.ok) msg.innerHTML='<span class="ok">✓ Deck downloaded &amp; proposal logged to the SPX board.</span>';
-    else msg.innerHTML='<span class="err">✓ Deck downloaded, but the SPX log FAILED ('+res.reason+').</span> Nothing was lost — tell Belén; you can also add it by hand on the SPX board.';
+    const res=await boardWrite(parent,PBB.buildLines(quote));
+    msg.innerHTML=res.ok?'<span class="ok">✓ Deck downloaded &amp; proposal logged to the SPX board.</span>'
+      :'<span class="err">✓ Deck downloaded, but the SPX log FAILED ('+res.reason+').</span> Nothing lost — tell Belén; you can add it by hand on the board.';
   }catch(e){ msg.innerHTML='<span class="err">Deck downloaded, but logging errored: '+e+'</span>'; }
+}
+async function genWebinar(msg){
+  const sp=SALESPEOPLE[SP], client=document.getElementById('client').value.trim();
+  msg.textContent='Building the webinar deck…';
+  try{
+    if(typeof PBWEB==='undefined'){ msg.innerHTML='<span class="err">Webinar deck module not loaded.</span>'; return; }
+    const deck=PBWEB.buildWebinarDeck({lang:LANG,salesperson:Object.assign({key:SP},sp),brand:BRAND});
+    const fn="ATA Insights Webinar Program"+(client?(" - "+client):"")+" ("+LANG.toUpperCase()+").pptx";
+    await RENMAD.save(deck,fn);
+    msg.innerHTML='<span class="ok">✓ Webinar deck downloaded.</span> (Standalone deck — not logged to SPX.)';
+  }catch(e){ msg.innerHTML='<span class="err">Webinar deck error: '+e+'</span>'; }
+}
+async function genTalks(msg){
+  const sp=SALESPEOPLE[SP], client=document.getElementById('client').value.trim();
+  msg.textContent='Building the RENMAD Talks deck…'; let fileName;
+  try{
+    if(typeof PBTALKS==='undefined'){ msg.innerHTML='<span class="err">Talks deck module not loaded.</span>'; return; }
+    const deck=PBTALKS.buildTalksDeck({salesperson:Object.assign({key:SP},sp),client:client});
+    fileName="RENMAD Talks - Propuesta de patrocinio 2026"+(client?(" - "+client):"")+".pptx";
+    await RENMAD.save(deck,fileName);
+    msg.innerHTML='<span class="ok">✓ Talks deck downloaded.</span>';
+  }catch(e){ msg.innerHTML='<span class="err">Talks deck error: '+e+'</span>'; return; }
+  // optional board record: each selected encuentro -> one conservative line (smallest package)
+  const evs=(PB.talksEvents||[]).filter(e=>talkEvSel.has(e.key));
+  const pkgs=(PB.talksPackages||[]).filter(p=>talkPkgSel.has(p.id));
+  if(!(client&&evs.length&&pkgs.length)){ msg.innerHTML+=' <span class="hint">(not logged — needs client + encuentro + package)</span>'; return; }
+  try{
+    const lineValue=Math.min.apply(null,pkgs.map(p=>p.price));
+    const labels=pkgs.map(p=>p.name.es).join(" / ");
+    const lines=evs.map(e=>({eventKey:e.key,eventName:e.name,valueEur:lineValue,valueEdited:false,contents:labels}));
+    const quote={lines:lines,total:lines.reduce((s,l)=>s+l.valueEur,0)};
+    const parent=PBB.buildParent({spKey:SP,spName:sp.name,spEmail:sp.email,client:client,source:"",zoho:{},contacts:[],mode:"talks",fileName:fileName,quote:quote,isGeneral:false});
+    const res=await boardWrite(parent,PBB.buildLines(quote));
+    msg.innerHTML=res.ok?'<span class="ok">✓ Talks deck downloaded &amp; logged to the SPX board ('+evs.length+' encuentro line'+(evs.length>1?'s':'')+').</span>'
+      :'<span class="err">✓ Deck downloaded, SPX log FAILED ('+res.reason+').</span> Nothing lost — tell Belén.';
+  }catch(e){ msg.innerHTML='<span class="err">Deck downloaded, logging errored: '+e+'</span>'; }
 }
 
 boot(initBuilder);

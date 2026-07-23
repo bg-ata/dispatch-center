@@ -1,4 +1,4 @@
-/* RENMAD Proposal Builder — bundled libs (auto-concatenated; edit sources in renmad-builders\, not here). */
+/* RENMAD Proposal Builder - bundled libs (auto-concatenated; edit sources in renmad-builders\). */
 
 /* ===== lib\renmad-deck.js ===== */
 /* ============================================================================
@@ -1846,7 +1846,144 @@ window.PB = {
    "email": "sheetal.shamdasani@ata.email",
    "phone": "+34 630 637 276"
   }
- }
+ },
+ "talksPackages": [
+  {
+   "id": "talk_panel",
+   "group": "content",
+   "price": 4000,
+   "avail": 6,
+   "name": {
+    "en": "Sponsored Panel",
+    "es": "Panel Patrocinado"
+   },
+   "incl": {
+    "en": [
+     "Seat on a 50-min panel alongside 3–4 sector-leading companies",
+     "Positioning as a reference before the event's key audience",
+     "1 panellist pass + 2 complimentary passes",
+     "Visibility in the agenda, website and email communications"
+    ],
+    "es": [
+     "Participación en un panel de 50 min junto a 3-4 empresas líderes del sector",
+     "Posicionamiento como referente ante la audiencia clave del evento",
+     "1 pase para el panelista + 2 pases de cortesía",
+     "Visibilidad en agenda, web y comunicaciones por email"
+    ]
+   }
+  },
+  {
+   "id": "talk_presentation",
+   "group": "content",
+   "price": 5500,
+   "avail": 2,
+   "name": {
+    "en": "Individual Presentation",
+    "es": "Presentación Individual"
+   },
+   "incl": {
+    "en": [
+     "Solo 20-min slot to present your value proposition, no shared stage",
+     "Maximum brand and message exposure, undiluted",
+     "1 speaker pass + 2 complimentary passes",
+     "Visibility in the agenda, website and email communications"
+    ],
+    "es": [
+     "Espacio en solitario de 20 min para presentar tu propuesta de valor sin compartir escenario",
+     "Máxima exposición de marca y mensaje sin diluir",
+     "1 pase para el ponente + 2 pases de cortesía",
+     "Visibilidad en agenda, web y comunicaciones por email"
+    ]
+   }
+  },
+  {
+   "id": "talk_coffee",
+   "group": "branding",
+   "price": 2000,
+   "avail": 1,
+   "name": {
+    "en": "Coffee Sponsor",
+    "es": "Coffee Sponsor"
+   },
+   "incl": {
+    "en": [
+     "Exclusive signage: \"Coffee sponsored by [Company]\"",
+     "Presence in the agenda as official coffee sponsor",
+     "Inclusion in website and email marketing",
+     "Exclusive banner as Coffee Sponsor"
+    ],
+    "es": [
+     "Señalética exclusiva: \"Coffee sponsored by [Company]\"",
+     "Presencia en agenda como sponsor oficial del café",
+     "Inclusión en web y email marketing",
+     "Banner exclusivo como Coffee Sponsor"
+    ]
+   }
+  },
+  {
+   "id": "talk_lunch",
+   "group": "branding",
+   "price": 3000,
+   "avail": 1,
+   "name": {
+    "en": "Lunch Sponsor",
+    "es": "Lunch Sponsor"
+   },
+   "incl": {
+    "en": [
+     "Exclusive branding during the official lunch",
+     "Signage: \"Lunch sponsored by [Company]\"",
+     "Agenda presence and digital promotion as Lunch Sponsor",
+     "Inclusion in website and email marketing"
+    ],
+    "es": [
+     "Branding exclusivo durante el almuerzo oficial",
+     "Señalética: \"Lunch sponsored by [Company]\"",
+     "Presencia en agenda y promoción digital como Lunch Sponsor",
+     "Inclusión en web y email marketing"
+    ]
+   }
+  },
+  {
+   "id": "talk_registration",
+   "group": "branding",
+   "price": 4000,
+   "avail": 1,
+   "name": {
+    "en": "Registration Sponsor",
+    "es": "Registration Sponsor"
+   },
+   "incl": {
+    "en": [
+     "Exclusive logo on speaker and attendee lanyards/badges",
+     "Logo at the registration points (first event touchpoint)",
+     "Logo as Registration Sponsor on the event website and app"
+    ],
+    "es": [
+     "Logo exclusivo en las acreditaciones (lanyards) de ponentes y asistentes",
+     "Logo en los puntos de registro (primer contacto con el evento)",
+     "Logo como Registration Sponsor en web y app del evento"
+    ]
+   }
+  }
+ ],
+ "talksEvents": [
+  {
+   "key": "E059",
+   "name": "RENMAD Talks · BESS Invest 2026",
+   "date_es": "22 sep 2026"
+  },
+  {
+   "key": "E060",
+   "name": "RENMAD Talks · Biometano 2026",
+   "date_es": "6 oct 2026"
+  },
+  {
+   "key": "E061",
+   "name": "RENMAD Talks · Datacenters Off-Grid 2026",
+   "date_es": "10 nov 2026"
+  }
+ ]
 };
 
 
@@ -3013,5 +3150,1161 @@ window.PB = {
   }
 
   global.PBTIMELINE = { configure, applyDates, NAME_MATCH, _fmtDates: fmtDates, _matchName: matchName };
+})(window);
+
+
+/* ===== proposal\talks_deck.js ===== */
+/* ============================================================================
+   RENMAD Talks Builder  ·  browser deck generator (PptxGenJS)
+   ----------------------------------------------------------------------------
+   Port of proposal_builder/talks_deck.py to a static, dependency-free browser
+   build. Same slide SEQUENCE and copy, rendered in the browser. SPANISH only.
+
+   RENMAD Talks = the boutique half-day format: three ATA×PwC executive
+   encuentros (BESS Invest 22 sep · Biometano 6 oct · Datacenters Off-Grid
+   10 nov 2026). Brand colour = carmesí #B52030 (NOT ATA orange, NOT the big
+   decks' per-event colours). PwC is the co-host, at its Madrid HQ.
+
+   Exposes:  window.PBTALKS = { buildTalksDeck(opts) }  ->  PptxGenJS deck object
+
+   opts = {
+     salesperson: { key, name, role, email, phone }   (required-ish; falls back)
+     client:      string                              (optional; not shown on
+                                                       this deck — kept for parity)
+   }
+
+   Uses RENMAD.newDeck() (13.333 x 7.5, RENMAD_16x9). No logo/photo assets are
+   available in the browser, so brand marks are rendered as text and every
+   would-be image is a guarded fallback shape (see IMG_TRY). The TALKS packages
+   and encuentros are read from window.PB.talksPackages / window.PB.talksEvents
+   when present, else from the embedded copy below (so this file works stand-
+   alone). All the deck-specific rich copy (pitch, agenda, "bueno para", body,
+   audiencia/sesiones) lives embedded here regardless — it is not part of the
+   TALKS_PACKAGES / TALKS_EVENTS data shape.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+
+  // ---- brand palette (mirrors talks_deck.py; 6-hex, no '#') ----------------
+  var HEAD = "Montserrat", BODY = "Inter";
+  var RED = "B52030", RED_DARK = "8A1824", CHARCOAL = "1C2529", BLACK = "111618";
+  var GREY_BG = "F2F2F0", CARD_LN = "E2DFDC", BLUSH = "F7E8EA", BLUSH_TX = "D4808C";
+  var MID = "5B5F63", WHITE = "FFFFFF", ROW_ALT = "F7F6F4", SOFT = "CFD4D8";
+  var SW = 13.333, SH = 7.5;
+
+  // ---- embedded copy (fallback when window.PB.* is absent) -----------------
+  // The three encuentros. Deck-specific rich copy is ALWAYS embedded here.
+  var EVENTS3 = [
+    {
+      id: "E059", tag: "ALMACENAMIENTO", date_s: "MARTES 22 SEPTIEMBRE", name: "BESS Invest",
+      hours: "9:00 – 14:30 · Sede de PwC, Madrid",
+      kick: "MARTES 22 SEPTIEMBRE 2026 · 9:00 – 14:30 · SEDE DE PWC, MADRID",
+      sub: "Financiación y modelos de negocio para liderar el boom del BESS en 2027",
+      pitch: "El almacenamiento español ya es una clase de activo. La aprobación del mercado de capacidad " +
+             "(~9.000 M€) estrena el primer ingreso bancable del BESS, la potencia instalada se ha disparado " +
+             "tras el cero eléctrico de 2025 y el pipeline apunta a 14 GW en 2030. Siete sesiones sobre lo que " +
+             "financia — o hunde — un proyecto BESS en 2027.",
+      aud: "Inversores y fondos · desarrolladores e IPPs · operadores · tecnólogos · asesores legales y financieros",
+      ses: "Mercado de capacidad · compra-venta de proyectos · merchant y saturación · grid-forming · optimizer · tolling y deuda",
+      agenda: [
+        ["9:00", "Bienvenida e inauguración (ATA + PwC)", "—"],
+        ["9:15", "Suelo firme · mercado de capacidad", "Fireside chat"],
+        ["9:35", "Se vende · compra-venta de proyectos", "Panel"],
+        ["10:05", "Márgenes a dieta · merchant y saturación", "Panel"],
+        ["10:55", "Del vaivén al aplomo · grid-forming", "Panel"],
+        ["11:45", "Café networking · encuestas en directo", "Pausa"],
+        ["12:15", "El hardware almacena, el software gana · optimizer", "Ponencia"],
+        ["12:35", "El peaje de la tranquilidad · tolling y deuda", "Masterclass"],
+        ["13:25", "Agenda cargada · cierre y hoja de ruta 2027", "Cierre"],
+        ["13:45", "Networking lunch", "—"]
+      ],
+      note: "Inicio 9:00 · un único descanso a media mañana · cierre con networking lunch en la sede de PwC."
+    },
+    {
+      id: "E060", tag: "GASES RENOVABLES", date_s: "MARTES 6 OCTUBRE", name: "Biometano",
+      hours: "9:15 – 13:30 · Sede de PwC, Madrid",
+      kick: "MARTES 6 OCTUBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
+      sub: "Del residuo al negocio: cuota obligatoria, digestato y financiación del gas verde",
+      pitch: "España estrena demanda garantizada por ley: el RDL 7/2026 abre la puerta a cuotas obligatorias " +
+             "de biometano con senda creciente hasta 2035. El digestato pasa de residuo a producto de valor y " +
+             "la financiación por fin fluye, con más de 3.300 M€ comprometidos en 2024-2025 y 50+ plantas en " +
+             "desarrollo. Una mañana para pasar del residuo al negocio.",
+      aud: "Promotores de plantas · gasistas y comercializadoras · agroindustria · banca y fondos · asesores",
+      ses: "Cuota obligatoria · digestato de valor · garantías de origen · sustrato · financiación de plantas",
+      agenda: [
+        ["9:15", "Bienvenida e inauguración (ATA + PwC)", "—"],
+        ["9:30", "Obligados a crecer · cuota obligatoria", "Panel"],
+        ["10:20", "El oro marrón · digestato de valor", "Panel estrella"],
+        ["11:10", "Certificar para cobrar · garantías de origen", "Ponencia"],
+        ["11:30", "Pausa activa con café · encuestas en directo", "Pausa"],
+        ["11:45", "Sin materia, no hay gas · sustrato", "Ponencia"],
+        ["12:05", "Del residuo al balance · financiación", "Masterclass"],
+        ["12:55", "Networking lunch", "—"]
+      ],
+      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking lunch en la sede de PwC."
+    },
+    {
+      id: "E061", tag: "DATACENTERS & IA", date_s: "MARTES 10 NOVIEMBRE", name: "Datacenters Off-Grid",
+      hours: "9:15 – 13:30 · Sede de PwC, Madrid",
+      kick: "MARTES 10 NOVIEMBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
+      sub: "Off-grid, energía firme y financiación para el boom de los datacenters de IA",
+      pitch: "Construir un datacenter lleva 12-18 meses; conectarlo a la red, entre 5 y 7 años. Con hasta la " +
+             "mitad del pipeline español en riesgo por falta de punto de conexión, generar la energía in situ " +
+             "deja de ser exótico: ya hay ~2 GW behind-the-meter en marcha y 90 GW anunciados en EE. UU. Una " +
+             "mañana sobre cómo alimentar — y financiar — la nube de la IA.",
+      aud: "Hyperscalers y operadores de DC · promotores energéticos · fondos de infraestructura · utilities · asesores",
+      ses: "Off-grid y cola de conexión · campus a gigavatio · energía firme 24/7 · España, hub del dato · financiación",
+      agenda: [
+        ["9:15", "Bienvenida e inauguración (ATA + PwC)", "—"],
+        ["9:30", "La cola que asfixia a la nube · off-grid", "Panel"],
+        ["10:20", "El valle de los datos · campus a gigavatio", "Panel estrella"],
+        ["11:10", "El reto de los 24/7 · energía firme", "Ponencia"],
+        ["11:30", "Pausa activa con café · encuestas en directo", "Pausa"],
+        ["11:45", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
+        ["12:05", "Energía propia, riesgo propio · financiación", "Masterclass"],
+        ["12:55", "Networking lunch", "—"]
+      ],
+      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking lunch en la sede de PwC."
+    }
+  ];
+
+  // The five packages. Numeric price/avail can be overridden by PB.talksPackages
+  // (matched by id). All the rich sponsorship copy stays embedded.
+  var PACKAGES = [
+    {
+      id: "talk_panel", group: "content", name: "Panel Patrocinado", price: 4000, avail: 6,
+      tipo: "Contenido", tag: "Comparte protagonismo con los líderes del sector",
+      bueno: "empresas que buscan visibilidad y credibilidad participando en la conversación junto a otros referentes del sector.",
+      body: "Un asiento en uno de los paneles de la agenda: 50 minutos de debate junto a 3-4 empresas más, " +
+            "ante la audiencia clave del encuentro. Es la vía más natural para asociar su marca a una conversación " +
+            "de alto nivel sin asumir el protagonismo — y el coste — de una presentación en solitario.",
+      incl: [
+        "Participación en un panel de 50 min con 3-4 empresas más",
+        "1 pase para el panelista",
+        "2 pases complementarios",
+        "Visibilidad en agenda, web y comunicaciones por email"
+      ]
+    },
+    {
+      id: "talk_presentation", group: "content", name: "Presentación Individual", price: 5500, avail: 2,
+      tipo: "Contenido", tag: "Tu mensaje, tu escenario, sin compartir foco",
+      bueno: "empresas que quieren presentar un producto, caso de éxito o visión sin diluir su mensaje entre otros ponentes.",
+      body: "20 minutos en solitario sobre el escenario principal para presentar tu propuesta de valor tal y como " +
+            "quieres contarla. La máxima exposición de marca y mensaje que ofrece el encuentro, con solo dos " +
+            "espacios disponibles.",
+      incl: [
+        "Presentación individual de 20 min",
+        "1 pase para el ponente",
+        "2 pases complementarios",
+        "Visibilidad en agenda, web y comunicaciones por email"
+      ]
+    },
+    {
+      id: "talk_coffee", group: "branding", name: "Coffee Sponsor", price: 2000, avail: 1,
+      tipo: "Branding · add-on de contenido", tag: "El punto de encuentro informal de la mañana",
+      bueno: "empresas que buscan visibilidad constante y presencia de marca en el momento más social de la mañana.",
+      body: "Su marca asociada al descanso para el café — el momento en que los asistentes conversan y hacen " +
+            "networking de forma distendida. Señalética exclusiva y presencia visual durante toda la pausa.",
+      incl: [
+        "Branding como: “Coffee sponsored by [Company]”",
+        "Presencia en agenda como sponsor oficial del café",
+        "Inclusión en web y email marketing",
+        "Banner exclusivo como Coffee Sponsor"
+      ]
+    },
+    {
+      id: "talk_lunch", group: "branding", name: "Lunch Sponsor", price: 3000, avail: 1,
+      tipo: "Branding · add-on de contenido", tag: "Cierre de marca en el momento de mayor permanencia",
+      bueno: "empresas que buscan visibilidad prolongada durante el momento de mayor tiempo compartido entre asistentes.",
+      body: "Branding exclusivo durante el almuerzo oficial de cierre del encuentro, cuando los asistentes " +
+            "permanecen más tiempo juntos. Presencia visual asociada a este momento clave de la jornada.",
+      incl: [
+        "Branding exclusivo durante la comida",
+        "Branding como: “Lunch sponsored by [Company]”",
+        "Presencia en agenda y promoción digital como Lunch Sponsor",
+        "Inclusión en web y email marketing"
+      ]
+    },
+    {
+      id: "talk_registration", group: "branding", name: "Registration Sponsor", price: 4000, avail: 1,
+      tipo: "Branding · add-on de contenido", tag: "La primera y última impresión de marca",
+      bueno: "marcas que quieren ser lo primero que vea cada asistente — desde la acreditación hasta el final del encuentro.",
+      body: "Presencia exclusiva en el punto de entrada al encuentro: acreditaciones, lanyards y mostradores de " +
+            "registro. La única marca visible en el primer contacto de cada asistente con el encuentro.",
+      incl: [
+        "Logo exclusivo en las acreditaciones (lanyards) de ponentes y asistentes",
+        "Logo en los puntos de registro (primer contacto con el encuentro)",
+        "Logo como Registration Sponsor en web y app del encuentro"
+      ]
+    }
+  ];
+
+  var BENEFITS = [
+    ["Alcance directo", "Contacto cara a cara con decisores y responsables de presupuesto, en una sala reducida donde ninguna marca pasa desapercibida."],
+    ["Posicionamiento de marca", "Su logo presente en toda la comunicación del encuentro: agenda, web y email marketing de la convocatoria."],
+    ["Generación de oportunidades", "Una audiencia cualificada y pre-agendada para abrir conversaciones comerciales in situ."],
+    ["Liderazgo de conversación", "Paneles y presentaciones que le posicionan como referente en su vertical, junto al co-host PwC."]
+  ];
+
+  var SALESPEOPLE_FALLBACK = {
+    cintia:  { key: "cintia",  name: "Cintia Hernández",   role: "Desarrollo de Negocio · RENMAD Events", email: "cintia.hernandez@ata.email",   phone: "+34 605 40 85 93" },
+    ian:     { key: "ian",     name: "Ian Casares",        role: "Desarrollo de Negocio · RENMAD Events", email: "ian.casares@ata.email",        phone: "+34 665 161 069" },
+    sheetal: { key: "sheetal", name: "Sheetal Shamdasani", role: "Directora de Desarrollo de Negocio y Patrocinios", email: "sheetal.shamdasani@ata.email", phone: "+34 630 637 276" }
+  };
+
+  // ---- helpers -------------------------------------------------------------
+  function money(n) { return "€ " + Number(n).toLocaleString("es-ES"); }
+  function availLabel(n) { return n + (Number(n) === 1 ? " DISPONIBLE" : " DISPONIBLES"); }
+  function espacios(n) { return n + (Number(n) === 1 ? " espacio" : " espacios"); }
+
+  // Merge embedded packages with PB.talksPackages (price/avail/name override).
+  function resolvePackages(PB) {
+    var pb = PB && PB.talksPackages;
+    if (!pb || !pb.length) return PACKAGES;
+    var byId = {};
+    pb.forEach(function (p) { if (p && p.id) byId[p.id] = p; });
+    return PACKAGES.map(function (base) {
+      var o = byId[base.id];
+      if (!o) return base;
+      var merged = {};
+      for (var k in base) merged[k] = base[k];
+      if (o.price != null) merged.price = o.price;
+      if (o.avail != null) merged.avail = o.avail;
+      // PB name is {en,es}; keep title-case es when present
+      if (o.name && o.name.es) merged.name = o.name.es;
+      return merged;
+    });
+  }
+  // Encuentros: embedded is the rich source; PB.talksEvents (key/name/date_es)
+  // is honoured only for the display name if it differs — dates already match.
+  function resolveEvents(PB) {
+    return EVENTS3; // embedded copy is strictly richer; PB adds nothing renderable
+  }
+
+  function buildTalksDeck(opts) {
+    opts = opts || {};
+    var PB = global.PB || {};
+    var RENMAD = global.RENMAD;
+    if (!RENMAD || !RENMAD.newDeck) throw new Error("RENMAD deck library (lib/renmad-deck.js) not loaded");
+
+    var pkgs = resolvePackages(PB);
+    var events = resolveEvents(PB);
+
+    var sp = opts.salesperson;
+    if (typeof sp === "string") sp = SALESPEOPLE_FALLBACK[sp];
+    if (!sp || !sp.name) sp = SALESPEOPLE_FALLBACK.cintia;
+
+    var pptx = RENMAD.newDeck();   // 13.333 x 7.5, RENMAD_16x9 layout
+
+    // ---- low-level slide helpers (mirror deck.js) --------------------------
+    function tx(s, x, y, w, h, t, size, color, bold, font, align, valign, extra) {
+      var o = {
+        x: x, y: y, w: w, h: h, fontFace: font || BODY, fontSize: size || 14,
+        color: color || CHARCOAL, bold: !!bold, align: align || "left", valign: valign || "top"
+      };
+      if (extra) for (var k in extra) o[k] = extra[k];
+      s.addText(t, o);
+    }
+    function rc(s, x, y, w, h, fill, opts2) {
+      opts2 = opts2 || {};
+      var o = { x: x, y: y, w: w, h: h };
+      if (fill === null || fill === undefined) o.fill = { color: "FFFFFF", transparency: 100 };
+      else o.fill = { color: fill };
+      if (opts2.line) { o.line = { color: opts2.line, width: opts2.lw || 1 }; if (opts2.dash) o.line.dashType = "dash"; }
+      if (opts2.rad != null) o.rectRadius = opts2.rad;
+      s.addShape(opts2.rad != null ? "roundRect" : "rect", o);
+    }
+    function ell(s, x, y, d, fill, extra) {
+      var o = { x: x, y: y, w: d, h: d, fill: { color: fill } };
+      if (extra) for (var k in extra) o[k] = extra[k];
+      s.addShape("ellipse", o);
+    }
+    // Guarded image add (no assets in browser -> always uses the fallback).
+    function IMG_TRY(s, x, y, w, h, dataUrl, fallback) {
+      try {
+        if (dataUrl) {
+          s.addImage({ data: dataUrl, x: x, y: y, w: w, h: h, sizing: { type: "cover", w: w, h: h } });
+          return true;
+        }
+      } catch (e) { /* fall through */ }
+      if (fallback) fallback();
+      return false;
+    }
+
+    // Text wordmark stand-in for the Talks logo (no image assets in browser).
+    // dark=true -> for placing on dark backgrounds.
+    function logoMark(s, x, y, w, dark) {
+      var h = Math.max(0.28, w * 0.20);
+      s.addText([
+        { text: "RENMAD ", options: { color: dark ? WHITE : CHARCOAL, bold: true } },
+        { text: "Talks", options: { color: RED, bold: true } }
+      ], { x: x, y: y, w: w, h: h, fontFace: HEAD, fontSize: Math.max(11, w * 6.5),
+           align: "left", valign: "middle", charSpacing: 0.5 });
+    }
+
+    function footer(s, showLogo) {
+      tx(s, 0.6, 7.02, 8.0, 0.32, "OPORTUNIDADES DE PATROCINIO · 2026", 8.5, MID, false, HEAD,
+        "left", "middle", { charSpacing: 2 });
+      if (showLogo !== false) logoMark(s, SW - 0.6 - 1.55, SH - 0.5, 1.55, false);
+    }
+    function kicker(s, x, y, text, size) {
+      tx(s, x, y, 12.0, 0.3, text, size || 11, RED, true, HEAD, "left", "top", { charSpacing: 2.4 });
+    }
+
+    // ===== 1 · PORTADA ======================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CHARCOAL };
+      logoMark(s, 0.6, 0.5, 2.5, true);
+      tx(s, 0.6, 1.72, 12.0, 0.35, "OPORTUNIDADES DE PATROCINIO · 2026", 13, BLUSH_TX, true, HEAD,
+        "left", "top", { charSpacing: 2.6 });
+      tx(s, 0.6, 2.12, 12.2, 1.55, "Tres encuentros ejecutivos.\nMedia jornada. Un único tema, a fondo.",
+        32, WHITE, true, HEAD, "left", "top", { lineSpacingMultiple: 1.05 });
+      // cover_band.png -> carmesí band stand-in
+      rc(s, 0, 3.95, SW, 0.9, RED);
+      tx(s, 0.6, 5.02, 12.2, 0.4, "Madrid · Septiembre – Noviembre 2026 · Co-host: PwC", 14, SOFT, false, BODY);
+    })();
+
+    // ===== 2 · QUÉ ES RENMAD TALKS =========================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: WHITE };
+      kicker(s, 0.6, 0.55, "QUÉ ES RENMAD TALKS");
+      tx(s, 0.6, 0.92, 12.1, 0.7, "El formato pequeño de la casa grande", 26, CHARCOAL, true, HEAD);
+      tx(s, 0.6, 1.7, 11.9, 1.25,
+        "RENMAD Talks es el nuevo formato de encuentros ejecutivos de RENMAD: media jornada, una sala " +
+        "curada y un único tema, a fondo. La misma marca de los eventos RENMAD, en formato boutique — " +
+        "co-organizado con PwC como co-host, en su sede de Madrid.",
+        13.5, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
+      var cards = [
+        ["½ JORNADA", "Una mañana de martes, de 9:00 a primera hora de la tarde. Alta densidad de decisión, cero paja."],
+        ["1 TEMA", "Una sala curada y un único tema tratado a fondo, con las empresas que lo están moviendo."],
+        ["AFORO LIMITADO", "Formato ejecutivo: plazas presenciales limitadas y opción de asistencia online."]
+      ];
+      var cw = 3.85, gap = 0.28, x0 = 0.6, cy = 3.15;
+      cards.forEach(function (c, i) {
+        var x = x0 + i * (cw + gap);
+        rc(s, x, cy, cw, 2.35, GREY_BG, { rad: 0.05 });
+        tx(s, x + 0.3, cy + 0.32, cw - 0.6, 0.4, c[0], 15, RED, true, HEAD, "left", "top", { charSpacing: 1.2 });
+        tx(s, x + 0.3, cy + 0.85, cw - 0.6, 1.3, c[1], 12.5, CHARCOAL, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
+      });
+      s.addText([
+        { text: "Co-host: ", options: { color: MID, bold: false } },
+        { text: "PwC", options: { color: CHARCOAL, bold: true } },
+        { text: "   ·   Sede de PwC, Madrid   ·   Encuentros en español", options: { color: MID, bold: false } }
+      ], { x: 0.6, y: 5.85, w: 11.9, h: 0.7, fontFace: BODY, fontSize: 13, valign: "top" });
+      footer(s);
+    })();
+
+    // ===== 3 · POR QUÉ PATROCINAR ==========================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GREY_BG };
+      kicker(s, 0.6, 0.55, "POR QUÉ PATROCINAR");
+      tx(s, 0.6, 0.92, 12.1, 0.7, "Impacto antes, durante y después del encuentro", 28, CHARCOAL, true, HEAD);
+      var cw = 5.95, ch = 2.1, gx = 0.25, gy = 0.25;
+      BENEFITS.forEach(function (b, i) {
+        var x = 0.6 + (i % 2) * (cw + gx), y = 2.0 + Math.floor(i / 2) * (ch + gy);
+        rc(s, x, y, cw, ch, WHITE, { line: CARD_LN, lw: 0.75, rad: 0.05 });
+        ell(s, x + 0.3, y + 0.32, 0.42, RED);
+        tx(s, x + 0.3, y + 0.32, 0.42, 0.42, String(i + 1), 15, WHITE, true, HEAD, "center", "middle");
+        tx(s, x + 0.95, y + 0.36, cw - 1.25, 0.4, b[0], 15.5, CHARCOAL, true, HEAD);
+        tx(s, x + 0.95, y + 0.88, cw - 1.25, 1.1, b[1], 12, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.22 });
+      });
+      footer(s);
+    })();
+
+    // ===== 4 · LAS TRES CITAS ==============================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GREY_BG };
+      kicker(s, 0.6, 0.55, "OPORTUNIDADES 2026");
+      tx(s, 0.6, 0.92, 12.1, 0.7, "Tres citas, tres tecnologías", 28, CHARCOAL, true, HEAD);
+      var cw = 3.85, gap = 0.28, x0 = 0.6, cy = 1.95, ch = 4.35;
+      events.forEach(function (ev, i) {
+        var x = x0 + i * (cw + gap);
+        rc(s, x, cy, cw, ch, WHITE, { line: CARD_LN, lw: 0.75, rad: 0.035 });
+        rc(s, x + 0.3, cy + 0.32, 1.9, 0.34, BLUSH, { rad: 0.5 });
+        tx(s, x + 0.3, cy + 0.355, 1.9, 0.27, ev.tag, 8.5, RED_DARK, true, HEAD, "center", "top", { charSpacing: 1.5 });
+        tx(s, x + 0.3, cy + 0.92, cw - 0.6, 0.3, ev.date_s, 12, RED, true, HEAD, "left", "top", { charSpacing: 1 });
+        tx(s, x + 0.3, cy + 1.28, cw - 0.6, 0.6, ev.name, 21, CHARCOAL, true, HEAD);
+        tx(s, x + 0.3, cy + 1.95, cw - 0.6, 1.5, ev.sub, 12.5, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
+        tx(s, x + 0.3, cy + 3.6, cw - 0.6, 0.5, ev.hours, 11, CHARCOAL);
+      });
+      tx(s, 0.6, 6.55, 12.1, 0.35,
+        "Cada encuentro se patrocina por separado — los paquetes son idénticos en los tres.", 12, MID);
+      footer(s);
+    })();
+
+    // ===== 5 · PAQUETES DE UN VISTAZO ======================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: WHITE };
+      kicker(s, 0.6, 0.55, "LOS PAQUETES DE UN VISTAZO");
+      tx(s, 0.6, 0.92, 12.1, 0.7, "Compara las oportunidades disponibles", 28, CHARCOAL, true, HEAD);
+      var cols = [[0.6, 4.3], [4.95, 4.1], [9.1, 1.7], [10.9, 1.85]];
+      var heads = ["PAQUETE", "TIPO", "DISPONIBLES", "PRECIO"];
+      var hy = 2.0;
+      heads.forEach(function (name, i) {
+        tx(s, cols[i][0], hy, cols[i][1], 0.3, name, 10, RED_DARK, true, HEAD, "left", "top", { charSpacing: 1.6 });
+      });
+      rc(s, 0.6, hy + 0.34, 12.15, 0.025, RED);
+      var ry = hy + 0.52, rh = 0.62;
+      pkgs.forEach(function (pk, i) {
+        if (i % 2 === 1) rc(s, 0.6, ry - 0.08, 12.15, rh, ROW_ALT);
+        tx(s, cols[0][0] + 0.06, ry, cols[0][1], 0.4, pk.name, 14, CHARCOAL, true, HEAD);
+        tx(s, cols[1][0], ry + 0.03, cols[1][1], 0.4, pk.tipo, 12, MID);
+        tx(s, cols[2][0], ry + 0.03, cols[2][1], 0.4, espacios(pk.avail), 12, CHARCOAL);
+        tx(s, cols[3][0], ry - 0.02, cols[3][1], 0.4, money(pk.price), 16, BLACK, true, HEAD);
+        ry += rh;
+      });
+      tx(s, 0.6, ry + 0.18, 12.1, 0.6,
+        "Precios por encuentro, impuestos no incluidos. Los paquetes de branding pueden contratarse " +
+        "como add-on de un paquete de contenido.", 11.5, MID);
+      footer(s);
+    })();
+
+    // ===== 6–10 · UN SLIDE POR PAQUETE =====================================
+    pkgs.forEach(function (pk) {
+      var s = pptx.addSlide(); s.background = { color: WHITE };
+      tx(s, 0.6, 0.6, 9.0, 0.6, String(pk.name).toUpperCase(), 26, RED, true, HEAD);
+      tx(s, 0.6, 1.25, 9.0, 0.45, pk.tag, 15, MID, false, HEAD);
+      logoMark(s, SW - 0.6 - 1.85, 0.6, 1.85, false);
+      // price block
+      var bx = 10.55, bw = 2.2, bh = 1.35, by = 5.35;
+      rc(s, bx, by, bw, bh, BLACK, { rad: 0.09 });
+      tx(s, bx, by + 0.22, bw, 0.6, money(pk.price), 26, WHITE, true, HEAD, "center");
+      tx(s, bx, by + 0.9, bw, 0.3, availLabel(pk.avail), 9.5, BLUSH_TX, true, HEAD, "center", "top", { charSpacing: 1.8 });
+      // "bueno para" pill
+      rc(s, 0.6, 2.25, 12.15, 1.0, BLUSH, { rad: 0.08 });
+      s.addText([
+        { text: "BUENO PARA   ", options: { color: RED_DARK, bold: true, fontFace: HEAD } },
+        { text: pk.bueno, options: { color: CHARCOAL, bold: false, fontFace: BODY } }
+      ], { x: 0.9, y: 2.47, w: 11.6, h: 0.6, fontFace: BODY, fontSize: 13, valign: "top", lineSpacingMultiple: 1.2 });
+      tx(s, 0.6, 3.6, 12.0, 1.15, pk.body, 13.5, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.3 });
+      tx(s, 0.6, 4.85, 4.0, 0.35, "QUÉ INCLUYE", 11, RED, true, HEAD, "left", "top", { charSpacing: 2 });
+      var iy = 5.25;
+      pk.incl.forEach(function (it) {
+        s.addText([
+          { text: "✓  ", options: { color: RED, bold: true, fontFace: HEAD } },
+          { text: it, options: { color: CHARCOAL, bold: false, fontFace: BODY } }
+        ], { x: 0.6, y: iy, w: 9.5, h: 0.35, fontFace: BODY, fontSize: 12.5, valign: "top" });
+        iy += 0.38;
+      });
+      footer(s, false);
+    });
+
+    // ===== 11–16 · EVENTO + AGENDA ×3 ======================================
+    events.forEach(function (ev) {
+      // ---- event slide
+      var s = pptx.addSlide(); s.background = { color: WHITE };
+      var iw = 5.7, ih = 2.3, ix = SW - 0.6 - iw;
+      // image top-right (no asset -> branded charcoal panel with the tag)
+      IMG_TRY(s, ix, 0.6, iw, ih, null, function () {
+        rc(s, ix, 0.6, iw, ih, CHARCOAL, { rad: 0.04 });
+        rc(s, ix + 0.28, 0.9, 2.4, 0.34, RED, { rad: 0.5 });
+        tx(s, ix + 0.28, 0.935, 2.4, 0.27, ev.tag, 8.5, WHITE, true, HEAD, "center", "top", { charSpacing: 1.5 });
+        tx(s, ix + 0.28, 1.45, iw - 0.56, 0.7, ev.name, 20, WHITE, true, HEAD, "left", "middle");
+      });
+      var wL = ix - 0.6 - 0.45;
+      tx(s, 0.6, 0.62, wL, 0.65, ev.kick, 10.5, RED, true, HEAD, "left", "top", { charSpacing: 1.6, lineSpacingMultiple: 1.25 });
+      tx(s, 0.6, 1.3, wL, 0.7, ev.name, 29, CHARCOAL, true, HEAD);
+      tx(s, 0.6, 2.02, wL, 0.95, ev.sub, 14, RED_DARK, true, HEAD, "left", "top", { lineSpacingMultiple: 1.12 });
+      tx(s, 0.6, 2.98, 12.15, 1.0, ev.pitch, 13, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.22 });
+      rc(s, 0.6, 4.12, 12.15, 1.3, GREY_BG, { rad: 0.07 });
+      var yy = 4.38;
+      [["AUDIENCIA", ev.aud], ["SESIONES", ev.ses]].forEach(function (pair) {
+        tx(s, 0.95, yy, 1.55, 0.3, pair[0], 10, RED, true, HEAD, "left", "top", { charSpacing: 1.5 });
+        tx(s, 2.6, yy - 0.02, 9.8, 0.4, pair[1], 11.5, CHARCOAL, false, BODY, "left", "top", { lineSpacingMultiple: 1.2 });
+        yy += 0.62;
+      });
+      tx(s, 0.6, 5.66, 11.0, 0.35, "Agenda completa en el siguiente slide →", 10.5, MID);
+      footer(s);
+
+      // ---- agenda slide
+      var a = pptx.addSlide(); a.background = { color: WHITE };
+      kicker(a, 0.6, 0.5, ev.name.toUpperCase() + " · AGENDA DE UN VISTAZO");
+      tx(a, 0.6, 0.87, 12.1, 0.6, ev.sub, 18, CHARCOAL, true, HEAD);
+      var acols = [[0.6, 1.15], [1.95, 8.3], [10.45, 2.3]];
+      var aheads = ["HORA", "BLOQUE", "FORMATO"];
+      var ahy = 1.75;
+      aheads.forEach(function (name, i) {
+        tx(a, acols[i][0], ahy, acols[i][1], 0.3, name, 9.5, RED_DARK, true, HEAD, "left", "top", { charSpacing: 1.6 });
+      });
+      rc(a, 0.6, ahy + 0.32, 12.15, 0.022, RED);
+      var arh = 0.44, ary = ahy + 0.44;
+      ev.agenda.forEach(function (row, i) {
+        var h = row[0], b = row[1], f = row[2];
+        if (i % 2 === 1) rc(a, 0.6, ary - 0.05, 12.15, arh, ROW_ALT);
+        tx(a, acols[0][0] + 0.06, ary, acols[0][1], 0.3, h, 11.5, RED, true, HEAD);
+        tx(a, acols[1][0], ary, acols[1][1], 0.3, b, 12, CHARCOAL, f === "Panel estrella", BODY);
+        tx(a, acols[2][0], ary, acols[2][1], 0.3, f, 11, MID);
+        ary += arh;
+      });
+      tx(a, 0.6, ary + 0.12, 12.1, 0.35, ev.note, 11, MID);
+      footer(a);
+    });
+
+    // ===== 17 · HABLEMOS ===================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CHARCOAL };
+      var panelW = 4.6;
+      // salesperson photo (no asset in browser -> carmesí gradient-ish panel)
+      IMG_TRY(s, SW - panelW, 0, panelW, SH, null, function () {
+        rc(s, SW - panelW, 0, panelW, SH, RED_DARK);
+        ell(s, SW - panelW - 0.9, 0.6, 0.7, RED);
+        ell(s, SW - panelW - 0.4, 1.5, 0.42, BLUSH_TX);
+      });
+      tx(s, 0.6, 2.1, 7.6, 0.35, "HABLEMOS", 13, BLUSH_TX, true, HEAD, "left", "top", { charSpacing: 2.6 });
+      tx(s, 0.6, 2.55, 7.7, 1.4, "¿Hablamos de tu próximo RENMAD Talk?", 30, WHITE, true, HEAD,
+        "left", "top", { lineSpacingMultiple: 1.08 });
+      tx(s, 0.6, 3.95, 7.4, 0.5,
+        "Para preguntas, comentarios o para reservar tu paquete, escríbeme directamente.", 14, SOFT);
+      s.addText([
+        { text: sp.name, options: { color: WHITE, bold: true, fontFace: HEAD, breakLine: true } },
+        { text: sp.phone, options: { color: SOFT, bold: false, fontFace: BODY, breakLine: true, hyperlink: { url: "tel:" + String(sp.phone).replace(/\s/g, "") } } },
+        { text: sp.email, options: { color: SOFT, bold: false, fontFace: BODY, hyperlink: { url: "mailto:" + sp.email } } }
+      ], { x: 0.6, y: 4.75, w: 7.4, h: 1.3, fontFace: BODY, fontSize: 16, valign: "top", paraSpaceAfter: 6 });
+      logoMark(s, 0.6, 6.35, 1.6, true);
+      tx(s, 5.6, 6.75, 2.55, 0.35, "Co-host: PwC", 12, SOFT, false, BODY, "right");
+    })();
+
+    return pptx;
+  }
+
+  global.PBTALKS = { buildTalksDeck: buildTalksDeck };
+})(window);
+
+
+/* ===== proposal\webinar_deck.js ===== */
+/* ============================================================================
+   RENMAD / ATA Insights  ·  Webinar Program deck  ·  browser build (PptxGenJS)
+   ----------------------------------------------------------------------------
+   Port of proposal_builder/webinar_deck.py to a static, dependency-free browser
+   build. Same slide SEQUENCE and copy (EN/ES), rendered in the browser with the
+   RENMAD newDeck() 16:9 layout. This is the STANDALONE Webinar Program pitch —
+   there are NO event packages in this deck.
+
+   Exposes:  window.PBWEB = { buildWebinarDeck(opts) }  ->  PptxGenJS deck object
+
+   opts = {
+     lang:        'en' | 'es'
+     salesperson: { key, name, role:{en,es}, email, phone }   (optional)
+     brand:       { ok, title, description, images:[{dataUrl}] } (optional, web-extractor)
+   }
+
+   Client logo -> brand.images[0] if present, else omitted gracefully.
+   Image assets from the python deck (cover screenshot, icon PNGs, world map,
+   logo wall, salesperson photo, ATA logo) are NOT available in the browser, so
+   they are recreated with PptxGenJS shapes / text stand-ins. Copy embedded here
+   (mirrors webinar_deck.py STR) rather than in data.js.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+
+  // ---- fonts (browser house = Montserrat / Inter) --------------------------
+  var HEAD = "Montserrat", BODY = "Inter";
+
+  // ---- palette (mirrors webinar_deck.py) -----------------------------------
+  var CHAR  = "222225", CHAR2 = "2E2E32";
+  var SOFT  = "ECECEC", SOFTD = "DCDCDC", CREAM = "ECECEC", WHITE = "FFFFFF";
+  var ORANGE = "FF4A00", ORANGE2 = "FF914D", ORANGED = "E03C00";
+  var GREEN = "2E7D32", TEAL = "00A6A0", INDIGO = "5B47C9", GOLD = "F2A900";
+  var INK = "222225", MUTE = "555558", LINE = "DCDCDC";
+  var DEEP = "101618";
+  var CYCLE = ["FF4A00", "00A6A0", "2E7D32", "5B47C9", "F2A900"];
+  // official RENMAD sector colours (used on the "webinars in action" rows)
+  var STORAGE_C = "E84830", H2_C = "3E8C28", BIO_C = "4C3079", DC_C = "29ACE3", REN_C = "FF4A00";
+  var WEBEX_COLS = [STORAGE_C, H2_C, BIO_C, DC_C, REN_C];
+
+  var SW = 13.333, SH = 7.5;
+
+  // subtle soft shadow for cards
+  var SHADOW = { type: "outer", color: "9AA0A6", blur: 7, offset: 3, angle: 90, opacity: 0.26 };
+
+  // ---- low-level helpers ---------------------------------------------------
+  function tx(s, x, y, w, h, t, size, color, bold, font, align, valign, extra) {
+    var o = { x: x, y: y, w: w, h: h, fontFace: font || BODY, fontSize: size || 14,
+      color: color || INK, bold: !!bold, align: align || "left", valign: valign || "top" };
+    if (extra) for (var k in extra) o[k] = extra[k];
+    s.addText(t, o);
+  }
+  function rc(s, x, y, w, h, fill, opts) {
+    opts = opts || {};
+    var o = { x: x, y: y, w: w, h: h };
+    if (fill === null || fill === undefined) o.fill = { color: "FFFFFF", transparency: 100 };
+    else o.fill = { color: fill };
+    if (opts.line) { o.line = { color: opts.line, width: opts.lw || 1 }; }
+    if (opts.rad != null) o.rectRadius = opts.rad;
+    if (opts.shadow) o.shadow = SHADOW;
+    s.addShape(opts.rad != null ? "roundRect" : "rect", o);
+  }
+  // ellipse whose CENTER is (cx,cy) with diameter d, optional centred glyph
+  function disc(s, cx, cy, d, fill, glyph, gcolor, gsize, gfont) {
+    s.addShape("ellipse", { x: cx - d / 2, y: cy - d / 2, w: d, h: d, fill: { color: fill } });
+    if (glyph) tx(s, cx - d / 2, cy - d / 2, d, d, glyph, gsize || 16,
+      gcolor || WHITE, true, gfont || HEAD, "center", "middle");
+  }
+  function addImg(s, x, y, w, h, dataUrl, sizingType) {
+    try {
+      if (!dataUrl) return false;
+      s.addImage({ data: dataUrl, x: x, y: y, w: w, h: h,
+        sizing: { type: sizingType || "cover", w: w, h: h } });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ==========================================================================
+  function buildWebinarDeck(opts) {
+    opts = opts || {};
+    var RENMAD = global.RENMAD;
+    var lang = opts.lang === "es" ? "es" : "en";
+    var S = STR[lang];
+    var get = function (k) { return S[k] != null ? S[k] : ""; };
+
+    var DEFAULT_SP = {
+      name: "Cintia Hernández",
+      role: { en: "Business Development · RENMAD Events", es: "Desarrollo de Negocio · RENMAD Events" },
+      email: "cintia.hernandez@ata.email", phone: "+34 605 40 85 93",
+    };
+    var sp = opts.salesperson && opts.salesperson.name ? opts.salesperson : DEFAULT_SP;
+
+    var brand = opts.brand && opts.brand.ok ? opts.brand : null;
+    var brandImgs = (brand && brand.images) ? brand.images.map(function (i) { return i && i.dataUrl; }).filter(Boolean) : [];
+    var CLIENT_LOGO = brandImgs.length ? brandImgs[0] : null;
+
+    var pptx = RENMAD.newDeck();   // 13.333 x 7.5, RENMAD_16x9 layout
+
+    // small "ATA INSIGHTS" mark top-right on light content slides (logo asset n/a)
+    function logo_tr(s) { tx(s, 10.0, 0.52, 2.78, 0.34, "ATA INSIGHTS", 11, MUTE, true, HEAD, "right"); }
+    function content_header(s, title, sub) {
+      tx(s, 0.7, 0.62, 11.9, 0.9, title, 33, INK, true, HEAD);
+      if (sub) tx(s, 0.72, 1.28, 11.9, 0.5, sub, 14.5, MUTE, false, BODY);
+      logo_tr(s);
+    }
+
+    // ===== 1 COVER =========================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CHAR };
+      // right "hero" region — screenshot asset n/a, use a lifted charcoal panel
+      rc(s, 5.0, 0, 8.34, SH, CHAR2);
+      rc(s, 5.0, 0, 0.06, SH, ORANGE);            // orange seam (echoes python fade edge)
+      // decorative offset discs (subtle brand motif in the empty hero)
+      disc(s, 10.4, 2.4, 3.4, CHAR);
+      disc(s, 11.6, 5.3, 1.9, "26262A");
+      // brand mark top-left
+      tx(s, 0.55, 0.55, 3.6, 0.4, "ATA INSIGHTS", 13, WHITE, true, HEAD);
+      tx(s, 0.57, 2.45, 4.2, 0.4, get("cover_kicker"), 13.5, ORANGE, true, HEAD);
+      s.addText([
+        { text: get("cover_t1"), options: { color: WHITE, breakLine: true } },
+        { text: get("cover_t2"), options: { color: ORANGE } },
+      ], { x: 0.55, y: 2.84, w: 4.3, h: 1.6, fontFace: HEAD, fontSize: 38, bold: true, lineSpacingMultiple: 0.98 });
+      tx(s, 0.57, 4.55, 4.0, 0.9, get("strapline"), 13.5, "E7E1DB", false, BODY, "left", "top", { lineSpacingMultiple: 1.16 });
+      if (CLIENT_LOGO) {
+        tx(s, 0.57, 6.22, 3.5, 0.28, get("prepared"), 11.5, "C7C1BD", true, HEAD);
+        addImg(s, 0.57, 6.42, 3.5, 0.72, CLIENT_LOGO, "contain");
+      }
+    })();
+
+    // ===== 2 ABOUT =========================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("about_t"), get("about_sub"));
+      var cards = get("about_cards");
+      var cw = 3.78, ch = 3.35, gap = 0.34, cx0 = 0.7, cy = 2.35;
+      var cols = [ORANGE, TEAL, GREEN];
+      cards.forEach(function (row, i) {
+        var icon = row[0], ttl = row[1], body = row[2];
+        var x = cx0 + i * (cw + gap);
+        rc(s, x, cy, cw, ch, WHITE, { rad: 0.08, shadow: true });
+        disc(s, x + 0.72, cy + 0.78, 0.86, cols[i], icon, WHITE, 15, HEAD);
+        tx(s, x + 0.42, cy + 1.4, cw - 0.8, 0.6, ttl, 18.5, INK, true, HEAD);
+        tx(s, x + 0.42, cy + 2.0, cw - 0.8, 1.2, body, 12.5, MUTE, false, BODY, "left", "top", { lineSpacingMultiple: 1.18 });
+      });
+    })();
+
+    // ===== 3 BY THE NUMBERS ================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: SOFT };
+      tx(s, 0.7, 0.62, 11.9, 0.9, get("nums_t"), 33, INK, true, HEAD);
+      tx(s, 0.72, 1.28, 11.9, 0.5, get("nums_sub"), 14.5, MUTE, false, BODY);
+      logo_tr(s);
+      var grid = get("nums_grid");
+      var gw = 3.74, gh = 1.58, gxs = 0.34, gys = 0.28, gx0 = 0.7, gy0 = 2.15;
+      grid.forEach(function (row, i) {
+        var n = row[0], l = row[1];
+        var r = Math.floor(i / 3), c = i % 3;
+        var x = gx0 + c * (gw + gxs), y = gy0 + r * (gh + gys);
+        rc(s, x, y, gw, gh, WHITE, { rad: 0.08, shadow: true });
+        disc(s, x + gw - 0.55, y + 0.52, 0.62, CYCLE[i % CYCLE.length]);
+        tx(s, x + 0.32, y + 0.2, gw - 1.1, 0.75, n, 38, ORANGE, true, HEAD);
+        tx(s, x + 0.34, y + 0.98, gw - 0.62, 0.5, l, 12, INK, false, BODY, "left", "top", { lineSpacingMultiple: 1.05 });
+      });
+      rc(s, 0.7, 6.4, 11.9, 0.72, ORANGE, { rad: 0.1 });
+      tx(s, 1.0, 6.4, 11.3, 0.72, get("nums_foot"), 12, WHITE, true, HEAD, "center", "middle");
+    })();
+
+    // ===== 4 WHO YOU REACH =================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("reach_t"), get("reach_sub"));
+      // world map asset n/a — faint globe motif on the right
+      disc(s, 9.9, 4.0, 3.6, "E4E4E4");
+      disc(s, 9.9, 4.0, 2.4, SOFTD);
+      // left white card with big stat callouts
+      rc(s, 0.6, 2.25, 6.15, 3.62, WHITE, { rad: 0.08, shadow: true });
+      var lx = 1.0, ly = 2.6;
+      get("reach_big").forEach(function (row, i) {
+        var n = row[0], l = row[1], y = ly + i * 1.04;
+        tx(s, lx, y, 2.0, 0.85, n, 40, ORANGE, true, HEAD);
+        tx(s, lx + 1.95, y + 0.08, 3.4, 0.8, l, 12.5, INK, false, BODY, "left", "middle", { lineSpacingMultiple: 1.1 });
+      });
+      tx(s, 0.72, 6.05, 5, 0.4, get("reach_seg_t"), 12.5, INK, true, HEAD);
+      var chx = 0.72, chy = 6.42;
+      get("reach_chips").forEach(function (ch, i) {
+        var cw2 = 0.4 + ch.length * 0.115;
+        rc(s, chx, chy, cw2, 0.44, CYCLE[i % CYCLE.length], { rad: 0.22 });
+        tx(s, chx, chy, cw2, 0.44, ch, 10.5, WHITE, true, BODY, "center", "middle");
+        chx += cw2 + 0.18;
+      });
+    })();
+
+    // ===== 5 TOPICS WE COVER ===============================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: SOFT };
+      tx(s, 0.7, 0.6, 8, 0.4, get("top_k"), 12.5, ORANGE, true, HEAD);
+      tx(s, 0.7, 0.98, 11.5, 0.7, get("top_t"), 33, INK, true, HEAD);
+      tx(s, 0.72, 1.64, 11.9, 0.5, get("top_sub"), 14.5, MUTE, false, BODY);
+      logo_tr(s);
+      var tp = get("topics");
+      var col_w = 3.98, row_h = 2.34, left0 = 0.7, top0 = 2.32;
+      var cell_w = col_w - 0.14, band_h = 0.84, cell_h = row_h - 0.08;
+      tp.forEach(function (row, i) {
+        var col = row[0], name = row[1], tag = row[2], events = row[3];
+        var r = Math.floor(i / 3), c = i % 3;
+        var x = left0 + c * col_w, y = top0 + r * (row_h + 0.06);
+        rc(s, x, y, cell_w, cell_h, CHAR, { rad: 0.08, shadow: true });   // dark body
+        rc(s, x, y, cell_w, band_h, col, { rad: 0.08 });                  // coloured header
+        tx(s, x + 0.28, y + 0.16, cell_w - 0.5, 0.25, tag, 9, WHITE, true, BODY);
+        tx(s, x + 0.28, y + 0.44, cell_w - 0.4, 0.4, name, 13.5, WHITE, true, HEAD, "left", "top", { wrap: false });
+        tx(s, x + 0.28, y + band_h + 0.14, cell_w - 0.5, cell_h - band_h - 0.2, events, 10.5, "E4E4E6", false, BODY, "left", "top", { lineSpacingMultiple: 1.32 });
+      });
+      tx(s, 0.72, 7.0, 11.9, 0.32, get("top_foot"), 10.5, MUTE, false, BODY, "left", "top", { italic: true });
+    })();
+
+    // ===== 6 WHY SPONSOR ===================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("why_t"), get("why_sub"));
+      var cards = get("why_cards");
+      var cw = 3.78, ch = 1.95, gap = 0.34;
+      var positions = [
+        [0.7, 2.35], [0.7 + cw + gap, 2.35], [0.7 + 2 * (cw + gap), 2.35],
+        [0.7 + (cw + gap) / 2, 2.35 + ch + 0.3], [0.7 + (cw + gap) / 2 + cw + gap, 2.35 + ch + 0.3],
+      ];
+      cards.forEach(function (row, i) {
+        var num = row[0], ttl = row[1], body = row[2];
+        var x = positions[i][0], y = positions[i][1];
+        rc(s, x, y, cw, ch, WHITE, { rad: 0.08, shadow: true });
+        disc(s, x + 0.6, y + 0.62, 0.72, CYCLE[i], num, WHITE, 17, HEAD);
+        tx(s, x + 1.12, y + 0.32, cw - 1.3, 0.6, ttl, 15, INK, true, HEAD, "left", "middle", { lineSpacingMultiple: 1.0 });
+        tx(s, x + 0.42, y + 1.05, cw - 0.8, 0.85, body, 11.5, MUTE, false, BODY, "left", "top", { lineSpacingMultiple: 1.13 });
+      });
+    })();
+
+    // ===== 7 WHAT'S INCLUDED ===============================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("incl_t"), get("incl_sub"));
+      rc(s, 0.6, 2.25, 7.75, 4.3, WHITE, { rad: 0.08, shadow: true });
+      var lx = 1.0, ly = 2.55;
+      get("incl_items").forEach(function (it, i) {
+        var y = ly + i * 0.56;
+        disc(s, lx + 0.22, y + 0.2, 0.42, GREEN, "✓", WHITE, 13, BODY);
+        tx(s, lx + 0.62, y, 6.3, 0.55, it, 12.5, INK, false, BODY, "left", "middle", { lineSpacingMultiple: 1.0 });
+      });
+      var rx = 8.6, ry = 2.25, rw = 4.07, rh = 4.3;
+      rc(s, rx, ry, rw, rh, ORANGE, { rad: 0.06, shadow: true });
+      get("incl_stats").forEach(function (row, i) {
+        var n = row[0], l = row[1], y = ry + 0.45 + i * 0.98;
+        tx(s, rx + 0.4, y, 3.2, 0.7, n, 30, WHITE, true, HEAD);
+        tx(s, rx + 0.4, y + 0.55, 3.3, 0.4, l, 11, "FFE7DB", false, BODY);
+      });
+    })();
+
+    // ===== 8 WAYS TO COLLABORATE ===========================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("ways_t"), get("ways_sub"));
+      var ways = get("ways_cards");
+      var cw = 3.78, ch = 3.5, gap = 0.34;
+      var numCols = [ORANGE, TEAL, INDIGO];
+      ways.forEach(function (row, i) {
+        var num = row[0], ttl = row[1], tag = row[2], body = row[3];
+        var x = 0.7 + i * (cw + gap), y = 2.3;
+        rc(s, x, y, cw, ch, WHITE, { rad: 0.08, shadow: true });
+        tx(s, x + 0.42, y + 0.4, cw - 0.8, 0.9, num, 44, numCols[i], true, HEAD);
+        tx(s, x + 0.42, y + 1.2, cw - 0.8, 0.55, ttl, 17, INK, true, HEAD, "left", "top", { lineSpacingMultiple: 0.98 });
+        tx(s, x + 0.42, y + 1.92, cw - 0.8, 0.5, tag, 12, ORANGED, true, BODY);
+        tx(s, x + 0.42, y + 2.35, cw - 0.8, 1.0, body, 11.5, MUTE, false, BODY, "left", "top", { lineSpacingMultiple: 1.15 });
+      });
+    })();
+
+    // ===== 9 INVESTMENT ====================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("inv_t"), get("inv_sub"));
+      var pc = get("inv_cards"), cw = 3.62, ch = 3.15;
+      pc.forEach(function (row, i) {
+        var price = row[0], ttl = row[1], body = row[2];
+        var x = 0.7 + i * (cw + 0.3), y = 2.1;
+        rc(s, x, y, cw, ch, WHITE, { rad: 0.08, shadow: true });
+        rc(s, x + 0.4, y + 0.45, cw - 0.8, 1.05, CHAR, { rad: 0.12 });
+        tx(s, x + 0.4, y + 0.45, cw - 0.8, 1.05, price, 37, ORANGE2, true, HEAD, "center", "middle");
+        tx(s, x + 0.42, y + 1.72, cw - 0.84, 0.5, ttl, 16, INK, true, HEAD);
+        tx(s, x + 0.42, y + 2.22, cw - 0.84, 0.8, body, 12, MUTE, false, BODY, "left", "top", { lineSpacingMultiple: 1.16 });
+      });
+      var rx = 8.42, ry = 2.1, rw = 4.25, rh = 3.15;
+      rc(s, rx, ry, rw, rh, WHITE, { rad: 0.08, shadow: true });
+      tx(s, rx + 0.35, ry + 0.3, rw - 0.7, 0.4, get("inv_disc_t"), 14.5, INK, true, HEAD);
+      var pillCols = [ORANGE2, ORANGE, ORANGED], pillW = [2.55, 3.05, 3.55];
+      get("inv_disc_rows").forEach(function (row, i) {
+        var l = row[0], v = row[1];
+        var py = ry + 0.98 + i * 0.68, pw = pillW[i];
+        rc(s, rx + 0.32, py, pw, 0.56, pillCols[i], { rad: 0.28 });
+        tx(s, rx + 0.58, py, pw - 1.15, 0.56, l, 11.5, WHITE, true, BODY, "left", "middle");
+        tx(s, rx + 0.32 + pw - 1.05, py, 0.9, 0.56, v, 14, WHITE, true, HEAD, "right", "middle");
+      });
+      rc(s, 0.7, 5.45, 11.97, 0.98, ORANGE, { rad: 0.08 });
+      tx(s, 1.0, 5.58, 11.4, 0.72, get("inv_note"), 12, WHITE, false, BODY, "left", "middle", { lineSpacingMultiple: 1.12 });
+      tx(s, 0.72, 6.6, 11.9, 0.35, get("inv_foot"), 10.5, MUTE, false, BODY);
+    })();
+
+    // ===== 10 TESTIMONIALS =================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("test_t"), get("test_sub"));
+      var quotes = get("test_quotes");
+      var cw = 5.85, ch = 1.9, gap = 0.2;
+      quotes.forEach(function (row, i) {
+        var q = row[0], role = row[1];
+        var r = Math.floor(i / 2), c = i % 2, col = CYCLE[i];
+        var x = 0.7 + c * (cw + gap), y = 2.35 + r * (ch + 0.28);
+        rc(s, x, y, cw, ch, WHITE, { rad: 0.08, shadow: true });
+        disc(s, x + 0.62, y + 0.6, 0.62, col, "“", WHITE, 34, HEAD);
+        tx(s, x + 1.15, y + 0.26, cw - 1.5, 1.15, q, 12, INK, false, BODY, "left", "top", { italic: true, lineSpacingMultiple: 1.12 });
+        tx(s, x + 1.15, y + ch - 0.52, cw - 1.4, 0.4, role, 11, col, true, HEAD);
+      });
+    })();
+
+    // ===== 11 TRUSTED BY ===================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CREAM };
+      content_header(s, get("wall_t"), get("wall_sub"));
+      var card_x = 0.5, card_y = 1.82, card_w = 12.33, card_h = 5.5;
+      rc(s, card_x, card_y, card_w, card_h, WHITE, { rad: 0.06, shadow: true });
+      // logo-wall PNGs n/a in browser — render a light placeholder grid (drop logos in)
+      var ax = 0.9, ay = 2.15, cols = 6, rows = 4;
+      var gpx = 0.24, gpy = 0.24;
+      var tw = (card_w - 2 * (ax - card_x) - (cols - 1) * gpx) / cols;
+      var th = (card_h - 2 * (ay - card_y) - (rows - 1) * gpy) / rows;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          var x = ax + c * (tw + gpx), y = ay + r * (th + gpy);
+          rc(s, x, y, tw, th, "F4F4F6", { line: "E6E6EA", lw: 1, rad: 0.06 });
+        }
+      }
+    })();
+
+    // ===== 12 WEBINARS IN ACTION ===========================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: SOFT };
+      content_header(s, get("ex_t"), get("ex_sub"));
+      var webex = get("webex");
+      var ry0 = 2.12, rh = 0.985, ch = 0.9;
+      webex.forEach(function (row, i) {
+        var label = row[0], title = row[1], reg = row[2], att = row[3], pct = row[4];
+        var col = WEBEX_COLS[i];
+        var y = ry0 + i * rh, cy = y + ch / 2;
+        rc(s, 0.6, y, 12.13, ch, WHITE, { rad: 0.09, shadow: true });
+        disc(s, 1.16, cy, 0.62, col);
+        tx(s, 1.66, y + 0.13, 6.55, 0.24, label, 8.5, col, true, HEAD);
+        tx(s, 1.66, y + 0.37, 6.55, 0.48, title, 10.5, INK, true, HEAD, "left", "top", { lineSpacingMultiple: 0.97 });
+        s.addText([
+          { text: reg + "  ", options: { bold: true, fontSize: 11.5, color: INK, fontFace: HEAD } },
+          { text: get("webex_reg"), options: { fontSize: 9, color: MUTE, fontFace: BODY } },
+        ], { x: 8.4, y: cy - 0.29, w: 2.4, h: 0.28, valign: "middle" });
+        s.addText([
+          { text: att + "  ", options: { bold: true, fontSize: 11.5, color: INK, fontFace: HEAD } },
+          { text: get("webex_att"), options: { fontSize: 9, color: MUTE, fontFace: BODY } },
+        ], { x: 8.4, y: cy + 0.02, w: 2.4, h: 0.28, valign: "middle" });
+        tx(s, 10.95, y + 0.13, 1.72, 0.5, pct, 22, col, true, HEAD, "center");
+        tx(s, 10.95, y + 0.6, 1.72, 0.22, get("webex_pct"), 8.5, col, false, BODY, "center");
+      });
+      tx(s, 0.62, 7.08, 12.1, 0.3, get("webex_foot"), 9.5, MUTE, false, BODY, "left", "top", { italic: true });
+    })();
+
+    // ===== 13 CONTACT ======================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: DEEP };
+      var pw = 4.8;
+      // salesperson photo asset n/a — dark panel stand-in (or brand hero if any)
+      rc(s, SW - pw, 0, pw, SH, CHAR2);
+      disc(s, SW - pw / 2, 2.7, 3.0, "26262A");
+      rc(s, 0, 0, 0.14, SH, ORANGE);
+      // decorative accent dots (stand-ins for the deck's stars)
+      disc(s, SW - pw - 0.9 + 0.35, 0.5 + 0.35, 0.7, ORANGED);
+      disc(s, SW - pw - 0.4 + 0.21, 1.3 + 0.21, 0.42, "FF9B73");
+      tx(s, 0.6, 0.55, 5, 0.3, get("ct_k"), 14, ORANGED, true, HEAD);
+      rc(s, 0.62, 0.98, 0.9, 0.05, ORANGED);
+      tx(s, 0.6, 1.2, 7.3, 1.3, get("ct_t"), 34, WHITE, true, HEAD, "left", "top", { lineSpacingMultiple: 1.02 });
+      tx(s, 0.6, 2.7, 7.3, 0.5, get("ct_sub"), 14, "CDC8C4", false, BODY);
+      var cy = 3.62;
+      rc(s, 0.6, cy, 0.52, 0.52, ORANGE, { rad: 0.1 });
+      tx(s, 1.4, cy, 6.7, 0.52, sp.name, 18, WHITE, true, HEAD, "left", "middle"); cy += 0.58;
+      rc(s, 0.6, cy, 0.52, 0.52, TEAL, { rad: 0.1 });
+      s.addText(sp.phone, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WHITE, bold: true, valign: "middle", hyperlink: { url: "tel:" + String(sp.phone).replace(/\s/g, "") } }); cy += 0.58;
+      rc(s, 0.6, cy, 0.52, 0.52, INDIGO, { rad: 0.1 });
+      s.addText(sp.email, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WHITE, bold: true, valign: "middle", hyperlink: { url: "mailto:" + sp.email } }); cy += 0.58;
+      rc(s, 0.6, 5.9, 7.3, 0.02, "393E44");
+      tx(s, 0.62, 6.02, 3.0, 0.24, get("from_lbl"), 9.5, "8E8884", true, HEAD);
+      tx(s, 0.6, 6.34, 3.5, 0.5, "ATA INSIGHTS", 20, WHITE, true, HEAD);
+      if (CLIENT_LOGO) {
+        tx(s, 4.15, 6.02, 3.5, 0.24, get("prepared"), 9.5, "8E8884", true, HEAD);
+        addImg(s, 4.15, 6.28, 3.5, 0.9, CLIENT_LOGO, "contain");
+      }
+    })();
+
+    return pptx;
+  }
+
+  // ==========================================================================
+  // STRINGS (mirror of webinar_deck.py STR — EN/ES)
+  // ==========================================================================
+  var STR = {
+    en: {
+      prepared: "PREPARED FOR",
+      from_lbl: "FROM",
+      cover_kicker: "SPONSORSHIP OPPORTUNITIES",
+      cover_t1: "WEBINAR", cover_t2: "PROGRAM",
+      strapline: "Ideas, content and marketing for the energy transition",
+      about_t: "About the program",
+      about_sub: "The direct channel to the energy sector's professionals",
+      about_cards: [
+        ["A", "Real reach", "A database of 86,000 energy professionals — 57,000 of them newsletter subscribers. Segmented by geography, language and sector."],
+        ["B", "Qualified audience", "Mostly technical and management profiles. From 300 to 1,000 registrations per webinar, with a live attendance rate above 25%."],
+        ["C", "Lasting impact", "The recording and slide deck reach everyone registered after the webinar — whether they attended live or not."],
+      ],
+      nums_t: "The webinar program by the numbers",
+      nums_sub: "A decade of building the energy transition's most engaged online audience",
+      nums_grid: [
+        ["86K", "energy professionals in our community"],
+        ["700+", "webinars delivered since 2016"],
+        ["90+", "new sessions every year"],
+        ["16,000+", "webinar attendees a year"],
+        ["~550", "average registrations per session"],
+        ["25%+", "live attendance rate"],
+      ],
+      nums_foot: "200+ expert speakers a year   ·   4 languages: EN · ES · IT · PL   ·   on-demand at my.atainsights.com",
+      reach_t: "Who you reach",
+      reach_sub: "A senior, global and sharply targetable audience",
+      reach_big: [
+        ["33%", "based in Spain — our single largest market"],
+        ["~32%", "across Latin America (19 countries)"],
+        ["~41%", "decision-makers: C-level, directors & managers"],
+      ],
+      reach_seg_t: "Segment your webinar by:",
+      reach_chips: ["Geography", "Language", "Sector", "Seniority", "Market"],
+      top_k: "TOPICS WE COVER",
+      top_t: "Six sectors. Deep expertise.",
+      top_sub: "An industry-leading webinar audience on each one.",
+      top_foot: "Every topic is backed by a dedicated audience and a live RENMAD events series.",
+      topics: [
+        [ORANGE, "Renewables", "OVERARCHING", "Solar PV, wind, grids & markets\nThe cross-cutting webinar track\nReaching all 86K professionals"],
+        [CHAR, "Storage", "FLAGSHIP", "BESS technology & markets\nOur most-attended topic\nAligned with RENMAD Almacenamiento"],
+        [TEAL, "Renewable Hydrogen", "MULTI-MARKET", "Green H2, delegated acts, offtake\nEU & LATAM audiences\nHydrogen webinar series"],
+        [GREEN, "Biomethane & Gases", "GROWING", "Biomethane, biogas & RNG\nA fast-growing audience\nAEBIG-aligned content"],
+        [INDIGO, "Datacenters", "NEW", "Energy for AI & datacenters\nOur fastest-rising track\nSiting & waste-heat webinars"],
+        [GOLD, "energIA", "AI × ENERGY", "AI applied to the energy sector\nRENMAD UsefulAI content\nGenAI-for-energy webinars"],
+      ],
+      why_t: "Why sponsor a webinar",
+      why_sub: "Five reasons the program works for your brand and your pipeline",
+      why_cards: [
+        ["1", "Qualified leads", "Hundreds of qualified leads from a single webinar, so your team can focus on selling."],
+        ["2", "Thought leadership", "Showcase your expertise to renewable-energy professionals in sessions that add real value."],
+        ["3", "Expert marketing", "A decade of marketing to energy audiences, put to work maximising quality attendance."],
+        ["4", "Hassle-free", "Leave the set-up, promotion and moderation to us and free up your team's time."],
+        ["5", "Room to grow", "Build authority over time with a sustained presence across the year."],
+      ],
+      incl_t: "What every webinar includes",
+      incl_sub: "One price, the full marketing machine behind your session",
+      incl_items: [
+        "Weekly promotion to the full database (every Monday)",
+        "1 dedicated email built entirely around your webinar",
+        "1 newsletter promoting the webinar program",
+        "Full registration management",
+        "Technical support & professional moderation live",
+        "Recording sent to every registrant afterwards",
+        "Slide deck (PDF) distributed to all registrants",
+      ],
+      incl_stats: [
+        ["300–1,000", "registrations per webinar"],
+        ["25%+", "live attendance"],
+        ["86K", "contacts reached"],
+        ["100%", "receive the recording"],
+      ],
+      ways_t: "Ways to collaborate",
+      ways_sub: "Choose the format that best fits your objectives",
+      ways_cards: [
+        ["01", "Single webinar", "Immediate, focused impact", "Ideal for product launches, technical news or positioning at a key moment. Maximum visibility concentrated in one action."],
+        ["02", "Multi-webinar package", "A continuous positioning strategy", "2, 3, 4 or more webinars with progressive discounts — the option to build authority steadily across the year."],
+        ["03", "Webinar within a sponsorship", "Maximum reach & integration", "Add a webinar to your RENMAD event sponsorship and combine physical presence with digital reach, before or after the event."],
+      ],
+      inv_t: "Investment",
+      inv_sub: "Simple, transparent pricing with volume discounts",
+      inv_cards: [
+        ["3,500 €", "Webinar", "Full promotion, hosting and recording of your session — no attendee list."],
+        ["5,500 €", "Webinar + attendee list", "Everything in the base webinar, plus every live registrant delivered to you as a qualified lead."],
+      ],
+      inv_disc_t: "Multi-webinar discount",
+      inv_disc_rows: [["2 webinars", "–5%"], ["3 webinars", "–10%"], ["4+ webinars", "Ask"]],
+      inv_note: "The attendee-list package includes the name, email and registration data of every live attendee — a qualified base, ready for your sales team.",
+      inv_foot: "Prices exclude VAT. Multi-webinar discount tiers are indicative — final terms confirmed per proposal.",
+      test_t: "What energy professionals say",
+      test_sub: "Feedback from the audience you'll be speaking to",
+      test_quotes: [
+        ["The webinars are very interesting, especially to get up to speed on what's going on in the market — even for regions where we're not operating.", "Business Development Manager, ACWA Power"],
+        ["Thank you so much for the high-quality webinars and the great speakers.", "Regional Programme Officer MENA, IRENA"],
+        ["The live cast was very interesting and very useful to my work. I learned a lot and I look forward to future ones.", "Project Development Director, Ecoplexus"],
+        ["Lots of positive feedback on the smooth running, the richness of the presentations and the high level of participation.", "Independent consultant"],
+      ],
+      wall_t: "Trusted by the industry",
+      wall_sub: "A selection of the organisations that have taken part in our webinars",
+      ex_t: "Webinars in action",
+      ex_sub: "A sample of sessions we've already run — one per sector",
+      webex_reg: "registered", webex_att: "attended", webex_pct: "attendance",
+      webex_foot: "Real sessions from our recent programme · attendance rate = live attendees ÷ registrants",
+      webex: [
+        ["STORAGE", "Energy-storage business models under the new capacity mechanism", "1,632", "724", "44%"],
+        ["HYDROGEN", "Projecting renewable H₂ demand to 2030: challenges, regulation and opportunities", "704", "260", "37%"],
+        ["BIOMETHANE", "Digestate: regulatory and technological keys to its management", "724", "352", "49%"],
+        ["DATA CENTERS", "The new CNMC framework: how to read capacity maps and gain a competitive edge", "1,379", "586", "42%"],
+        ["RENEWABLES", "Renewables facing zero prices: a temporary risk or the new normal?", "1,076", "464", "43%"],
+      ],
+      ct_k: "LET'S TALK",
+      ct_t: "Shall we talk about your next webinar?",
+      ct_sub: "For questions, comments or partnership proposals, reach out directly.",
+    },
+    es: {
+      prepared: "PREPARADO PARA",
+      from_lbl: "DE PARTE DE",
+      cover_kicker: "OPORTUNIDADES DE PATROCINIO",
+      cover_t1: "PROGRAMA DE", cover_t2: "WEBINARS",
+      strapline: "Ideas, contenido y marketing para la transición energética",
+      about_t: "Sobre el programa",
+      about_sub: "El canal directo hacia los profesionales del sector energético",
+      about_cards: [
+        ["A", "Alcance real", "Una base de datos de 86.000 profesionales de la energía — 57.000 de ellos suscriptores del newsletter. Segmentada por geografía, idioma y sector."],
+        ["B", "Audiencia cualificada", "Perfiles mayoritariamente técnicos y de dirección. De 300 a 1.000 registros por webinar, con una tasa de asistencia en vivo superior al 25%."],
+        ["C", "Impacto continuo", "La grabación y la presentación llegan a todos los registrados tras el webinar, hayan asistido en vivo o no."],
+      ],
+      nums_t: "El programa de webinars en cifras",
+      nums_sub: "Una década construyendo la audiencia online más activa de la transición energética",
+      nums_grid: [
+        ["86K", "profesionales en nuestra comunidad"],
+        ["+700", "webinars realizados desde 2016"],
+        ["+90", "nuevas sesiones cada año"],
+        ["+16.000", "asistentes a webinars al año"],
+        ["~550", "registros medios por sesión"],
+        ["+25%", "tasa de asistencia en vivo"],
+      ],
+      nums_foot: "+200 ponentes expertos al año   ·   4 idiomas: EN · ES · IT · PL   ·   disponibles en my.atainsights.com",
+      reach_t: "A quién llegas",
+      reach_sub: "Una audiencia sénior, global y fácilmente segmentable",
+      reach_big: [
+        ["33%", "en España — nuestro mayor mercado"],
+        ["~32%", "en Latinoamérica (19 países)"],
+        ["~41%", "decisores: alta dirección, directores y managers"],
+      ],
+      reach_seg_t: "Segmenta tu webinar por:",
+      reach_chips: ["Geografía", "Idioma", "Sector", "Cargo", "Mercado"],
+      top_k: "TEMAS QUE CUBRIMOS",
+      top_t: "Seis sectores. Experiencia profunda.",
+      top_sub: "Una audiencia líder en webinars para cada uno.",
+      top_foot: "Cada tema cuenta con una audiencia dedicada y una serie de eventos RENMAD en directo.",
+      topics: [
+        [ORANGE, "Renovables", "TRANSVERSAL", "Fotovoltaica, eólica, redes y mercados\nEl track transversal de webinars\nLlega a los 86K profesionales"],
+        [CHAR, "Almacenamiento", "BUQUE INSIGNIA", "Tecnología y mercados BESS\nNuestro tema más concurrido\nAlineado con RENMAD Almacenamiento"],
+        [TEAL, "Hidrógeno renovable", "MULTIMERCADO", "H2 verde, actos delegados, offtake\nAudiencias UE y LATAM\nSerie de webinars de hidrógeno"],
+        [GREEN, "Biometano y gases", "EN AUGE", "Biometano, biogás y RNG\nUna audiencia en rápido crecimiento\nContenido alineado con AEBIG"],
+        [INDIGO, "Datacenters", "NUEVO", "Energía para IA y datacenters\nNuestro track de mayor crecimiento\nWebinars de ubicación y calor residual"],
+        [GOLD, "energIA", "IA × ENERGÍA", "IA aplicada al sector energético\nContenido RENMAD UsefulAI\nWebinars de IA generativa"],
+      ],
+      why_t: "Por qué patrocinar un webinar",
+      why_sub: "Cinco razones por las que el programa funciona para tu marca y tu pipeline",
+      why_cards: [
+        ["1", "Leads cualificados", "Cientos de leads cualificados de un solo webinar, para que tu equipo se centre en vender."],
+        ["2", "Liderazgo de opinión", "Muestra tu know-how a los profesionales de las renovables en sesiones que aportan valor real."],
+        ["3", "Marketing experto", "Una década haciendo marketing a audiencias del sector, al servicio de la máxima asistencia de calidad."],
+        ["4", "Sin complicaciones", "Déjanos el montaje, la promoción y la moderación y libera el tiempo de tu equipo."],
+        ["5", "Espacio para crecer", "Construye autoridad con una presencia sostenida a lo largo del año."],
+      ],
+      incl_t: "Qué incluye cada webinar",
+      incl_sub: "Un solo precio, toda la maquinaria de marketing detrás de tu sesión",
+      incl_items: [
+        "Difusión semanal a toda la BBDD (todos los lunes)",
+        "1 email exclusivo dedicado íntegramente a tu webinar",
+        "1 newsletter de promoción del programa de webinars",
+        "Gestión integral de inscripciones",
+        "Soporte técnico y moderación profesional en directo",
+        "Grabación enviada a todos los inscritos tras el evento",
+        "Presentación (PDF) distribuida a todos los registrados",
+      ],
+      incl_stats: [
+        ["300–1.000", "registros por webinar"],
+        ["+25%", "asistencia en vivo"],
+        ["86K", "contactos alcanzados"],
+        ["100%", "reciben la grabación"],
+      ],
+      ways_t: "Modalidades de colaboración",
+      ways_sub: "Elige el formato que mejor se adapta a tus objetivos",
+      ways_cards: [
+        ["01", "Webinar único", "Impacto inmediato y puntual", "Ideal para lanzamientos de producto, novedades técnicas o posicionamiento en un momento concreto. Máxima visibilidad concentrada en una acción."],
+        ["02", "Paquete multi-webinar", "Estrategia de posicionamiento continua", "2, 3, 4 o más webinars con descuentos progresivos — la opción para construir autoridad de forma sostenida a lo largo del año."],
+        ["03", "Webinar incluido en patrocinio", "Máximo alcance e integración", "Añade un webinar a tu patrocinio de evento RENMAD y combina presencia física con alcance digital, antes o después de la cita."],
+      ],
+      inv_t: "Inversión",
+      inv_sub: "Precios sencillos y transparentes, con descuentos por volumen",
+      inv_cards: [
+        ["3.500 €", "Webinar", "Promoción, organización y grabación completas de tu sesión — sin lista de asistentes."],
+        ["5.500 €", "Webinar + lista de asistentes", "Todo lo del webinar base, más cada registrado en directo entregado como lead cualificado."],
+      ],
+      inv_disc_t: "Descuento multi-webinar",
+      inv_disc_rows: [["2 webinars", "–5%"], ["3 webinars", "–10%"], ["4+ webinars", "A medida"]],
+      inv_note: "El paquete con lista de asistentes incluye nombre, email y datos de registro de todos los asistentes en vivo — una base cualificada, lista para tu equipo comercial.",
+      inv_foot: "Precios sin IVA. Los tramos de descuento multi-webinar son orientativos — condiciones finales según propuesta.",
+      test_t: "Lo que dicen los profesionales del sector",
+      test_sub: "Opiniones de la audiencia a la que te dirigirás",
+      test_quotes: [
+        ["Los webinars son muy interesantes, especialmente para ponerse al día de lo que ocurre en el mercado, incluso en regiones donde no operamos.", "Business Development Manager, ACWA Power"],
+        ["Muchas gracias por los webinars de tan alta calidad y por los excelentes ponentes.", "Regional Programme Officer MENA, IRENA"],
+        ["La emisión en directo fue muy interesante y muy útil para mi trabajo. Aprendí mucho y espero los próximos con ganas.", "Project Development Director, Ecoplexus"],
+        ["Mucho feedback positivo sobre la fluidez de la organización, la riqueza de las presentaciones y el alto nivel de participación.", "Consultor independiente"],
+      ],
+      wall_t: "Confían en nosotros",
+      wall_sub: "Una selección de las organizaciones que han participado en nuestros webinars",
+      ex_t: "Webinars en acción",
+      ex_sub: "Una muestra de sesiones que ya hemos realizado — una por sector",
+      webex_reg: "registrados", webex_att: "asistentes", webex_pct: "asistencia",
+      webex_foot: "Sesiones reales de nuestro programa reciente · tasa de asistencia = asistentes en vivo ÷ registrados",
+      webex: [
+        ["ALMACENAMIENTO", "Análisis de modelos de negocio de almacenamiento de energía con el nuevo mecanismo de capacidad", "1.632", "724", "44%"],
+        ["HIDRÓGENO", "Proyección de la demanda de H₂ renovable 2030: retos, regulaciones y oportunidades", "704", "260", "37%"],
+        ["BIOMETANO", "Digestato: claves regulatorias y tecnológicas para su gestión", "724", "352", "49%"],
+        ["DATACENTERS", "Nuevo marco CNMC: cómo interpretar los mapas de capacidad y ganar ventaja competitiva", "1.379", "586", "42%"],
+        ["RENOVABLES", "Las renovables ante los precios cero: ¿riesgo temporal o nueva norma?", "1.076", "464", "43%"],
+      ],
+      ct_k: "HABLEMOS",
+      ct_t: "¿Hablamos de tu próximo webinar?",
+      ct_sub: "Para preguntas, comentarios o propuestas de colaboración, escríbeme directamente.",
+    },
+  };
+
+  global.PBWEB = { buildWebinarDeck: buildWebinarDeck };
 })(window);
 
