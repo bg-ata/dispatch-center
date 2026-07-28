@@ -1498,7 +1498,7 @@ const COLS={
   companyMap:['id','canonicalName','marketingAliases','legalAliases','emailDomains','invoiceClientKey','confirmedBy','confirmedAt','status'],
   spxEventReg:['id','eventKey','name','financeId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus','active','sort'],
   /* personal to-dos (Me tab): each person sees ONLY their own (RLS) */
-  todos:['id','personId','text','due','done','doneAt','sort','created'],
+  todos:['id','personId','text','due','done','doneAt','color','sort','created'], // color tolerant (1-line SQL: dispatch_todos_color.sql)
   /* notifications inbox (🔔): ticket answers, HR notices, alarms. kind = ticket|notice|holiday.
      personId = recipient; fromName = display name of the sender; isRead toggled by the recipient. */
   inbox:['id','personId','kind','text','link','isRead','fromName','created'],
@@ -1647,6 +1647,13 @@ const DB={
       this.data.todos=[];_todoReady=false;
       try{const td=await sb.from('dc_todos').select('*').eq('deleted',false).order('sort');
         if(td.error)throw td.error;this.data.todos=td.data||[];_todoReady=true;
+        /* colour coding is tolerant: probe the column itself (a person with an empty
+           list has no row to inspect). Until dispatch_todos_color.sql runs, never push
+           `color` — PostgREST rejects unknown columns — and the UI hides the palette. */
+        window._tdColorMissing=false;
+        const probe=await sb.from('dc_todos').select('color').limit(1);
+        if(probe.error){window._tdColorMissing=true;
+          const ic=COLS.todos.indexOf('color');if(ic>=0)COLS.todos.splice(ic,1);}
       }catch(e){console.warn('to-dos module not ready:',e.message||e);}
       this.data.inbox=[];_inboxReady=false;
       try{const ib=await sb.from('dc_inbox').select('*').eq('deleted',false).order('id',{ascending:false}).limit(400);

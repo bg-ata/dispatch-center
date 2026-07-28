@@ -81,6 +81,22 @@
   .tditem button:hover{filter:brightness(.96)}
   .duechip{font-size:10.5px;font-weight:700;border-radius:9px;padding:1px 7px;background:#f0eee7;color:var(--muted);white-space:nowrap}
   .duechip.late{background:var(--red);color:#fff}
+  /* to-do colour coding + hand-sorted order (Cristina's request, 17 Jul 2026) */
+  .tditem{padding-left:9px;border-left:3px solid transparent}
+  .tditem.dragging{opacity:.35}
+  .tditem.over{box-shadow:inset 0 2px 0 var(--orange)}
+  .tdgrip{cursor:grab;color:#cbc7ba;font-size:13px;line-height:1.2;padding:2px 1px;flex:0 0 auto;user-select:none}
+  .tdgrip:active{cursor:grabbing}
+  .tddot{width:13px;height:13px;border-radius:50%;border:1px solid rgba(0,0,0,.2);background:#fff;cursor:pointer;flex:0 0 auto;margin-top:3px;padding:0}
+  .tditem button.tddot:hover{filter:brightness(.92)}
+  .tdpal{display:flex;gap:6px;align-items:center;padding:2px 0 7px 22px;border-bottom:1px solid #f2f0ea}
+  .tdpal .tddot{width:16px;height:16px;margin:0}
+  .tdbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 9px;font-size:11.5px;color:var(--muted)}
+  .tdseg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .tdseg button{border:0;background:#fff;font-size:11.5px;padding:3px 9px;cursor:pointer;color:var(--muted);font-weight:700}
+  .tdseg button.on{background:var(--orange);color:#fff}
+  .tdfil{width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,.2);cursor:pointer;opacity:.4;padding:0}
+  .tdfil.on{opacity:1;box-shadow:0 0 0 2px rgba(0,0,0,.16)}
   /* fold pattern */
   .fold{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
   .fold>button.fhead{width:100%;text-align:left;background:none;border:none;padding:12px 16px;font:600 14px 'Segoe UI',sans-serif;color:var(--charcoal);cursor:pointer}
@@ -119,7 +135,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=73"></script>
+<script src="store.js?v=74"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -595,6 +611,18 @@ function decide(id,ok){
 }
 
 /* ================= 📝 to-do (personal, NEW) ================= */
+/* colour code + hand-sorted order — the colours carry no fixed meaning, the names
+   below are only tooltips (Cristina's request 17 Jul: "organise them as we want to,
+   or color-code them"). Order mode + colour filter are per person, per browser. */
+const TD_COLORS=[{k:'red',c:'#E24A2B',n:'Urgent'},{k:'amber',c:'#EFA02F',n:'Waiting on someone'},
+                 {k:'green',c:'#4C9A52',n:'Quick win'},{k:'blue',c:'#3E82C4',n:'Project work'},
+                 {k:'purple',c:'#7E5AA8',n:'Personal'}];
+function tdCol(k){return TD_COLORS.find(c=>c.k===k)||null;}
+let _tdPal=null;                 // id of the to-do whose palette is open
+let _tdFilter='';                // '' = all colours
+function tdOrderKey(){return 'dc_td_order:'+((DB.currentUser||{}).id||0);}
+function tdOrder(){try{return localStorage.getItem(tdOrderKey())||'due';}catch(e){return 'due';}}
+function tdSetOrder(v){try{localStorage.setItem(tdOrderKey(),v);}catch(e){}}
 function renderTodo(){
   const me=DB.currentUser,box=document.getElementById('todoPanel');if(!box)return;
   let h='<h3>📝 To-do'+visBadge('only you')+'</h3>';
@@ -604,13 +632,33 @@ function renderTodo(){
   }
   const today=toISO(new Date());
   const mine=DB.todos.filter(t=>t.personId==me.id);
-  const open=mine.filter(t=>!t.done).sort((a,b)=>(''+(a.due||'9999-99-99')).localeCompare(''+(b.due||'9999-99-99'))||(''+(a.created||'')).localeCompare(''+(b.created||'')));
+  const byDue=(a,b)=>(''+(a.due||'9999-99-99')).localeCompare(''+(b.due||'9999-99-99'))||(''+(a.created||'')).localeCompare(''+(b.created||''));
+  const byHand=(a,b)=>((+a.sort||0)-(+b.sort||0))||byDue(a,b);
+  const manual=tdOrder()==='mine';
+  let open=mine.filter(t=>!t.done).sort(manual?byHand:byDue);
   const done=mine.filter(t=>t.done).sort((a,b)=>(''+(b.doneAt||'')).localeCompare(''+(a.doneAt||''))).slice(0,15);
+  /* colour filter: only offer colours actually in use, and drop a stale filter */
+  const used=TD_COLORS.filter(c=>mine.some(t=>!t.done&&t.color===c.k));
+  if(_tdFilter&&!used.some(c=>c.k===_tdFilter))_tdFilter='';
+  if(_tdFilter)open=open.filter(t=>t.color===_tdFilter);
   const dueChip=t=>{
     if(!t.due)return '';
     let lab=t.due;try{lab=fmtD(ymd(t.due));}catch(e){}
     const late=!t.done&&t.due<today;
     return '<span class="duechip'+(late?' late':'')+'" title="due '+esc2(deIso(t.due))+'">'+(late?'⚠ ':'')+esc(lab)+'</span> ';
+  };
+  const openCount=mine.filter(t=>!t.done).length;
+  const canColor=!window._tdColorMissing;   // hidden until dispatch_todos_color.sql runs
+  const edge=t=>{const c=tdCol(t.color);return c?' style="border-left-color:'+c.c+'"':'';};
+  const dot=t=>{if(!canColor)return '';const c=tdCol(t.color);
+    return '<button class="tddot" data-tdpal="'+t.id+'" title="'+(c?esc2(c.n)+' — click to change colour':'Colour-code this')+'"'+
+      (c?' style="background:'+c.c+';border-color:'+c.c+'"':'')+'></button>';};
+  const palette=t=>{
+    if(!canColor||_tdPal!=t.id)return '';
+    return '<div class="tdpal">'+
+      TD_COLORS.map(c=>'<button class="tddot" data-tdset="'+t.id+'" data-c="'+c.k+'" title="'+esc2(c.n)+'" style="background:'+c.c+';border-color:'+c.c+'"></button>').join('')+
+      '<button class="tddot" data-tdset="'+t.id+'" data-c="" title="No colour"></button>'+
+      '<span style="font-size:11px;color:var(--muted)">colours mean whatever you want them to</span></div>';
   };
   h+='<p class="hint">Your private list — nobody else sees it.</p>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -618,15 +666,26 @@ function renderTodo(){
       '<input type="date" id="td_due" title="Due date (optional)" style="flex:0 0 auto">'+
       '<button class="btn primary" id="td_add">Add</button>'+
     '</div>'+
+    '<div class="tdbar">'+
+      '<span>Order</span><span class="tdseg">'+
+        '<button data-tdord="due" class="'+(manual?'':'on')+'">Due date</button>'+
+        '<button data-tdord="mine" class="'+(manual?'on':'')+'">Mine</button></span>'+
+      (canColor&&used.length?'<span style="margin-left:4px">Show</span>'+
+        used.map(c=>'<button class="tdfil'+(_tdFilter===c.k?' on':'')+'" data-tdfil="'+c.k+'" title="Only '+esc2(c.n)+'" style="background:'+c.c+';border-color:'+c.c+'"></button>').join('')+
+        (_tdFilter?'<button class="btn sm" data-tdfil="" style="padding:1px 7px;font-size:11px">all</button>':''):'')+
+      (manual?'<span style="margin-left:auto">drag ⠿ to reorder</span>':'')+
+    '</div>'+
     '<div class="td2">'+
-      '<div class="tdcol"><h4>To do'+(open.length?' ('+open.length+')':'')+'</h4>'+
-        (open.length?open.map(t=>'<div class="tditem">'+
+      '<div class="tdcol"><h4>To do'+(openCount?' ('+openCount+')':'')+'</h4><div id="td_open">'+
+        (open.length?open.map(t=>'<div class="tditem" data-tdid="'+t.id+'"'+(manual?' draggable="true"':'')+edge(t)+'>'+
+          (manual?'<span class="tdgrip" title="Drag to reorder">⠿</span>':'')+
           '<button data-tdone="'+t.id+'" title="Mark done" style="color:var(--green);font-weight:700">✓</button>'+
+          dot(t)+
           '<span class="tdtxt">'+dueChip(t)+esc(t.text)+'</span>'+
-          '<button data-tdel="'+t.id+'" title="Delete" style="color:#A32D2D">×</button></div>').join('')
-        :'<p class="empty" style="font-size:12.5px">Nothing pending — add one above.</p>')+'</div>'+
+          '<button data-tdel="'+t.id+'" title="Delete" style="color:#A32D2D">×</button></div>'+palette(t)).join('')
+        :'<p class="empty" style="font-size:12.5px">'+(_tdFilter?'Nothing in that colour.':'Nothing pending — add one above.')+'</p>')+'</div></div>'+
       '<div class="tdcol"><h4>Done</h4>'+
-        (done.length?done.map(t=>'<div class="tditem" style="opacity:.75">'+
+        (done.length?done.map(t=>'<div class="tditem" style="opacity:.75'+(tdCol(t.color)?';border-left-color:'+tdCol(t.color).c:'')+'">'+
           '<button data-tback="'+t.id+'" title="Bring back">↩</button>'+
           '<span class="tdtxt" style="text-decoration:line-through;color:var(--muted)">'+dueChip(t)+esc(t.text)+'</span>'+
           '<button data-tdel="'+t.id+'" title="Delete" style="color:#A32D2D">×</button></div>').join('')
@@ -638,7 +697,7 @@ function renderTodo(){
     if(!text)return;
     const due=document.getElementById('td_due').value||null;
     DB.data.todos=DB.data.todos||[];
-    DB.todos.push({id:DB.newId(),personId:me.id,text,due,done:false,doneAt:null,sort:Date.now(),created:new Date().toISOString()});
+    DB.todos.push({id:DB.newId(),personId:me.id,text,due,done:false,doneAt:null,color:null,sort:Date.now(),created:new Date().toISOString()});
     DB.save();renderTodo();
     const ni=document.getElementById('td_text');if(ni)ni.focus();
   };
@@ -653,6 +712,43 @@ function renderTodo(){
   box.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=()=>{
     const i=DB.data.todos.findIndex(x=>x.id==b.dataset.tdel);if(i<0)return;
     DB.data.todos.splice(i,1);DB.save();renderTodo();});
+  /* order toggle · colour filter · colour picker */
+  box.querySelectorAll('[data-tdord]').forEach(b=>b.onclick=()=>{tdSetOrder(b.dataset.tdord);_tdPal=null;renderTodo();});
+  box.querySelectorAll('[data-tdfil]').forEach(b=>b.onclick=()=>{_tdFilter=b.dataset.tdfil||'';renderTodo();});
+  box.querySelectorAll('[data-tdpal]').forEach(b=>b.onclick=()=>{
+    _tdPal=(_tdPal==b.dataset.tdpal)?null:b.dataset.tdpal;renderTodo();});
+  box.querySelectorAll('[data-tdset]').forEach(b=>b.onclick=()=>{
+    const t=DB.todos.find(x=>x.id==b.dataset.tdset);if(!t)return;
+    t.color=b.dataset.c||null;_tdPal=null;DB.save();renderTodo();});
+  if(manual)wireTodoDrag();
+}
+/* drag to reorder — writes the `sort` column (10,20,30…) so the order follows her
+   to every browser. Dropping ON an item puts the dragged one just before it. */
+function wireTodoDrag(){
+  const cont=document.getElementById('td_open');if(!cont)return;
+  let dragId=null;
+  cont.querySelectorAll('.tditem').forEach(el=>{
+    el.addEventListener('dragstart',e=>{dragId=el.dataset.tdid;el.classList.add('dragging');
+      try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragId);}catch(x){}});
+    el.addEventListener('dragend',()=>{dragId=null;el.classList.remove('dragging');
+      cont.querySelectorAll('.over').forEach(x=>x.classList.remove('over'));});
+    el.addEventListener('dragover',e=>{if(el.dataset.tdid==dragId)return;e.preventDefault();el.classList.add('over');});
+    el.addEventListener('dragleave',()=>el.classList.remove('over'));
+    el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('over');
+      let src=dragId;try{src=src||e.dataTransfer.getData('text/plain');}catch(x){}
+      if(src&&src!=el.dataset.tdid)tdReorder(src,el.dataset.tdid);});
+  });
+}
+function tdReorder(srcId,tgtId){
+  const me=DB.currentUser;
+  const list=DB.todos.filter(t=>t.personId==me.id&&!t.done)
+    .sort((a,b)=>((+a.sort||0)-(+b.sort||0))||(''+(a.due||'9999-99-99')).localeCompare(''+(b.due||'9999-99-99')));
+  const si=list.findIndex(t=>t.id==srcId);if(si<0)return;
+  const [it]=list.splice(si,1);
+  const ti=list.findIndex(t=>t.id==tgtId);if(ti<0)return;
+  list.splice(ti,0,it);
+  list.forEach((t,i)=>t.sort=(i+1)*10);
+  DB.save();renderTodo();
 }
 
 /* ================= 🌴 my holidays: balance + my requests + collapsed request form ================= */
