@@ -87,10 +87,10 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=72"></script>
+<script src="store.js?v=73"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
-let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')}, showCodigos=false;
+let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
 /* invoices are shown one YEAR at a time (by issue date) so 2025 cross-year invoices
    don't clutter 2026 — the € Dashboard still aggregates each event across all years */
 function invYears(){return [...new Set(DB.invoices.map(i=>(''+(i.fecha||'')).slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();}
@@ -159,8 +159,27 @@ function statusCell(i,stSel){
 /* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
 function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
 function codLabel(c){return c.codigo?('('+c.codigo+') '+(c.item||'#'+c.id)):((c.item||'#'+c.id)+' — código pending');}
-/* credit notes carry their OWN sequence — R1, R2, R3… (Jesús Q7) */
-function nextRNumber(){let mx=0;DB.invoices.forEach(i=>{const m=/^R(\d+)$/i.exec((i.numero_factura||'').trim());if(m)mx=Math.max(mx,+m[1]);});return 'R'+(mx+1);}
+/* credit notes carry their OWN sequence, ONE DRAWER PER YEAR (Jesús, 23 jul).
+   Scanning every year at once is what let 2025's R25/25 collide with 2026's R25.
+   Convention, reproducing what accounting already did: the RUNNING year numbers
+   bare — R1, R2, R3… — and any other year suffixes its two digits (R22/25, R25/25). */
+function invYearOf(inv){return (''+((inv&&inv.fecha)||'')).slice(0,4);}
+function curYear(){return new Date().getFullYear()+'';}
+function rSuffix(year){return (''+year)===curYear()?'':('/'+(''+year).slice(2));}
+/* Matches BOTH shapes inside one year's drawer — bare R28 and suffixed R25/25.
+   Rows are already filtered to the year, so any R-number sitting in that drawer
+   counts toward its sequence whatever format it was typed in. (Matching only the
+   suffixed form would restart 2026 at R1/26 the moment 2027 became the running
+   year, right on top of the R1…R27 already issued.) */
+function rNumRe(year){return new RegExp('^R(\\d+)(?:\\/'+(''+year).slice(2)+')?$','i');}
+function nextRNumber(year){
+  const y=(''+(year||curYear())),re=rNumRe(y);
+  let mx=0;
+  DB.invoices.forEach(i=>{if(invYearOf(i)!==y)return;const m=re.exec((i.numero_factura||'').trim());if(m)mx=Math.max(mx,+m[1]);});
+  return 'R'+(mx+1)+rSuffix(y);
+}
+/* any R-shaped number, with or without the /yy suffix — used to keep R reserved for abonos */
+function looksLikeRNumber(n){return /^R\d+(\/\d{2})?$/i.test((''+n).trim());}
 /* per-line amount = Qty × Price (the maths does itself — Jesús's model) */
 function lineAmount(r){return num2((+r.qty||0)*(+r.price||0));}
 function lineHasData(r){return lineAmount(r)!==0||(+r.passes||0)!==0||(+r.amount||0)!==0;}
@@ -220,19 +239,18 @@ function render(){
     '</div>'+
     '<div class="tblwrap"><table id="itbl"></table></div>'+
     '<p class="hint">Sorted by date, then invoice nº. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
-    (showCodigos?codigosPanel():'');
+    '';
   renderTable(rows);
   document.getElementById('addInv').onclick=()=>openModal(null);
   document.getElementById('addCredit').onclick=openCreditPicker;
   document.getElementById('histLoad').onclick=openImportModal;
-  document.getElementById('cfgCod').onclick=()=>{showCodigos=!showCodigos;render();};
+  document.getElementById('cfgCod').onclick=()=>openCodigosModal();
   document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
   set('f_item','item');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
   document.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{flt.year=b.dataset.year;render();});
   const tx=document.getElementById('f_txt');tx.oninput=()=>{flt.text=tx.value;renderTable(filtered());};
   document.getElementById('f_clear').onclick=()=>{flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:flt.year};render();};
-  if(showCodigos)wireCodigos();
 }
 function filtered(){
   const t=(flt.text||'').toLowerCase();
@@ -331,25 +349,72 @@ function contractOwnerCell(i){
 }
 
 /* ---------- códigos contables (mini-BD, hand-maintained) ---------- */
-function codigosPanel(){
+/* Opens as a POP-UP (Jesús, 23 jul). It used to render at the very bottom of the page,
+   so reaching it meant scrolling past every invoice — fine with 3, a chore with 500.
+   Códigos are NOT split per year: they must be unique forever and the analítica keys
+   off the item → € Dashboard event link, so a year drawer would orphan old invoices.
+   Retiring an item instead hides it from new invoices while history keeps resolving. */
+function codigoDupOf(id,codigo){
+  const v=(''+(codigo||'')).trim().toLowerCase();
+  if(!v)return null;
+  return DB.codigos.find(x=>x.id!=id&&(''+(x.codigo||'')).trim().toLowerCase()===v)||null;
+}
+/* items offered on an invoice line: live ones, plus whichever is already selected */
+function codsForPicker(sel){return codsSorted().filter(c=>!c.archived||(sel&&c.id==sel));}
+function codigosBodyHtml(msg){
   const evOpts=sel=>'<option value="">— no event —</option>'+DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.name||'').localeCompare(b.name||'')).map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
-  let h='<div class="panel"><h3>Items &amp; accounting codes <span class="hint">— the mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list</span></h3>'+
-    '<table style="max-width:700px"><tr><th>Item</th><th>Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th style="width:24px"></th></tr>';
+  const dups={};DB.codigos.forEach(c=>{const v=(''+(c.codigo||'')).trim().toLowerCase();if(v)dups[v]=(dups[v]||0)+1;});
+  let h='<h3>Items &amp; accounting codes</h3>'+
+    '<p class="hint" style="margin:0 0 10px">The mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list. '+
+    'Linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals. <b>Códigos must be unique</b> — a repeated one is refused.</p>'+
+    (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
+    '<div style="max-height:56vh;overflow:auto">'+
+    '<table><tr><th>Item</th><th style="width:96px">Código</th><th>€ Dashboard event <span class="hint">(optional link)</span></th><th style="width:56px" title="Untick to retire an item: it disappears from new invoices but old ones still resolve">Live</th><th style="width:24px"></th></tr>';
   codsSorted().forEach(c=>{
-    h+='<tr><td><input data-cf="item" data-id="'+c.id+'" value="'+esc(c.item||'')+'" style="width:190px" placeholder="e.g. Almacenamiento 26"></td>'+
-    '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" placeholder="pending" style="width:90px'+(c.codigo?'':';background:#ffe2c4')+'" title="'+(c.codigo?'':'Código pending — fill it in when accounting assigns it; it also fills the event&#39;s hour-allocation project')+'"></td>'+
+    const isDup=(''+(c.codigo||'')).trim()&&dups[(''+c.codigo).trim().toLowerCase()]>1;
+    h+='<tr'+(c.archived?' style="opacity:.55"':'')+'><td><input data-cf="item" data-id="'+c.id+'" value="'+esc(c.item||'')+'" style="width:190px" placeholder="e.g. Almacenamiento 26"></td>'+
+    '<td><input data-cf="codigo" data-id="'+c.id+'" value="'+esc(c.codigo||'')+'" placeholder="pending" style="width:90px'+(isDup?';background:#F8D7D7;font-weight:700':(c.codigo?'':';background:#ffe2c4'))+'" title="'+(isDup?'DUPLICATE código — two items cannot share one code':(c.codigo?'':'Código pending — fill it in when accounting assigns it; it also fills the event&#39;s hour-allocation project'))+'"></td>'+
     '<td><select data-cf="eventId" data-id="'+c.id+'" style="width:220px">'+evOpts(c.eventId)+'</select></td>'+
+    '<td style="text-align:center"><input type="checkbox" data-cf="live" data-id="'+c.id+'"'+(c.archived?'':' checked')+'></td>'+
     '<td><button class="del" data-cdel="'+c.id+'">×</button></td></tr>';});
-  h+='</table><div style="margin-top:8px"><button class="btn sm" id="addCod">+ Add item</button> <span class="hint">linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals.</span></div></div>';
+  h+='</table></div><div class="mrow"><span class="amsg" id="cod_msg"></span><button class="btn sm" id="addCod">+ Add item</button><button class="btn primary" id="cod_close">Done</button></div>';
   return h;
 }
+function openCodigosModal(msg){
+  document.getElementById('modalbody').innerHTML=codigosBodyHtml(msg);
+  document.getElementById('modal').classList.add('on');
+  wireCodigos();
+}
 function wireCodigos(){
-  document.querySelectorAll('[data-cf]').forEach(el=>el.onchange=()=>{const c=DB.codigos.find(x=>x.id==el.dataset.id);if(!c)return;
-    c[el.dataset.cf]=el.dataset.cf==='eventId'?(el.value?+el.value:null):el.value;
-    if(el.dataset.cf==='codigo')DB.syncEventCodes(); // a código filled here flows to the event's hour-project too
-    DB.save();});
-  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this item?'))return;DB.data.codigos=DB.codigos.filter(x=>x.id!=b.dataset.cdel);DB.save();render();});
-  const ac=document.getElementById('addCod');if(ac)ac.onclick=()=>{DB.codigos.push({id:DB.newId(),item:'',codigo:'',descripcion:'',eventId:null});DB.save();render();};
+  const say=t=>{const m=document.getElementById('cod_msg');if(m){m.style.color='var(--red)';m.textContent=t||'';}};
+  document.querySelectorAll('[data-cf]').forEach(el=>el.onchange=()=>{
+    const c=DB.codigos.find(x=>x.id==el.dataset.id);if(!c)return;
+    const f=el.dataset.cf;
+    if(f==='live'){c.archived=!el.checked;DB.save();openCodigosModal();return;}
+    if(f==='codigo'){
+      const v=el.value.trim();
+      const clash=codigoDupOf(c.id,v);
+      if(clash){                                   // Jesús spotted 70321 twice — never again
+        say('Código '+v+' is already used by "'+(clash.item||'#'+clash.id)+'". Códigos must be unique.');
+        el.value=c.codigo||'';el.focus();return;
+      }
+      c.codigo=v;DB.syncEventCodes();              // a código filled here flows to the event's hour-project too
+      DB.save();openCodigosModal();return;
+    }
+    c[f]=f==='eventId'?(el.value?+el.value:null):el.value;
+    DB.save();say('');
+  });
+  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=()=>{
+    const c=DB.codigos.find(x=>x.id==b.dataset.cdel);
+    const used=DB.invoiceAllocs.filter(a=>a.codigoId==b.dataset.cdel).length;
+    if(used){say('"'+((c&&c.item)||'that item')+'" is used on '+used+' invoice line(s) — untick Live to retire it instead of deleting.');return;}
+    if(!confirm('Remove this item?'))return;
+    DB.data.codigos=DB.codigos.filter(x=>x.id!=b.dataset.cdel);DB.save();openCodigosModal();
+  });
+  const ac=document.getElementById('addCod');
+  if(ac)ac.onclick=()=>{DB.codigos.push({id:DB.newId(),item:'',codigo:'',descripcion:'',eventId:null,archived:false});DB.save();openCodigosModal();};
+  const cc=document.getElementById('cod_close');
+  if(cc)cc.onclick=()=>{closeModal();render();};
 }
 
 /* ---------- add / edit modal ---------- */
@@ -361,6 +426,70 @@ function spxContractOpts(sel){
   return '<option value="">— none —</option>'+won.map(p=>'<option value="'+p.id+'" '+(sel&&p.id==sel?'selected':'')+'>'
     +esc(p.company||'?')+' · '+esc(p.responsableName||p.responsable||'')+' · '+finFmt(+p.valueEur||0)+'</option>').join('');
 }
+/* ---------- SPX billing fragments — one contract, several invoices ----------
+   Jesús, 24 jul: "romper los SPX en dos y que me permita linkear cada factura a cada
+   fragmento". The partial-PAYMENT ledger is a different thing (instalments on ONE
+   invoice); this splits the CONTRACT so each slice gets its own invoice. A contract
+   with no fragments behaves exactly as before: one invoice for the whole value. */
+function fragNet(fragId,exceptId){
+  return DB.invoices.filter(x=>x.spxFragmentId==fragId&&x.status!=='cancelado'&&x.id!=exceptId)
+    .reduce((s,x)=>s+(+x.importe_base||0),0);
+}
+function fragLabel(f){
+  const inv=fragNet(f.id,null);
+  return (f.label||'instalment')+' · '+eurF(+f.amount||0)+(f.expected?' · '+ddmmyyyy(f.expected):'')+(Math.abs(inv)>0.005?' · '+eurF(inv)+' invoiced':'');
+}
+function fragOpts(propId,sel){
+  if(!propId)return '<option value="">— whole contract —</option>';
+  const fr=DB.spxFragsFor(propId);
+  if(!fr.length)return '<option value="">— whole contract (not split) —</option>';
+  return '<option value="">— whole contract —</option>'+fr.map(f=>'<option value="'+f.id+'" '+(sel&&f.id==sel?'selected':'')+'>'+esc(fragLabel(f))+'</option>').join('');
+}
+function openFragEditor(propId,backTo){
+  const p=(DB.spxProps||[]).find(x=>x.id==propId);
+  if(!p){alert('Pick the contract first.');return;}
+  if(!DB.spxFragsReady()){alert('Contract splitting needs dispatch_spx_fragments.sql to be run in Supabase first.');return;}
+  const draw=msg=>{
+    const fr=DB.spxFragsFor(propId),cVal=+p.valueEur||0;
+    const sum=fr.reduce((s,f)=>s+(+f.amount||0),0),diff=num2(cVal-sum);
+    let h='<h3>✂ Split contract — '+esc(p.company||'?')+'</h3>'+
+      '<p class="hint" style="margin:0 0 10px">Contract value <b>'+eurF(cVal)+'</b>. Break it into the invoices it will really be billed in '+
+      '(Verdian: 6.000 € now, the rest in October). Each invoice then links to its own slice, and the SPX board shows how much of the contract is actually invoiced and collected.</p>'+
+      (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
+      '<table><tr><th>Label</th><th style="width:110px" class="num">Amount €</th><th style="width:150px">Expected</th><th style="width:120px">Invoiced</th><th style="width:24px"></th></tr>';
+    fr.forEach(f=>{const inv=fragNet(f.id,null);
+      h+='<tr><td><input data-ff="label" data-id="'+f.id+'" value="'+esc(f.label||'')+'" placeholder="e.g. 1st invoice" style="width:100%"></td>'+
+      '<td><input type="number" step="any" data-ff="amount" data-id="'+f.id+'" value="'+(f.amount!=null?f.amount:'')+'" style="text-align:right;width:100%"></td>'+
+      '<td><input type="date" data-ff="expected" data-id="'+f.id+'" value="'+(f.expected||'')+'" style="width:100%"></td>'+
+      '<td>'+(Math.abs(inv)>0.005?'<b style="color:var(--green)">'+eurF(inv)+'</b>':'<span class="hint">—</span>')+'</td>'+
+      '<td><button class="del" data-fdel="'+f.id+'">×</button></td></tr>';});
+    h+='</table>'+
+      '<p class="hint" style="margin:8px 0 0">Fragments total <b>'+eurF(sum)+'</b> of '+eurF(cVal)+
+        (Math.abs(diff)>0.01?' — <b style="color:var(--amber)">'+eurF(Math.abs(diff))+(diff>0?' still unallocated':' over the contract value')+'</b>':' — <b style="color:var(--green)">matches ✓</b>')+'</p>'+
+      '<div class="mrow"><span class="amsg" id="fr_msg"></span><button class="btn sm" id="fr_add">+ Add fragment</button>'+
+        (Math.abs(diff)>0.01&&fr.length?'<button class="btn sm" id="fr_rest">+ Rest ('+eurF(diff)+')</button>':'')+
+        '<button class="btn primary" id="fr_done">Done</button></div>';
+    document.getElementById('modalbody').innerHTML=h;
+    document.getElementById('modal').classList.add('on');
+    document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
+      const f=DB.spxFragById(el.dataset.id);if(!f)return;
+      f[el.dataset.ff]=el.dataset.ff==='amount'?num2(el.value):el.value;
+      DB.save();draw('');});
+    document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{
+      const used=fragNet(b.dataset.fdel,null);
+      if(Math.abs(used)>0.005){draw('That fragment already carries '+eurF(used)+' of invoices — unlink them first.');return;}
+      DB.data.spxFrags=DB.spxFrags.filter(x=>x.id!=b.dataset.fdel);DB.save();draw('');});
+    const add=amt=>{const n=DB.spxFragsFor(propId).length;
+      DB.spxFrags.push({id:DB.newId(),proposalId:propId,label:(n===0?'1st invoice':n===1?'2nd invoice':(n+1)+'th invoice'),
+        amount:num2(amt),expected:null,notes:null,sort:n});
+      DB.save();draw('');};
+    const a=document.getElementById('fr_add');if(a)a.onclick=()=>add(fr.length?0:cVal);
+    const r=document.getElementById('fr_rest');if(r)r.onclick=()=>add(diff);
+    document.getElementById('fr_done').onclick=()=>{closeModal();if(backTo)backTo();else render();};
+  };
+  draw('');
+}
+
 /* build editable line rows from an invoice's stored allocs (legacy rows get qty=1, price=amount) */
 function rowsFromInvoice(inv){
   return DB.allocsFor(inv.id).map(a=>{let cid=a.codigoId,cod=a.codigo;
@@ -391,6 +520,9 @@ function openModal(inv,preset){
     '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
     '<label>Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'"></label>'+
     '<label class="w2" id="l_contract" style="display:none">Contract (SPX proposal) * <span class="hint" style="text-transform:none;font-weight:400">— mandatory for SPX &amp; upgrade invoices; SPX Invoiced/Paid follows it</span><select id="m_spx">'+spxContractOpts(i.spxProposalId)+'</select></label>'+
+    '<label class="w2" id="l_frag" style="display:none">Instalment <span class="hint" style="text-transform:none;font-weight:400">— when one contract is billed in several invoices, say which slice this one is</span>'+
+      '<span style="display:flex;gap:6px"><select id="m_frag" style="flex:1">'+fragOpts(i.spxProposalId,i.spxFragmentId)+'</select>'+
+      '<button type="button" class="btn sm" id="m_fragedit" title="Break this contract into the invoices it will actually be billed in">✂ Split…</button></span></label>'+
     '<label id="l_owner" style="display:none">Contract salesperson<input id="m_owner" readonly tabindex="-1" value=""></label>'+
     '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— line prices go in US$; type the final € figure for accounting in the totals box</span></label>'+
     '</div>'+
@@ -426,8 +558,9 @@ function openModal(inv,preset){
   renderPayments();
 }
 function renderLines(){
-  const cods=codsSorted();
-  const itemOpts=sel=>'<option value="">— item —</option>'+cods.map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
+  /* retired items stay selectable only where they are already in use, so history edits
+     never lose their código while new lines only see the live list */
+  const itemOpts=sel=>'<option value="">— item —</option>'+codsForPicker(sel).map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(codLabel(c))+(c.archived?' · retired':'')+'</option>').join('');
   const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('');
   const paseOpts=sel=>'<option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(t===sel?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+')</option>').join('');
   const usd=document.getElementById('m_usd')&&document.getElementById('m_usd').checked;
@@ -492,20 +625,48 @@ function refreshModal(){
   $('l_abde').style.display=(st==='abono')?'':'none';
   /* live A11 hint — contract value vs what is invoiced on it (warn only, never blocks) */
   const hint=$('m_ctrhint');
-  if(needsSpx&&$('m_spx').value){
-    const p=(DB.spxProps||[]).find(x=>x.id==+$('m_spx').value);
+  const propId=$('m_spx').value?+$('m_spx').value:null;
+  const frags=propId?DB.spxFragsFor(propId):[];
+  $('l_frag').style.display=(needsSpx&&propId)?'':'none';
+  if(needsSpx&&propId){
+    const p=(DB.spxProps||[]).find(x=>x.id==propId);
     if(p){
       $('m_owner').value=p.responsableName||p.responsable||'—';
-      const cVal=+p.valueEur||0,others=linkedNet(p.id,editingId),mine=t.usd?(+$('m_eur').value||0):t.net;
-      const sum=others+mine;
-      hint.innerHTML=cVal?('Contract '+eurF(cVal)+' · this invoice '+eurF(mine)+(others?' · other linked invoices '+eurF(others):'')+
-        (Math.abs(sum-cVal)>0.01?' — <b style="color:var(--amber)">⚠ does not match the contract ('+eurF(sum)+' vs '+eurF(cVal)+') — double-check, the fault can sit on either side</b>':' — <b style="color:var(--green)">matches the contract ✓</b>')):'';
+      const cVal=+p.valueEur||0,mine=t.usd?(+$('m_eur').value||0):t.net;
+      const fragId=$('m_frag').value?+$('m_frag').value:null;
+      const frag=fragId?DB.spxFragById(fragId):null;
+      if(frag){
+        /* a split contract is checked against ITS FRAGMENT, not the whole value — that
+           false ⚠ on every legitimately split contract is what Jesús was hitting */
+        const fVal=+frag.amount||0,othersF=fragNet(frag.id,editingId),sumF=othersF+mine;
+        hint.innerHTML='Fragment "'+esc(frag.label||'')+'" '+eurF(fVal)+' of a '+eurF(cVal)+' contract · this invoice '+eurF(mine)+
+          (othersF?' · already on this fragment '+eurF(othersF):'')+
+          (Math.abs(sumF-fVal)>0.01?' — <b style="color:var(--amber)">⚠ does not match the fragment ('+eurF(sumF)+' vs '+eurF(fVal)+')</b>':' — <b style="color:var(--green)">matches the fragment ✓</b>');
+      }else if(frags.length){
+        hint.innerHTML='<b style="color:var(--amber)">This contract is split into '+frags.length+' invoices — pick which instalment this one bills.</b>';
+      }else{
+        const others=linkedNet(p.id,editingId),sum=others+mine;
+        hint.innerHTML=cVal?('Contract '+eurF(cVal)+' · this invoice '+eurF(mine)+(others?' · other linked invoices '+eurF(others):'')+
+          (Math.abs(sum-cVal)>0.01?' — <b style="color:var(--amber)">⚠ does not match the contract ('+eurF(sum)+' vs '+eurF(cVal)+') — double-check, the fault can sit on either side, or use ✂ Split if it is billed in instalments</b>':' — <b style="color:var(--green)">matches the contract ✓</b>')):'';
+      }
     }
   }else hint.innerHTML='';
 }
 function wireModal(i){
   const $=id=>document.getElementById(id);
-  ['m_iva','m_st','m_spx','m_eur'].forEach(id=>$(id).addEventListener('change',refreshModal));
+  ['m_iva','m_st','m_spx','m_eur','m_frag'].forEach(id=>$(id).addEventListener('change',refreshModal));
+  /* switching contract re-fills the instalment list (each contract has its own slices) */
+  $('m_spx').addEventListener('change',()=>{$('m_frag').innerHTML=fragOpts($('m_spx').value?+$('m_spx').value:null,null);refreshModal();});
+  /* ✂ Split: the editor replaces the modal body, so re-open the invoice on Done with
+     the form state intact — stashDraft/openModal is the existing recovery path */
+  $('m_fragedit').addEventListener('click',()=>{
+    const propId=$('m_spx').value?+$('m_spx').value:null;
+    if(!propId){alert('Pick the contract first.');return;}
+    const snap=formModel(),inv=editingId?DB.invoice(editingId):null;
+    openFragEditor(propId,()=>{
+      openModal(inv,{fields:snap.fields,lines:snap.lines,title:(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice')});
+    });
+  });
   $('m_usd').addEventListener('change',()=>{renderLines();refreshModal();}); // the line headers switch €/$ with the checkbox
   $('m_eur').addEventListener('input',refreshModal);
   /* A6: due date can no longer precede the invoice date */
@@ -587,7 +748,7 @@ function formModel(){
     razon_social:$('m_rs').value,pedido:$('m_pedido').value,en_usd:$('m_usd').checked,
     iva_pct:+$('m_iva').value,iva_motivo:$('m_motivo').value,descuento_pct:$('m_dto').value,
     status:$('m_st').value,metodo_pago:$('m_pago').value,comentarios:$('m_com').value,
-    abono_de:$('m_abde').value,spxProposalId:$('m_spx').value,entered_by:$('m_by').value,
+    abono_de:$('m_abde').value,spxProposalId:$('m_spx').value,spxFragmentId:$('m_frag').value,entered_by:$('m_by').value,
     importe_base:$('m_eur').value},lines:allocRows};
 }
 function stashDraft(){try{sessionStorage.setItem('inv2_draft',JSON.stringify(formModel()));}catch(e){}}
@@ -616,10 +777,14 @@ async function saveInvoice(){
   if(lines.some(r=>!r.producto))return err('Every line needs a product.');
   /* analítica: every line MUST have an item (código contable) — mandatory */
   if(lines.some(r=>!r.codigoId))return err('Every line needs an item / código contable — it is mandatory.');
-  /* duplicate invoice numbers are BLOCKED (also enforced by the DB unique index) */
-  if(DB.invoices.some(x=>x.id!=editingId&&(x.numero_factura||'').trim().toLowerCase()===num.toLowerCase()))return err('That invoice nº already exists — duplicates are blocked.');
   const fecha=$('m_fecha').value;
   if(!fecha)return err('Date is missing.');
+  /* duplicate invoice numbers are BLOCKED WITHIN THE SAME YEAR DRAWER (Jesús, 23 jul):
+     each year runs its own sequence, so 2027 may legitimately restart at R1 without
+     colliding with 2026's R1. Cross-year duplicates are a warning, not a block. */
+  const numYear=fecha.slice(0,4);
+  if(DB.invoices.some(x=>x.id!=editingId&&invYearOf(x)===numYear&&(x.numero_factura||'').trim().toLowerCase()===num.toLowerCase()))
+    return err('Invoice nº '+num+' already exists in '+numYear+' — duplicates are blocked inside a year.');
   const yr=+fecha.slice(0,4);
   if(yr>new Date().getFullYear())return err('The date cannot go beyond the current year.');
   if(yr<2020)return err('That date looks wrong ('+fecha.slice(0,4)+') — check the year.');
@@ -628,11 +793,16 @@ async function saveInvoice(){
   if($('m_iva').value==='0'&&!$('m_motivo').value)return err('0% VAT: choose the reason (exempt / not subject / reverse charge / export).');
   const esAbono=(st==='abono');
   /* abonos must start with R (own sequence — use “+ Credit note” to get the next one) */
-  if(esAbono&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. '+nextRNumber()+').');
-  if(!esAbono&&num.toUpperCase().startsWith('R')&&/^R\d+$/i.test(num))return err('R-numbers are reserved for credit notes.');
-  /* A7: SPX & upgrade invoices must carry their contract */
+  if(esAbono&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. '+nextRNumber(numYear)+').');
+  if(!esAbono&&looksLikeRNumber(num))return err('R-numbers are reserved for credit notes.');
+  /* A7: SPX & upgrade invoices must carry their contract — enforced on NEW invoices ONLY.
+     Imported/historical rows predate the link, and blocking their save locked Jesús out of
+     correcting them at all (HERBERT SMITH 20260373, 23 jul: "no puedo corregirlo porque me
+     pide linkear el SPX"). Unlinked old rows stay visible via the amber "link contract"
+     button in the table, so nothing is silently lost. */
   const needsSpx=lines.some(r=>r.producto==='sponsorship'||r.producto==='upgrade');
-  if(needsSpx&&!$('m_spx').value&&!esAbono)return err('Sponsorship / upgrade invoices must be linked to their SPX contract — pick it under Contract.');
+  if(needsSpx&&!$('m_spx').value&&!esAbono&&!editingId)
+    return err('Sponsorship / upgrade invoices must be linked to their SPX contract — pick it under Contract.');
   const t=calcTotals();
   if(t.usd&&$('m_eur').value==='')return err('Invoiced in USD: type the final EUR figure for accounting in the totals box.');
   /* credit notes are stored NEGATIVE — everywhere downstream (Money, KPIs, Excel) sums
@@ -658,6 +828,9 @@ async function saveInvoice(){
     vencimiento:$('m_venc').value||fecha,
     responsable_comercial:prev?prev.responsable_comercial:null, /* A10: field gone, legacy data preserved */
     spxProposalId:needsSpx&&$('m_spx').value?+$('m_spx').value:(prev?prev.spxProposalId:null),
+    /* the fragment only survives while its contract does — re-pointing an invoice at
+       another contract must not leave it linked to the old one's instalment */
+    spxFragmentId:(needsSpx&&$('m_spx').value&&$('m_frag').value)?+$('m_frag').value:null,
     razon_social:$('m_rs').value.trim(),importe_base:baseEur,
     en_usd:t2.usd,
     importe_usd:t2.usd?(esAbono?-Math.abs(t2.net):t2.net):null,
@@ -712,20 +885,44 @@ async function saveInvoice(){
 }
 
 /* ---------- C1: + Credit note — pick invoice → total or partial → auto-negative draft ---------- */
-function openCreditPicker(){
-  const cands=DB.invoices.filter(i=>i.status!=='cancelado'&&i.status!=='abono'&&i.producto!=='abono')
+/* The invoice a credit note reverses is picked from ONE YEAR's drawer, not from all
+   660 invoices at once (Jesús, 23 jul: "el listado va a ser infinito"). Default = the
+   year tab you are standing on; the one documented exception — a credit note that
+   cancels LAST year's invoice — is opened deliberately with the checkbox. */
+function creditYear(){return (flt.year&&flt.year!=='all')?flt.year:curYear();}
+function cnCandidates(year){
+  return DB.invoices.filter(i=>i.status!=='cancelado'&&i.status!=='abono'&&i.producto!=='abono'&&invYearOf(i)===year)
     .sort((a,b)=>((b.fecha||'').localeCompare(a.fecha||'')));
+}
+function cnOptsHtml(year,q){
+  const t=(q||'').trim().toLowerCase();
+  const list=cnCandidates(year).filter(x=>!t||[x.numero_factura,x.razon_social,x.pedido].join(' ').toLowerCase().includes(t));
+  if(!list.length)return '<option value="">— no invoices in '+year+(t?' matching that search':'')+' —</option>';
+  return '<option value="">—</option>'+list.map(x=>'<option value="'+x.id+'">'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+' · '+eurF(x.importe_base)+'</option>').join('');
+}
+function openCreditPicker(){
+  const yNow=creditYear(), yPrev=(+yNow-1)+'';
   document.getElementById('modalbody').innerHTML=
     '<h3>+ Credit note</h3>'+
     '<p class="hint" style="margin:0 0 10px">Pick the invoice to credit. A <b>total</b> credit note reverses everything and marks the invoice Cancelled; a <b>partial</b> one auto-splits money, passes and lines proportionally — and you can still edit every line before saving.</p>'+
+    '<label style="display:block;margin:0 0 10px;font-weight:600"><input type="checkbox" id="cn_prev"> Credit note de año anterior '+
+      '<span class="hint" style="text-transform:none;font-weight:400">— tick to credit an invoice from '+yPrev+'. The credit note itself is still issued today, in the '+
+      yNow+' drawer ('+esc(nextRNumber(yNow))+') — change its date only if accounting wants it booked into '+yPrev+'.</span></label>'+
     '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
-    '<label class="w2">Invoice to credit *<select id="cn_inv"><option value="">—</option>'+cands.map(x=>'<option value="'+x.id+'">'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+' · '+eurF(x.importe_base)+'</option>').join('')+'</select></label>'+
+    '<label class="w2">Search <input id="cn_q" placeholder="company, invoice nº, order…"></label>'+
+    '<label class="w2">Invoice to credit * <span class="hint" id="cn_ylab" style="text-transform:none;font-weight:400">— '+yNow+' drawer</span>'+
+      '<select id="cn_inv">'+cnOptsHtml(yNow,'')+'</select></label>'+
     '<label>Type<select id="cn_type"><option value="total">Total — reverses everything, cancels the invoice</option><option value="partial">Partial — you set the amount</option></select></label>'+
     '<label id="cn_amtl" style="display:none">Net amount to credit €<input id="cn_amt" type="number" step="any" min="0"></label>'+
     '</div>'+
     '<div class="mrow"><span class="amsg" id="cn_msg"></span><button class="btn" id="cn_cancel">Cancel</button><button class="btn primary" id="cn_go">Create draft →</button></div>';
   document.getElementById('modal').classList.add('on');
   const $=id=>document.getElementById(id);
+  const refill=()=>{const y=$('cn_prev').checked?yPrev:yNow;
+    $('cn_inv').innerHTML=cnOptsHtml(y,$('cn_q').value);
+    $('cn_ylab').textContent='— '+y+' drawer';};
+  $('cn_prev').onchange=refill;
+  $('cn_q').oninput=refill;
   $('cn_type').onchange=()=>{$('cn_amtl').style.display=$('cn_type').value==='partial'?'':'none';};
   $('cn_cancel').onclick=closeModal;
   $('cn_go').onclick=()=>{
@@ -757,7 +954,7 @@ function openCreditPicker(){
       razon_social:inv.razon_social,pedido:inv.pedido,en_usd:!!inv.en_usd,
       importe_base:inv.en_usd?-num2(credit):'',
       iva_pct:inv.iva_pct!=null?inv.iva_pct:21,iva_motivo:inv.iva_motivo||'',
-      status:'abono',metodo_pago:'abono',abono_de:inv.id,spxProposalId:inv.spxProposalId||'',
+      status:'abono',metodo_pago:'abono',abono_de:inv.id,spxProposalId:inv.spxProposalId||'',spxFragmentId:inv.spxFragmentId||'',
       comentarios:(total?'Total':'Partial')+' credit note for '+(inv.numero_factura||'')}});
   };
 }

@@ -1419,7 +1419,7 @@ function buildSeed(){
    {id:15,item:'Biometano 27',codigo:'70321',eventId:null},
    {id:16,item:'Almacenamiento 27',codigo:'70322',eventId:null},
   ];
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,payments:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,payments:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],spxFrags:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -1448,7 +1448,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
@@ -1469,7 +1469,8 @@ const COLS={
   /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
      row) — H2 26 / DC Italia 26 live only there, and it's the row the money must sum into. */
   invoices:['id','codigo_contable','producto','cantidad','tipo_pase','pase_cantidad','fecha','numero_factura','pedido','vencimiento','responsable_comercial','razon_social','importe_base','en_usd','importe_usd','usd_rate','usd_rate_date','iva_pct','iva_motivo','iva_importe','total_factura','descuento_pct','status','fecha_cobro','importe_cobrado','metodo_pago','comentarios','abono_de','entered_by',
-    'spxProposalId'], // invoice ↔ contract link, set by Jesús in Facturación (dispatch_invoice_contract.sql)
+    'spxProposalId', // invoice ↔ contract link, set by Jesús in Facturación (dispatch_invoice_contract.sql)
+    'spxFragmentId'], // which fragment of a split contract this invoice bills (dispatch_spx_fragments.sql)
   invalloc:['id','invoice_id','eventId','amount','passes','codigo','codigoId',
     'producto','tipo_pase','qty','price'], // Invoicing 2.0 line model (dispatch_invoicing2.sql)
   delegates:['id','eventId','source','invoice_id','sponsor_name','name','email','company','job_title','seller','crm_tagged','materials_sent','added_by','notes'],
@@ -1479,7 +1480,7 @@ const COLS={
   payments:['id','invoice_id','fecha','importe','metodo','notas'],
   /* códigos = the item↔código-contable master Jesús maintains (item name + accounting
      code + optional link to a dc_finance event so RENMAD lines still roll into the € Dashboard) */
-  codigos:['id','item','codigo','descripcion','eventId'],
+  codigos:['id','item','codigo','descripcion','eventId','archived'],
   /* team request box: anyone opens tickets about the Dispatch Center itself
      (bug / usability / change / idea); admins triage (status + priority);
      the thread jsonb holds follow-up comments [{who,when,text|sys}] */
@@ -1491,6 +1492,9 @@ const COLS={
     'accountType','stage','productPackage','packageTier','reasonForLoss'], // Zoho-mirrored fields (dispatch_spx_zoho.sql) — salesStatus stays derived from stage
   spxLines:['id','parentId','eventId','eventKey','eventName','valueEur','valueEdited','contents'],
   spxTargets:['id','eventId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus'],
+  /* one SPX contract billed across several invoices (Jesús, 24 jul): the contract is
+     "broken" into fragments and each invoice links to its own fragment */
+  spxFrags:['id','proposalId','label','amount','expected','notes','sort'],
   companyMap:['id','canonicalName','marketingAliases','legalAliases','emailDomains','invoiceClientKey','confirmedBy','confirmedAt','status'],
   spxEventReg:['id','eventKey','name','financeId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus','active','sort'],
   /* personal to-dos (Me tab): each person sees ONLY their own (RLS) */
@@ -1505,7 +1509,7 @@ const COLS={
      one column of a row the requester is allowed to read. */
   holmsgs:['id','holidayId','personId','byName','text','toRequester','created'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -1669,6 +1673,12 @@ const DB={
         this.data.spxProps=sp;this.data.spxLines=sl;this.data.spxTargets=stg;this.data.companyMap=cm;
         _spxReady=true;
       }catch(e){console.warn('SPX module not ready:',e.message||e);}
+      /* SPX billing fragments (tolerant + separate: a contract with no fragments simply
+         bills in one invoice, exactly as before dispatch_spx_fragments.sql is applied) */
+      this.data.spxFrags=[];_spxFragReady=false;
+      try{const fr=await sb.from('dc_spx_fragments').select('*').eq('deleted',false).order('sort');
+        if(fr.error)throw fr.error;this.data.spxFrags=fr.data||[];_spxFragReady=true;
+      }catch(e){console.warn('SPX billing fragments not ready:',e.message||e);}
       /* SPX event registry (tolerant + separate: the board works before it exists, falling back to proposal-derived events) */
       this.data.spxEventReg=[];_spxEvReady=false;
       try{const er=await sb.from('dc_spx_events').select('*').eq('deleted',false).order('sort');
@@ -1721,7 +1731,7 @@ const DB={
         if(k==='todos'&&!_todoReady)continue; // to-dos table not created yet
         if(k==='inbox'&&!_inboxReady)continue; // inbox table not created yet
         if(k==='holmsgs'&&!_holmsgReady)continue; // holiday messages table not created yet
-        if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)))continue; // SPX tables not created yet
+        if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)||(k==='spxFrags'&&!_spxFragReady)))continue; // SPX tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
           const p=pickRow(r,k),s=JSON.stringify(p);seen[r.id]=true;
@@ -1867,6 +1877,11 @@ const DB={
   get spxEventReg(){return this.data.spxEventReg||[];},
   spxReady(){return !USE_SUPABASE||_spxReady;},
   spxLinesFor(parentId){return this.spxLines.filter(l=>l.parentId==parentId);},
+  /* billing fragments of one contract, in the order they get invoiced */
+  get spxFrags(){return this.data.spxFrags||[];},
+  spxFragsReady(){return !USE_SUPABASE||_spxFragReady;},
+  spxFragsFor(propId){return this.spxFrags.filter(f=>f.proposalId==propId).sort((a,b)=>((+a.sort||0)-(+b.sort||0))||((''+(a.expected||'')).localeCompare(''+(b.expected||''))));},
+  spxFragById(id){return this.spxFrags.find(f=>f.id==id)||null;},
   spxTargetFor(finId){return this.spxTargets.find(t=>t.eventId==finId)||null;},
   /* sales lead (Cintia) or admin (Belén): edits ANY proposal + targets + crosswalk. Mirrors dc_can_sales_lead(). */
   canSalesLead(){return !!(this.currentUser&&(this.currentUser.salesLead||this.currentUser.access==='admin'));},

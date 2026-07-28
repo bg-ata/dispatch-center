@@ -76,6 +76,7 @@
   select.stsel{font:inherit;font-size:11px;font-weight:700;border:1px solid var(--line);border-radius:16px;padding:2px 6px;background:#fff;cursor:pointer}
   .accb{font-size:10px;font-weight:700;border-radius:6px;padding:1px 7px;white-space:nowrap;margin-left:5px}
   .acc-none{background:#f0eee7;color:var(--grey)} .acc-invoiced{background:#fbf1d6;color:#9a7100} .acc-paid{background:#e2f4e2;color:#0a7a0a}
+  .acc-partial{background:#FDE7CF;color:#8a4a12} .acc-partpaid{background:#E4EFD8;color:#4a6a25}
   .clip{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
   .warnpill{color:#b5541a;font-size:11px;cursor:pointer;font-weight:700}
   .setupbanner{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:11px;padding:11px 15px;margin:0 0 14px;font-size:13px;line-height:1.5}
@@ -127,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=72"></script>
+<script src="store.js?v=73"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -152,7 +153,10 @@ function stageClass(st){return st==='Won'?'st-approved':st==='Lost'?'st-lost':st
 /* board bucket — Silent is a stage (salesStatus stays 'Sent', DB-valid) shown as its own
    dormant column so it stops blurring the Sent numbers (Belén, 20 Jul). */
 function spxBucket(p){return (p.stage==='Silent')?'Silent':p.salesStatus;}
-const ACC={none:{cls:'acc-none',txt:'not invoiced'},invoiced:{cls:'acc-invoiced',txt:'✓ invoiced'},paid:{cls:'acc-paid',txt:'✓ paid'}};
+const ACC={none:{cls:'acc-none',txt:'not invoiced'},invoiced:{cls:'acc-invoiced',txt:'✓ invoiced'},paid:{cls:'acc-paid',txt:'✓ paid'},
+  /* a contract billed in instalments is NOT "invoiced" once its first invoice exists
+     (Jesús, 24 jul) — these two states carry the € actually invoiced / collected */
+  partial:{cls:'acc-partial',txt:'part invoiced'},partpaid:{cls:'acc-partpaid',txt:'part paid'}};
 const money=n=>finFmt(n==null?0:n);
 const pct=x=>(x==null?'—':(Math.round(x*1000)/10)+'%');
 function stLabel(s){return ST_EN[s]||s||'—';}
@@ -276,8 +280,27 @@ function accountingFor(p){
   // 1) the explicit invoice ↔ contract link Jesús sets in Facturación — authoritative
   const direct=DB.invoices.filter(i=>i.spxProposalId==p.id&&i.status!=='cancelado');
   if(direct.length){
-    const paid=direct.some(i=>i.status==='pagado'||i.fecha_cobro);
-    return {state:paid?'paid':'invoiced',linked:true};
+    /* AMOUNT-AWARE (Jesús, 24 jul): an SPX contract can be billed across 2+ invoices
+       (Verdian: 6K now, the rest in October). The old test — "any linked invoice ⇒
+       invoiced, any paid one ⇒ paid" — reported a half-billed contract as fully
+       invoiced and fully paid. Compare the € actually invoiced / collected against
+       the contract value instead. */
+    const cVal=+p.valueEur||0;
+    const net=direct.reduce((s,i)=>s+(+i.importe_base||0),0);
+    const paidNet=direct.reduce((s,i)=>s+((i.status==='pagado'||i.fecha_cobro)?(+i.importe_base||0):0),0);
+    if(!cVal)return {state:paidNet>0?'paid':'invoiced',linked:true,net:net,paid:paidNet,cVal:0};
+    /* You cannot have collected more of a contract than stands invoiced on it: a credit
+       note cuts the net back, so cap the cash against it. Without the cap a 10.000 €
+       contract paid in full and then credited 4.000 € still read "✓ paid" while only
+       6.000 € was actually billed — the very over-reporting this rewrite is fixing. */
+    const paidEff=Math.min(paidNet,net);
+    const fullyInvoiced=net>=cVal-0.01;
+    const state=(fullyInvoiced&&paidEff>=net-0.01)?'paid'      // billed in full and collected
+               :(paidEff>0.005)                   ?'partpaid'  // some cash in, not all
+               :fullyInvoiced                     ?'invoiced'  // fully billed, nothing collected yet
+               :(net>0.005)                       ?'partial'   // only part of the contract billed
+               :                                   'none';
+    return {state:state,linked:true,net:net,paid:paidEff,cVal:cVal};
   }
   // 2) fallback: the company-name crosswalk (filled silently when a salesperson
   //    types the legal name at Won) — kept so pre-link history still derives
@@ -641,7 +664,14 @@ function accBadge(p){const a=accountingFor(p);
      Sent/Lost/blank ones are not supposed to be invoiced, so no badge there */
   if(a.state==='none'&&p.salesStatus!=='Confirmed')return '';
   if(a.noEvent)return p.salesStatus==='Confirmed'?' <span class="accb acc-none" title="no €-Dashboard event linked — accounting status unavailable">—</span>':'';
-  const info=ACC[a.state];return ' <span class="accb '+info.cls+'" title="Accounting status — derived from Facturación, never typed">'+info.txt+'</span>';}
+  const info=ACC[a.state];
+  /* the partial states are only honest if they say HOW partial — put the € in the badge */
+  const detail=(a.cVal&&(a.state==='partial'||a.state==='partpaid'))
+    ? (a.state==='partial'?money(a.net)+' of '+money(a.cVal)+' invoiced'
+                          :money(a.paid)+' of '+money(a.cVal)+' collected')
+    : '';
+  return ' <span class="accb '+info.cls+'" title="Accounting status — derived from Facturación, never typed'+(detail?' · '+detail:'')+'">'+info.txt+
+    (detail?' <span style="font-weight:400;opacity:.85">'+money(a.state==='partial'?a.net:a.paid)+'/'+money(a.cVal)+'</span>':'')+'</span>';}
 function moneyCell(id,kind,v,editable){
   if(!editable)return '<span class="mval ro">'+money(v)+'</span>';
   return '<span class="mval" data-mid="'+id+'" data-mk="'+kind+'" title="Click to edit">'+money(v)+'</span>';
