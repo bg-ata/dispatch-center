@@ -1,4 +1,4 @@
-/* RENMAD Proposal Builder - bundled libs (auto-concatenated; edit sources in renmad-builders\). */
+/* RENMAD Proposal Builder - bundled libs (auto-concatenated; edit sources in renmad-builders\, rebuild with bundle.ps1). */
 
 /* ===== lib\renmad-deck.js ===== */
 /* ============================================================================
@@ -2301,6 +2301,108 @@ window.PB = {
   };
 })(window);
 
+/* ===== proposal\images.js ===== */
+/* ============================================================================
+   Deck imagery for the browser Proposal Builder.
+
+   The Streamlit builder ships 129 image files (44,7 MB) next to its code; a
+   browser cannot. The curated deck photography therefore lives in the Dispatch
+   Supabase, bucket `pb-assets` (PRIVATE — read policy `pb_assets_read` allows
+   any authenticated Dispatch user), and is fetched here with the caller's own
+   access token, exactly like the board writes in board.js.
+
+   Layout mirrors proposal_builder/assets 1:1 so a re-upload is a plain copy:
+       sets/<vertical>/<slot>.jpg      the four curated per-vertical sets
+       logos/<file>.png                RENMAD + per-event logos
+       photos/<salesperson>.jpg|png    contact-slide headshots
+
+   Slots (same names as deck_builder.img_slot): cover · divider · about ·
+   branding_a · branding_b · newsletter · discount · calendar.
+
+   Everything is cached per page load: a deck asks for the same handful of
+   images repeatedly, and a rebuild after changing a package must not re-download.
+   Failure is never fatal — a missing image just means the deck draws the block
+   colour it drew before, which is what the builder did until today.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+
+  var BUCKET = "pb-assets";
+  var cache = {};        // path -> Promise<dataUrl|null>
+
+  /* Port of deck_builder._vertical_of — keep the order, it is load-bearing:
+     "dc_italia_26" must hit datacenters, not storage. */
+  function verticalOf(evKey) {
+    if (!evKey) return "storage";
+    var k = String(evKey);
+    if (k.indexOf("h2") === 0) return "hidrogeno";
+    if (k.indexOf("biometano") >= 0) return "biometano";
+    if (k.indexOf("dc") >= 0 || k.indexOf("datacenter") >= 0) return "datacenters";
+    return "storage";                    // orange catch-all: storage, invest, chile, mexico, usefulai, general, markets
+  }
+
+  /* biometano has no newsletter shot; fall back to the orange set rather than
+     leaving a hole (same effect as the Python default= argument). */
+  function slotPath(slot, evKey) {
+    var v = verticalOf(evKey);
+    if (v === "biometano" && slot === "newsletter") v = "storage";
+    return "sets/" + v + "/" + slot + ".jpg";
+  }
+
+  function objectUrl(base, path) {
+    return String(base).replace(/\/+$/, "") + "/storage/v1/object/" + BUCKET + "/" + path;
+  }
+
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve(fr.result); };
+      fr.onerror = function () { resolve(null); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  /* one image -> dataUrl (or null). Never throws. */
+  function fetchOne(cfg, path) {
+    if (cache[path]) return cache[path];
+    var p = fetch(objectUrl(cfg.url, path), {
+      headers: { apikey: cfg.anonKey || "", Authorization: "Bearer " + (cfg.token || cfg.anonKey || "") }
+    }).then(function (r) {
+      if (!r.ok) return null;
+      return r.blob().then(blobToDataUrl);
+    }).catch(function () { return null; });
+    cache[path] = p;
+    return p;
+  }
+
+  var ALL_SLOTS = ["cover", "divider", "about", "branding_a", "branding_b", "newsletter", "discount", "calendar"];
+
+  /* Everything a deck needs, in one call:
+       PBIMG.load({url, anonKey, token}, eventKey, {salesperson:'ian', slots:[...]})
+     -> { cover:dataUrl|null, ..., logo:dataUrl|null, photo:dataUrl|null }
+     Resolves even if every fetch fails. */
+  function load(cfg, evKey, opts) {
+    opts = opts || {};
+    var want = opts.slots && opts.slots.length ? opts.slots : ALL_SLOTS;
+    var jobs = [], keys = [];
+    want.forEach(function (slot) { keys.push(slot); jobs.push(fetchOne(cfg, slotPath(slot, evKey))); });
+    keys.push("logo"); jobs.push(fetchOne(cfg, "logos/logo_renmad_events.png"));
+    if (opts.salesperson) {
+      var sp = String(opts.salesperson).toLowerCase();
+      var file = sp === "cintia" ? "photos/cintia.png" : "photos/" + sp + ".jpg";
+      keys.push("photo"); jobs.push(fetchOne(cfg, file));
+    }
+    if (opts.eventLogo) { keys.push("evlogo"); jobs.push(fetchOne(cfg, "logos/" + opts.eventLogo)); }
+    return Promise.all(jobs).then(function (vals) {
+      var out = {};
+      keys.forEach(function (k, i) { out[k] = vals[i]; });
+      return out;
+    });
+  }
+
+  global.PBIMG = { verticalOf: verticalOf, slotPath: slotPath, load: load, slots: ALL_SLOTS };
+})(typeof window !== "undefined" ? window : this);
+
 /* ===== proposal\deck.js ===== */
 /* ============================================================================
    RENMAD Proposal Builder  ·  browser deck generator (PptxGenJS)
@@ -2441,6 +2543,11 @@ window.PB = {
     var brand = opts.brand && opts.brand.ok ? opts.brand : null;
     var brandImgs = (brand && brand.images) ? brand.images.map(function (i) { return i && i.dataUrl; }).filter(Boolean) : [];
     var bimg = function (i) { return brandImgs.length ? brandImgs[i % brandImgs.length] : null; };
+    /* The curated per-vertical photography (PBIMG, from the pb-assets bucket) is the
+       house look and wins; a client image pulled by the extractor is the fallback, and
+       a flat accent block is the fallback to that — which is all this deck had before. */
+    var IMG = opts.images || {};
+    var slotImg = function (slot, i) { return IMG[slot] || bimg(i); };
     var client = (opts.client || (brand && brand.title) || "").trim();
 
     // ---- package scope ----
@@ -2472,7 +2579,7 @@ window.PB = {
     // ===== 1 COVER =========================================================
     (function () {
       var s = pptx.addSlide(); s.background = { color: CH };
-      addImg(s, SW - 4.7, 0, 4.7, SH, bimg(0));
+      addImg(s, SW - 4.7, 0, 4.7, SH, slotImg("cover", 0));
       rc(s, SW - 4.7, 0, 0.06, SH, O);
       tx(s, 0.95, 1.30, 6, 0.9, "RENMAD", 44, WH, true, HEAD);
       tx(s, 0.97, 2.18, 6, 0.4, "EVENTS", 19, O, true, HEAD, "left", "top", { charSpacing: 6 });
@@ -2488,7 +2595,7 @@ window.PB = {
     (function () {
       var s = pptx.addSlide(); s.background = { color: GR };
       kicker(s, 0.7, 0.55, str("about_k"), str("about_t"));
-      if (!addImg(s, 9.55, 1.75, 3.0, 4.55, bimg(1))) rc(s, 9.55, 1.75, 3.0, 4.55, mix(accent, [255, 255, 255], 0.82), { rad: 0.08 });
+      if (!addImg(s, 9.55, 1.75, 3.0, 4.55, slotImg("about", 1))) rc(s, 9.55, 1.75, 3.0, 4.55, mix(accent, [255, 255, 255], 0.82), { rad: 0.08 });
       tx(s, 0.7, 1.75, 8.5, 2.1, str("about_body"), 18, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
       var stats = arr("stats"), x0 = 0.7, y0 = 4.25, bw = 2.55, bh = 1.35, gx = 0.18, gy = 0.2;
       stats.forEach(function (row, i) {
@@ -2595,7 +2702,7 @@ window.PB = {
     // ===== 6 EVENT DIVIDER =================================================
     (function () {
       var s = pptx.addSlide(); s.background = { color: CH };
-      if (!addImg(s, 0, 0, SW, 4.6, bimg(2))) rc(s, 0, 0, SW, 4.6, darken(accent, 0.35));
+      if (!addImg(s, 0, 0, SW, 4.6, slotImg("divider", 2))) rc(s, 0, 0, SW, 4.6, darken(accent, 0.35));
       rc(s, 0, 3.4, SW, 1.2, CH);
       tx(s, 0.85, 1.15, 8, 1.0, ev.name || "RENMAD Events", 34, WH, true, HEAD, "left", "middle");
       if (client) {
@@ -2796,7 +2903,7 @@ window.PB = {
       var s = pptx.addSlide(); s.background = { color: GR };
       kicker(s, 0.7, 0.5, str("save_k"), str("save_t"));
       tx(s, 0.7, 1.7, 11.9, 0.5, str("save_intro"), 14, IK, false, BODY);
-      if (!addImg(s, 0.7, 2.3, 11.95, 1.4, bimg(3))) rc(s, 0.7, 2.3, 11.95, 1.4, darken(accent, 0.25), { rad: 0.18 });
+      if (!addImg(s, 0.7, 2.3, 11.95, 1.4, slotImg("discount", 3))) rc(s, 0.7, 2.3, 11.95, 1.4, darken(accent, 0.25), { rad: 0.18 });
       tx(s, 0.95, 2.55, 8, 0.8, String(str("save_hero")).replace(/\n/g, " "), 26, WH, true, HEAD);
       var x0 = 0.7, cw = 2.86, g = 0.27;
       arr("save_tiers").forEach(function (t, i) {
@@ -2817,7 +2924,7 @@ window.PB = {
     (function () {
       var s = pptx.addSlide(); s.background = { color: DEEP };
       var pw = 4.8;
-      if (!addImg(s, SW - pw, 0, pw, SH, bimg(4))) rc(s, SW - pw, 0, pw, SH, darken(accent, 0.30));
+      if (!addImg(s, SW - pw, 0, pw, SH, IMG.photo || bimg(4))) rc(s, SW - pw, 0, pw, SH, darken(accent, 0.30));
       rc(s, 0, 0, 0.14, SH, O);
       // decorative accent dots (stand-ins for the deck's stars)
       ell(s, SW - pw - 0.9, 0.5, 0.7, ODARK);

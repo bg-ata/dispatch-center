@@ -124,7 +124,7 @@
 </div>
 
 <script src="store.js?v=74"></script>
-<script src="pb_bundle.js?v=3"></script>
+<script src="pb_bundle.js?v=4"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
 const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
@@ -186,6 +186,9 @@ function initBuilder(){
     const anon=(typeof SUPABASE_ANON_KEY!=='undefined')?SUPABASE_ANON_KEY:'';
     const base=(typeof SUPABASE_URL!=='undefined')?SUPABASE_URL:'https://dxgvbufsifgowwfggvmr.supabase.co';
     RENMAD.extractor.configure({endpoint:base+"/functions/v1/web-extractor",anonKey:anon,token:tok||anon});
+    /* the curated deck photography lives in the private pb-assets bucket and is read
+       with this colleague's own token (see proposal/images.js) */
+    window.IMGCFG={url:base,anonKey:anon,token:tok||anon};
     PBTIMELINE.configure({endpoint:base+"/functions/v1/dc-events",anonKey:anon,token:tok||anon});
     document.getElementById('brandmsg').textContent='Paste a client URL and hit Pull to add their brand to the deck.';
     dm.textContent='📅 Checking the Dispatch timeline for live dates…';
@@ -296,6 +299,14 @@ async function genEvents(msg){
       await RENMAD.save(deck,fileName);
     }else{
       fileName="RENMAD_"+(o.events.length>1?"multi":o.events[0].short).replace(/\s+/g,"_")+"_"+o.client.replace(/\s+/g,"_")+".pptx";
+      /* pull the event's curated photography first; a failure here must never stop a
+         deck being built, it only means the slides fall back to their block colours */
+      try{
+        if(window.PBIMG&&window.IMGCFG){
+          o.images=await PBIMG.load(window.IMGCFG,(o.events[0]||{}).key||'',
+                                    {salesperson:(typeof o.sp==='string')?o.sp:null});
+        }
+      }catch(e){ console.warn('deck imagery unavailable:',e&&e.message); }
       const deck=(typeof PBDECK!=='undefined')?PBDECK.buildFullDeck(o):PB.buildDeck(o);
       await RENMAD.save(deck,fileName);
     }
