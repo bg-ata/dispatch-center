@@ -155,7 +155,6 @@
   global.RENMAD = Object.assign(global.RENMAD || {}, { theme: T, W, H, newDeck, slides, money, save, toBase64 });
 })(window);
 
-
 /* ===== lib\extractor.js ===== */
 /* ============================================================================
    RENMAD web-extractor client  ·  the SHARED "designs from websites" building
@@ -216,7 +215,6 @@
 
   global.RENMAD = Object.assign(global.RENMAD || {}, { extractor: { configure, extract, _cfg: cfg } });
 })(window);
-
 
 /* ===== proposal\data.js ===== */
 /* AUTO-GENERATED from proposal_builder/spx_data.py — do not hand-edit. */
@@ -850,6 +848,7 @@ window.PB = {
  "events": [
   {
    "key": "general",
+   "spx_key": "general",
    "name": "RENMAD Events",
    "family": "storage",
    "portfolio": true,
@@ -867,6 +866,7 @@ window.PB = {
   },
   {
    "key": "italian_market",
+   "spx_key": "italian_market",
    "name": "RENMAD Italian Market",
    "family": "storage",
    "portfolio": true,
@@ -889,6 +889,7 @@ window.PB = {
   },
   {
    "key": "spanish_market",
+   "spx_key": "spanish_market",
    "name": "RENMAD Spanish Market",
    "family": "storage",
    "portfolio": true,
@@ -914,6 +915,7 @@ window.PB = {
   },
   {
    "key": "dc_italia_26",
+   "spx_key": "E050",
    "name": "RENMAD Datacenters Italia 2026",
    "family": "dcbh2",
    "portfolio": false,
@@ -931,6 +933,7 @@ window.PB = {
   },
   {
    "key": "h2_26",
+   "spx_key": "E047",
    "name": "RENMAD Hidrógeno 2026",
    "family": "dcbh2",
    "portfolio": false,
@@ -948,6 +951,7 @@ window.PB = {
   },
   {
    "key": "dc_27",
+   "spx_key": "E055",
    "name": "RENMAD Datacenters 2027",
    "family": "dcbh2",
    "portfolio": false,
@@ -965,6 +969,7 @@ window.PB = {
   },
   {
    "key": "storage_italia_27",
+   "spx_key": "E058",
    "name": "RENMAD Storage Italia 2027",
    "family": "storage",
    "portfolio": false,
@@ -982,6 +987,7 @@ window.PB = {
   },
   {
    "key": "biometano_27",
+   "spx_key": "E056",
    "name": "RENMAD Biometano 2027",
    "family": "dcbh2",
    "portfolio": false,
@@ -999,6 +1005,7 @@ window.PB = {
   },
   {
    "key": "almacenamiento_27",
+   "spx_key": "E057",
    "name": "RENMAD Almacenamiento 2027",
    "family": "storage",
    "portfolio": false,
@@ -1016,6 +1023,7 @@ window.PB = {
   },
   {
    "key": "chile_27",
+   "spx_key": "chile_27",
    "name": "RENMAD Chile 2027",
    "family": "other",
    "portfolio": false,
@@ -1033,6 +1041,7 @@ window.PB = {
   },
   {
    "key": "h2_27",
+   "spx_key": "HID27",
    "name": "RENMAD Hidrógeno 2027",
    "family": "dcbh2",
    "portfolio": false,
@@ -1050,6 +1059,7 @@ window.PB = {
   },
   {
    "key": "dc_italia_27",
+   "spx_key": "DCIT27",
    "name": "RENMAD Datacenters Italia 2027",
    "family": "dcbh2",
    "portfolio": false,
@@ -1067,6 +1077,7 @@ window.PB = {
   },
   {
    "key": "invest_27",
+   "spx_key": "E053",
    "name": "RENMAD Invest 2027",
    "family": "invest",
    "portfolio": false,
@@ -1084,6 +1095,7 @@ window.PB = {
   },
   {
    "key": "invest_italia_27",
+   "spx_key": "INVIT27",
    "name": "RENMAD Invest Italia 2027",
    "family": "invest",
    "portfolio": false,
@@ -1101,6 +1113,7 @@ window.PB = {
   },
   {
    "key": "mexico_27",
+   "spx_key": "MEX27",
    "name": "RENMAD Mexico 2027",
    "family": "other",
    "portfolio": false,
@@ -1118,6 +1131,7 @@ window.PB = {
   },
   {
    "key": "storage_polska_27",
+   "spx_key": "POLSKA27",
    "name": "RENMAD Storage Polska 2027",
    "family": "other",
    "portfolio": false,
@@ -1135,6 +1149,7 @@ window.PB = {
   },
   {
    "key": "usefulai_27",
+   "spx_key": "E052",
    "name": "RENMAD UsefulAI 2027",
    "family": "other",
    "portfolio": false,
@@ -1970,22 +1985,24 @@ window.PB = {
  "talksEvents": [
   {
    "key": "E059",
+   "spx_key": "E059",
    "name": "RENMAD Talks · BESS Invest 2026",
    "date_es": "22 sep 2026"
   },
   {
    "key": "E060",
+   "spx_key": "E060",
    "name": "RENMAD Talks · Biometano 2026",
    "date_es": "6 oct 2026"
   },
   {
    "key": "E061",
+   "spx_key": "E061",
    "name": "RENMAD Talks · Datacenters Off-Grid 2026",
    "date_es": "10 nov 2026"
   }
  ]
 };
-
 
 /* ===== proposal\build.js ===== */
 /* Proposal deck assembly. Consumes the full data (data.js, generated from
@@ -2059,7 +2076,6 @@ window.PB = {
   };
   PB.toBase64 = async function (opts) { return RENMAD.toBase64(PB.buildDeck(opts)); };
 })();
-
 
 /* ===== proposal\pricing.js ===== */
 /* ============================================================================
@@ -2207,11 +2223,22 @@ window.PB = {
   // register._event_lines (register.py:358-375): ONE conservative child line per
   // event. value = the SMALLEST selected package's (discounted) value at that
   // event; contents lists the package label(s) offered, joined by " / ".
+  // The Dispatch board groups by the SPX registry code (dc_spx_events.eventKey),
+  // NOT by the builder's own slug. Writing the slug is what split one event across
+  // two keys: on 28 jul 2026, 41 lines worth ~339.000 EUR sat on slugs the registry
+  // did not contain, so Almacenamiento 2027 reported as two half-events. `spx_key`
+  // rides on each event in data.js (generated from spx_data.SPX_EVENT_KEY); an event
+  // with no registry row keeps its slug rather than being folded into another one.
+  function spxKey(eventKey) {
+    const ev = _evByKey()[eventKey];
+    return (ev && ev.spx_key) ? ev.spx_key : eventKey;
+  }
+
   function eventLines(selections, discountPct, lang) {
     const out = outLines(selections, discountPct, lang);
     const order = [], byev = {};
     out.forEach(function (l) {
-      const ek = l.event_key;
+      const ek = spxKey(l.event_key);
       if (!(ek in byev)) {
         byev[ek] = {
           eventKey: ek, eventName: l.event,
@@ -2273,7 +2300,6 @@ window.PB = {
     quote: quote,
   };
 })(window);
-
 
 /* ===== proposal\deck.js ===== */
 /* ============================================================================
@@ -2821,7 +2847,6 @@ window.PB = {
   global.PBDECK = { buildFullDeck: buildFullDeck };
 })(window);
 
-
 /* ===== proposal\board.js ===== */
 /* ============================================================================
    RENMAD Proposal Builder — SPX board write (browser port)
@@ -3057,7 +3082,6 @@ window.PB = {
   };
 })(window);
 
-
 /* ===== proposal\timeline.js ===== */
 /* ============================================================================
    Live event dates from the Dispatch timeline (dc_events) — THE CASCADE.
@@ -3165,7 +3189,6 @@ window.PB = {
 
   global.PBTIMELINE = { configure, applyDates, NAME_MATCH, _fmtDates: fmtDates, _matchName: matchName };
 })(window);
-
 
 /* ===== proposal\talks_deck.js ===== */
 /* ============================================================================
@@ -3683,7 +3706,6 @@ window.PB = {
 
   global.PBTALKS = { buildTalksDeck: buildTalksDeck };
 })(window);
-
 
 /* ===== proposal\webinar_deck.js ===== */
 /* ============================================================================
