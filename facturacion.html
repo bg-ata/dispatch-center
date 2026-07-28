@@ -159,27 +159,42 @@ function statusCell(i,stSel){
 /* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
 function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
 function codLabel(c){return c.codigo?('('+c.codigo+') '+(c.item||'#'+c.id)):((c.item||'#'+c.id)+' — código pending');}
-/* credit notes carry their OWN sequence, ONE DRAWER PER YEAR (Jesús, 23 jul).
-   Scanning every year at once is what let 2025's R25/25 collide with 2026's R25.
-   Convention, reproducing what accounting already did: the RUNNING year numbers
-   bare — R1, R2, R3… — and any other year suffixes its two digits (R22/25, R25/25). */
+/* Credit notes carry their OWN sequence, ONE DRAWER PER YEAR.
+   Jesús, 28 jul — the rule, from him: "Los abonos no deben tener sufijos, por eso
+   decía de separar las numeraciones por año. Siempre es R1, R2, etc y en cada año
+   se reinicia." So the number is ALWAYS bare R<n> and every year restarts at R1.
+   That is safe precisely because the duplicate check is now per-year: 2027's R1 and
+   2026's R1 are different documents in different drawers.
+   The legacy 2025 rows typed as R22/25 still COUNT toward 2025's sequence (see
+   rNumRe) so back-dating into that year continues at R26 rather than reusing R1. */
 function invYearOf(inv){return (''+((inv&&inv.fecha)||'')).slice(0,4);}
 function curYear(){return new Date().getFullYear()+'';}
-function rSuffix(year){return (''+year)===curYear()?'':('/'+(''+year).slice(2));}
-/* Matches BOTH shapes inside one year's drawer — bare R28 and suffixed R25/25.
-   Rows are already filtered to the year, so any R-number sitting in that drawer
-   counts toward its sequence whatever format it was typed in. (Matching only the
-   suffixed form would restart 2026 at R1/26 the moment 2027 became the running
-   year, right on top of the R1…R27 already issued.) */
 function rNumRe(year){return new RegExp('^R(\\d+)(?:\\/'+(''+year).slice(2)+')?$','i');}
 function nextRNumber(year){
   const y=(''+(year||curYear())),re=rNumRe(y);
   let mx=0;
   DB.invoices.forEach(i=>{if(invYearOf(i)!==y)return;const m=re.exec((i.numero_factura||'').trim());if(m)mx=Math.max(mx,+m[1]);});
-  return 'R'+(mx+1)+rSuffix(y);
+  return 'R'+(mx+1);
 }
-/* any R-shaped number, with or without the /yy suffix — used to keep R reserved for abonos */
+/* any R-shaped number, with or without the legacy /yy suffix — keeps R reserved for abonos */
 function looksLikeRNumber(n){return /^R\d+(\/\d{2})?$/i.test((''+n).trim());}
+/* Next invoice number in a year's drawer (Jesús, 28 jul): "si la última es 20260400,
+   pues que ponga 20260401 al crear una nueva factura". Only numeric numbers that
+   belong to that year count, and the width is preserved so 2025's 7-digit series
+   (2025461) and 2026's 8-digit one (20260483) each continue in their own shape.
+   It is only a PROPOSAL — the field stays editable. */
+function nextInvoiceNumber(year){
+  const y=(''+(year||curYear())),re=new RegExp('^'+y+'\\d+$');
+  let best=null;
+  DB.invoices.forEach(i=>{
+    const n=(''+(i.numero_factura||'')).trim();
+    if(invYearOf(i)!==y||!re.test(n))return;
+    if(best===null||n.length>best.length||(n.length===best.length&&n>best))best=n;
+  });
+  if(best===null)return y+'0001';
+  const seq=best.slice(y.length);
+  return y+String(+seq+1).padStart(seq.length,'0');
+}
 /* per-line amount = Qty × Price (the maths does itself — Jesús's model) */
 function lineAmount(r){return num2((+r.qty||0)*(+r.price||0));}
 function lineHasData(r){return lineAmount(r)!==0||(+r.passes||0)!==0||(+r.amount||0)!==0;}
@@ -505,6 +520,10 @@ function openModal(inv,preset){
   allocRows=preset&&preset.lines?preset.lines.map(r=>Object.assign({},r)):(inv?rowsFromInvoice(inv):[blankRow()]);
   if(!allocRows.length)allocRows=[blankRow()];
   const i=Object.assign({fecha:todayISO(),vencimiento:todayISO(),iva_pct:21,status:'no_pagado',metodo_pago:'transferencia',en_usd:false,entered_by:actorName()},inv||{},preset&&preset.fields||{});
+  /* a brand-new invoice arrives with the next number already proposed (Jesús, 28 jul).
+     Credit notes come in through the picker with their own R-number in preset.fields,
+     and an existing invoice keeps the number it was issued with — neither is touched. */
+  if(!inv&&!i.numero_factura)i.numero_factura=nextInvoiceNumber((i.fecha||todayISO()).slice(0,4));
   const invOpts=sel=>'<option value="">—</option>'+DB.invoices.filter(x=>x.id!=editingId).map(x=>'<option value="'+x.id+'" '+(x.id==sel?'selected':'')+'>'+esc(x.numero_factura||('#'+x.id))+' · '+esc(x.razon_social||'')+'</option>').join('');
   /* C2: no manual Cancelled — the status only exists via a total credit note.
      A credit note's status is fixed (Jesús 2.5) — the select renders locked on R-documents. */
@@ -671,6 +690,18 @@ function wireModal(i){
   $('m_eur').addEventListener('input',refreshModal);
   /* A6: due date can no longer precede the invoice date */
   $('m_fecha').addEventListener('change',()=>{if($('m_venc').value&&$('m_venc').value<$('m_fecha').value)$('m_venc').value=$('m_fecha').value;});
+  /* On a NEW invoice the proposed number follows the date's year — change the date to
+     2025 and it re-proposes from that drawer. The moment Jesús types his own number
+     the proposal stops chasing it (value no longer matches what we last suggested). */
+  if(!editingId&&$('m_st').value!=='abono'){
+    $('m_num').dataset.proposed=$('m_num').value;
+    $('m_fecha').addEventListener('change',()=>{
+      const el=$('m_num');
+      if(el.value!==el.dataset.proposed)return;
+      const n=nextInvoiceNumber(($('m_fecha').value||todayISO()).slice(0,4));
+      el.value=n;el.dataset.proposed=n;
+    });
+  }
   $('m_st').addEventListener('change',()=>{if($('m_st').value==='abono')$('m_pago').value='abono';});
   /* A8: paying by Card marks the invoice Paid automatically */
   $('m_pago').addEventListener('change',()=>{if($('m_pago').value==='tarjeta'&&$('m_st').value!=='abono')$('m_st').value='pagado';});
@@ -906,8 +937,8 @@ function openCreditPicker(){
     '<h3>+ Credit note</h3>'+
     '<p class="hint" style="margin:0 0 10px">Pick the invoice to credit. A <b>total</b> credit note reverses everything and marks the invoice Cancelled; a <b>partial</b> one auto-splits money, passes and lines proportionally — and you can still edit every line before saving.</p>'+
     '<label style="display:block;margin:0 0 10px;font-weight:600"><input type="checkbox" id="cn_prev"> Credit note de año anterior '+
-      '<span class="hint" style="text-transform:none;font-weight:400">— tick to credit an invoice from '+yPrev+'. The credit note itself is still issued today, in the '+
-      yNow+' drawer ('+esc(nextRNumber(yNow))+') — change its date only if accounting wants it booked into '+yPrev+'.</span></label>'+
+      '<span class="hint" style="text-transform:none;font-weight:400">— tick to credit an invoice from '+yPrev+'. The credit note itself always carries '+
+      'today&#39;s date and this year&#39;s number ('+esc(nextRNumber(yNow))+'), whatever year the invoice it cancels belongs to (Jesús, 28 jul).</span></label>'+
     '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
     '<label class="w2">Search <input id="cn_q" placeholder="company, invoice nº, order…"></label>'+
     '<label class="w2">Invoice to credit * <span class="hint" id="cn_ylab" style="text-transform:none;font-weight:400">— '+yNow+' drawer</span>'+
