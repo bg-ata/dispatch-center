@@ -395,7 +395,8 @@ function projPrefix(p){const m=(p.label||'').match(/^\s*(\d+)/);return m?+m[1]:9
 function projCodeNum(p){const m=(p.code||'').match(/\d+/);return m?+m[0]:0;}
 function projCmp(a,b){return projPrefix(a)-projPrefix(b)||projCodeNum(a)-projCodeNum(b)||(a.sort||0)-(b.sort||0);}
 function nextProjectCode(){const mx=Math.max(70314,...DB.projects.map(projCodeNum));return String(mx+1);}
-function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
+/* autoProject() lives in store.js now — the Festivos/Vacaciones lines are stored on the
+   week, and every read site tops up only what storage is still missing (tsAutoMissing) */
 function renderAlloc(){
   document.getElementById('content').innerHTML=
     '<p class="hint" style="margin:0 0 10px">Everyone fills their own week in <a href="home.html" style="color:var(--orange);font-weight:700">🙋 Me</a> — this tab is the oversight side.</p>'+
@@ -433,14 +434,23 @@ function renderMgr(){
     DB.timesheets.forEach(t=>{Object.keys(t.hours||{}).forEach(pid=>{const v=+t.hours[pid]||0;totals[pid]=(totals[pid]||0)+v;grand+=v;});});
     let festT=0,vacT=0;
     const cur=toISO(monday(new Date()));
-    DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){const w=weekWorkInfo(toISO(m),p.id);festT+=w.fest;vacT+=w.vac;}});
     const fp=autoProject('festivos'),vp=autoProject('vacaciones');
+    /* saved weeks already carry their auto lines (they are inside `totals` above); only the
+       gaps — weeks saved before this became real allocation, or never filled — get topped
+       up, so a holiday week is never counted twice */
+    DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){
+      const miss=tsAutoMissing(p.id,toISO(m));
+      if(fp&&miss[fp.id])festT+=miss[fp.id];
+      if(vp&&miss[vp.id])vacT+=miss[vp.id];}});
     const allT=grand+festT+vacT;
     const row=(label,code,v)=>'<tr><td>'+esc(label)+'</td><td class="code">'+esc(code||'')+'</td><td class="num">'+fmtH(v)+'</td><td class="num">'+(allT?Math.round(100*v/allT)+' %':'—')+'</td></tr>';
     h+='<div class="panel"><h3>Hours by project (since '+HR_START+')'+visBadge('Belén + HR + Jesús')+'</h3><p class="hint">The allocation engine output — accounting codes included. Only Belén, HR and accounting (finance permission) see this block (project profitability will be built on top of it).</p><table>'+
       '<tr><th>Project</th><th>Code</th><th class="num">Hours</th><th class="num">Share</th></tr>';
-    if(fp&&festT>0)h+=row(fp.label+' (auto)','',festT);
-    if(vp&&vacT>0)h+=row(vp.label+' (auto)','',vacT);
+    /* each auto line shows what is STORED on the weeks plus whatever is still missing —
+       the project loop below skips kind-projects, so this is their only row */
+    const festAll=(fp?(totals[fp.id]||0):0)+festT, vacAll=(vp?(totals[vp.id]||0):0)+vacT;
+    if(fp&&festAll>0)h+=row(fp.label+' (auto)',fp.code,festAll);
+    if(vp&&vacAll>0)h+=row(vp.label+' (auto)',vp.code,vacAll);
     DB.projects.filter(p=>!p.kind).sort(projCmp).forEach(p=>{
       if(totals[p.id])h+=row(p.label,p.code,totals[p.id]);
     });
@@ -549,10 +559,12 @@ function exportAllocRange(fromISO,toISO_,personId,projId){
       Object.keys((t&&t.hours)||{}).forEach(pid=>{
         if(!wantProj(pid))return;
         const proj=DB.projects.find(x=>x.id==pid);
-        add(proj?proj.label:pid,proj&&proj.code,+t.hours[pid]||0,false);
+        add(proj?proj.label:pid,proj&&proj.code,+t.hours[pid]||0,isAutoProject(pid)); // stored holiday lines are still "auto", not typed
       });
-      if(fp&&wantProj(fp.id))add(fp.label,fp.code,info.fest,true);
-      if(vp&&wantProj(vp.id))add(vp.label,vp.code,info.vac,true);
+      /* stored auto lines already came out of t.hours above — only top up the gaps */
+      const miss=tsAutoMissing(p.id,wk);
+      if(fp&&wantProj(fp.id)&&miss[fp.id])add(fp.label,fp.code,miss[fp.id],true);
+      if(vp&&wantProj(vp.id)&&miss[vp.id])add(vp.label,vp.code,miss[vp.id],true);
     }
   });
   lines.sort((a,b)=>a.Week===b.Week?(a.Person===b.Person?String(a.Project).localeCompare(String(b.Project)):a.Person.localeCompare(b.Person)):a.Week.localeCompare(b.Week));
@@ -590,9 +602,9 @@ function exportHours(){
   const cur=toISO(monday(new Date()));
   const fp=autoProject('festivos'),vp=autoProject('vacaciones');
   DB.people.forEach(p=>{for(let m=ymd(HR_START);toISO(m)<=cur;m=addDays(m,7)){
-    const w=weekWorkInfo(toISO(m),p.id);
-    if(w.fest>0&&fp)rows.push({Person:p.name,Week:toISO(m),Project:fp.label,Code:'',Hours:w.fest});
-    if(w.vac>0&&vp)rows.push({Person:p.name,Week:toISO(m),Project:vp.label,Code:'',Hours:w.vac});
+    const miss=tsAutoMissing(p.id,toISO(m)); // stored auto lines already came out of t.hours
+    if(fp&&miss[fp.id])rows.push({Person:p.name,Week:toISO(m),Project:fp.label,Code:fp.code||'',Hours:miss[fp.id]});
+    if(vp&&miss[vp.id])rows.push({Person:p.name,Week:toISO(m),Project:vp.label,Code:vp.code||'',Hours:miss[vp.id]});
   }});
   rows.sort((a,b)=>a.Week===b.Week?a.Person.localeCompare(b.Person):a.Week.localeCompare(b.Week));
   exportXLSX('RENMAD_hours_'+new Date().toISOString().slice(0,10)+'.xlsx',[{name:'Allocations',rows}]);

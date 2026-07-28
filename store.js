@@ -545,7 +545,31 @@ function weekWorkInfo(mondayISO,personId){ // required hours + auto Festivos/Vac
 }
 const HR_START='2026-07-06'; // first week the timesheet is mandatory (module go-live)
 function tsFor(personId,weekISO){return DB.timesheets.find(t=>t.personId==personId&&t.week===weekISO);}
-function tsManualSum(t){return t?Object.values(t.hours||{}).reduce((a,v)=>a+(+v||0),0):0;}
+/* the two lines nobody types: 00. Festivos and 04. Vacaciones. Bank holidays and approved
+   holidays are ALLOCATION like any other project — since 28 Jul 2026 they are written onto
+   the week when it is saved, not re-derived at every read (Belén: "these are allocated
+   AUTOMATICALLY to holidays, and therefore deducted from the amount to allocate").
+   Sick/maternity/paternity leave is NOT allocation — the person isn't working, so it is
+   only recorded, never written to a project. */
+function autoProject(kind){return DB.projects.find(p=>p.kind===kind);}
+function isAutoProject(pid){const p=DB.projects.find(x=>String(x.id)===String(pid));return !!(p&&p.kind);}
+/* what a saved week SHOULD carry on its two auto lines, from today's holiday record */
+function tsAutoHours(personId,weekISO){
+  const w=weekWorkInfo(weekISO,personId),fp=autoProject('festivos'),vp=autoProject('vacaciones');
+  const out={};
+  if(fp&&w.fest>0)out[fp.id]=w.fest;
+  if(vp&&w.vac>0)out[vp.id]=w.vac;
+  return out;
+}
+/* what storage is still MISSING — weeks saved before this change, and weeks nobody ever
+   filled, still have to reconcile, so the read sites top them up rather than double count */
+function tsAutoMissing(personId,weekISO){
+  const h=(tsFor(personId,weekISO)||{}).hours||{},want=tsAutoHours(personId,weekISO),out={};
+  Object.keys(want).forEach(pid=>{if(!(+h[pid]>0))out[pid]=want[pid];});
+  return out;
+}
+/* the hours a PERSON typed — the auto lines never count towards "have you filled your week" */
+function tsManualSum(t){return t?Object.keys(t.hours||{}).reduce((a,pid)=>a+(isAutoProject(pid)?0:(+t.hours[pid]||0)),0):0;}
 function tsComplete(personId,weekISO){
   if(isTeamAccount(DB.person(personId)))return true; // external HR team: no allocation duty (Belén, 20 Jul)
   const w=weekWorkInfo(weekISO,personId);
