@@ -116,16 +116,48 @@ const STAGES={
  ],
 };
 const ALERT_DEFS=[{key:'LD',name:'Launch Discount',off:16,optional:true},{key:'SE',name:'Super Early',off:12},{key:'EB',name:'Early Bird',off:8},{key:'LC',name:'Last Chance',off:4,ext:true}];
-function stageColor(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.color:'#b4b2a9';}
-function stageName(lane,key){const s=(STAGES[lane]||[]).find(s=>s.key===key);return s?s.name:key;}
-function stageDef(lane,key){return (STAGES[lane]||[]).find(s=>s.key===key);}
+/* An EXTERNAL project writes its OWN phases — Cristina's request of 17 Jul 2026: a
+   non-RENMAD job must not inherit speaker recruitment, prospecting, venue sourcing & co.
+   ev.stages = {lane:[{key,name,color,d}]}, edited on the project's own page.
+   Two differences from a RENMAD event:
+     · phases run FORWARD from the start date (a project starts and runs; an event
+       counts backwards from the day it happens);
+     · until she edits them, a project shows ONE neutral phase per lane covering its own
+       duration — so nothing RENMAD-shaped ever appears on the Projects tab. */
+const EXT_COLORS={project:'#A9CBEE',marketing:'#FFC9A3',sales:'#BFE0A0',logistics:'#F2D86E'};
+function extDefaultStages(ev,lane){
+  const wks=Math.max(1,Math.ceil((+(ev&&ev.days)||1)/7));
+  return [{key:'phase1',name:'Phase 1',color:EXT_COLORS[lane]||'#A9CBEE',d:wks,phase:'ext'}];
+}
+function evStages(ev,lane){
+  if(evKind(ev)==='external'){
+    const st=ev&&ev.stages&&ev.stages[lane];
+    return (Array.isArray(st)&&st.length)?st:extDefaultStages(ev,lane);
+  }
+  return STAGES[lane]||[];
+}
+/* the three lookups take the event when the caller has it (external phases live on it);
+   without it they fall back to the RENMAD catalogue, which is what every old call meant */
+function stageList(lane,ev){return ev?evStages(ev,lane):(STAGES[lane]||[]);}
+function stageColor(lane,key,ev){const s=stageList(lane,ev).find(s=>s.key===key);return s?s.color:'#b4b2a9';}
+function stageName(lane,key,ev){const s=stageList(lane,ev).find(s=>s.key===key);return s?s.name:key;}
+function stageDef(lane,key,ev){return stageList(lane,ev).find(s=>s.key===key);}
+function stageDur(ev,lane,s){const o=(ev&&ev.dur&&ev.dur[lane])||{};return Math.max(1,+(o[s.key]||s.d)||1);}
 /* shared timeline layout — both overview & event page call this, so they always mirror */
-function laneTotalPre(ev,lane){return STAGES[lane].filter(s=>s.phase==='pre').reduce((a,s)=>a+(ev.dur[lane][s.key]||s.d),0);}
+function laneTotalPre(ev,lane){return evStages(ev,lane).filter(s=>s.phase==='pre').reduce((a,s)=>a+stageDur(ev,lane,s),0);}
+/* how far a project reaches AFTER its start week — external only; RENMAD post-stages are
+   already covered by the fixed right-hand margins on both boards */
+function postExtent(ev){if(evKind(ev)!=='external')return 0;
+  let m=0;evLanes(ev).forEach(l=>{m=Math.max(m,evStages(ev,l).reduce((a,s)=>a+stageDur(ev,l,s),0));});return m;}
 function preExtent(ev){let m=0;evLanes(ev).forEach(l=>m=Math.max(m,laneTotalPre(ev,l)));
   if(evKind(ev)==='external')return Math.max(m,4); // external: no milestone/discount machinery — runway = its own lanes
   return Math.max(m,ev.milestones.goNoGo,ev.milestones.launch,ev.alerts.LD.off,ev.alerts.SE.off,ev.alerts.EB.off,ev.alerts.LC.off);}
 function layLane(ev,lane,evIdx){
-  const sts=STAGES[lane],dur=ev.dur[lane];const bars=[];
+  const sts=evStages(ev,lane),dur=(ev.dur&&ev.dur[lane])||{};const bars=[];
+  if(evKind(ev)==='external'){ // phases chain forward from the start week
+    let cur=evIdx;sts.forEach(s=>{const d=stageDur(ev,lane,s);bars.push({s,x:cur,w:d});cur+=d;});
+    return bars;
+  }
   const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
   pre.forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:cur,w:d});cur+=d;});
   const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:(dur[evs.key]||evs.d)});}
@@ -160,7 +192,14 @@ function monday(d){const x=new Date(d);const o=(x.getDay()+6)%7;x.setDate(x.getD
 function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function toISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fmtD(d){return d.getDate()+' '+MON[d.getMonth()];}
-function dateRange(ev){const s=ymd(ev.date);return ev.days>1?(fmtD(s)+'–'+fmtD(addDays(s,ev.days-1))+' '+s.getFullYear()):(fmtD(s)+' '+s.getFullYear());}
+/* a 2-day event shows the year once; a project can run over a year end, and then BOTH
+   ends need their year ("7 Sep 2026–6 Sep 2027", not the old "7 Sep–6 Sep 2026") */
+function dateRange(ev){const s=ymd(ev.date);
+  if(!(ev.days>1))return fmtD(s)+' '+s.getFullYear();
+  const e=addDays(s,Math.round(ev.days)-1);
+  return e.getFullYear()===s.getFullYear()
+    ? fmtD(s)+'–'+fmtD(e)+' '+s.getFullYear()
+    : fmtD(s)+' '+s.getFullYear()+'–'+fmtD(e)+' '+e.getFullYear();}
 /* ---- human dates ----
    People read "Thursday 30 Jul 26", not "2026-07-30". Everything a human decides on
    (holiday requests, approvals, balances) goes through these; ISO stays the storage format. */
@@ -1450,7 +1489,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
 const COLS={
-  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes'],
+  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql)
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
@@ -1529,6 +1568,13 @@ const DB={
       if(this.data.events.length && !('kind' in this.data.events[0])){
         window._extColsMissing=true;
         ['kind','lanes'].forEach(c=>{const i2=COLS.events.indexOf(c);if(i2>=0)COLS.events.splice(i2,1);});
+      }
+      /* per-project phases are tolerant the same way (dispatch_projects_phases.sql adds
+         `stages`); without it a project still renders — it just cannot save custom phases */
+      window._phaseColMissing=false;
+      if(this.data.events.length && !('stages' in this.data.events[0])){
+        window._phaseColMissing=true;
+        const i4=COLS.events.indexOf('stages');if(i4>=0)COLS.events.splice(i4,1);
       }
       /* startDate on people is tolerant the same way (1-line SQL adds it) */
       if(this.data.people.length && !('startDate' in this.data.people[0])){
@@ -1989,7 +2035,9 @@ const DB={
   },
   /* admins & managers set any status; members set the status of their OWN tasks
      (all of this is also enforced server-side by row-level security) */
-  canEditStatus(t){if(this.canManage())return true;return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
+  canEditStatus(t){if(this.canManage())return true;
+    const e=t&&this.event(t.eventId);if(e&&evKind(e)==='external')return true; // a project's team runs its own tasks
+    return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
 };
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 /* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,

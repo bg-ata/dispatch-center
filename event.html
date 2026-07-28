@@ -127,13 +127,80 @@ function addSubstage(lane){
   const subs=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane&&s.week!=null);
   const span=1,occ=new Set();subs.forEach(s=>{const c0=evIdx-s.week,sp=Math.max(s.span||1,1);for(let k=0;k<sp;k++)occ.add(c0+k);});
   const startCol=bars[0]?bars[0].x:0;let col=startCol;
-  for(let c=startCol;c<=evIdx;c++){let ok=true;for(let k=0;k<span;k++)if(occ.has(c+k)){ok=false;break;}if(ok){col=c;break;}}
+  /* a RENMAD lane runs UP TO the event week; a project's phases run PAST its start week,
+     so the free-slot search has to look forward instead of stopping at W0 */
+  const lastBar=bars[bars.length-1];
+  const endCol=(evKind(ev)==='external'&&lastBar)?(lastBar.x+lastBar.w-1):evIdx;
+  for(let c=startCol;c<=endCol;c++){let ok=true;for(let k=0;k<span;k++)if(occ.has(c+k)){ok=false;break;}if(ok){col=c;break;}}
   const wk=evIdx-col, stKey=stageKeyAtWeek(lane,wk)||(bars[0]&&bars[0].s.key), nid=DB.newId();
   DB.substages.push({id:nid,eventId:ev.id,lane,stage:stKey,name:lane==='marketing'?'Webinar':'New item',order:DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane).length,week:wk,span});
   selSub=nid;DB.save();renderTimeline();renderTasks();const f=document.getElementById('subname');if(f){f.focus();f.select();}
 }
+/* ---- phases of an EXTERNAL project (Cristina, 17 Jul: configure a non-RENMAD job manually) ----
+   A project writes its own phases instead of inheriting Research/Prep/Scaling & co. Until it is
+   touched it shows one neutral phase per lane covering its duration; the first edit materialises
+   that default onto the event, so what you see is always what gets saved. */
+/* who may shape the plan: RENMAD timelines stay manager-only, but an external project is
+   run by whoever opened it — the server agrees (dispatch_projects_ext/_phases.sql) */
+function canEditPlan(){return DB.canManage()||evKind(ev)==='external';}
+function phasesOf(lane){return evStages(ev,lane).map(s=>Object.assign({},s));}
+function writePhases(lane,arr){
+  ev.stages=ev.stages||{};
+  evLanes(ev).forEach(l=>{if(!Array.isArray(ev.stages[l]))ev.stages[l]=phasesOf(l);}); // materialise every lane once
+  ev.stages[lane]=arr;DB.save();renderPhases();renderTimeline();renderTasks();
+}
+function renderPhases(){
+  const box=document.getElementById('phpanel');if(!box)return;   // RENMAD events: no such panel
+  const locked=!!window._phaseColMissing;
+  let h='<h3>Phases <span class="hint">— this project\'s own timeline: name them, colour them, set how many weeks each runs. They start on the project\'s start date and run forward.</span></h3>';
+  if(locked)h+='<p class="hint" style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:9px;padding:8px 11px"><b>One-time setup:</b> the database is missing the <code>stages</code> column, so phases cannot be saved yet. Run <b>_sql/dispatch_projects_phases.sql</b> in the dispatch Supabase, then reload.</p>';
+  evLanes(ev).forEach(lane=>{
+    const ph=phasesOf(lane);
+    h+='<div style="margin:10px 0 0"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin-bottom:4px">'+esc(LANE_LABEL[lane]||lane)+'</div>';
+    ph.forEach((s,i)=>{
+      h+='<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap">'+
+        '<input data-phn="'+lane+'|'+s.key+'" value="'+esc(s.name)+'" '+(locked?'disabled ':'')+'style="flex:1 1 160px;min-width:0;font-size:13px">'+
+        '<input type="color" data-phc="'+lane+'|'+s.key+'" value="'+esc(s.color)+'" '+(locked?'disabled ':'')+'title="Colour" style="width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff">'+
+        '<span style="display:inline-flex;align-items:center;gap:4px">'+
+          '<button class="btn sm" data-phd="'+lane+'|'+s.key+'|-1" '+(locked?'disabled':'')+' title="one week less">−</button>'+
+          '<span class="hint" style="min-width:52px;text-align:center">'+stageDur(ev,lane,s)+' wk'+(stageDur(ev,lane,s)>1?'s':'')+'</span>'+
+          '<button class="btn sm" data-phd="'+lane+'|'+s.key+'|1" '+(locked?'disabled':'')+' title="one week more">+</button></span>'+
+        '<button class="btn sm" data-phx="'+lane+'|'+s.key+'" '+(locked||ph.length<2?'disabled':'')+' title="'+(ph.length<2?'a lane needs at least one phase':'delete this phase')+'" style="color:#A32D2D">×</button>'+
+      '</div>';
+    });
+    h+='<button class="btn sm" data-pha="'+lane+'" '+(locked?'disabled':'')+'>+ Add phase</button></div>';
+  });
+  box.innerHTML=h;
+  if(locked)return;
+  box.querySelectorAll('[data-phn]').forEach(inp=>inp.onchange=()=>{
+    const [lane,key]=inp.dataset.phn.split('|');const arr=phasesOf(lane);
+    const p=arr.find(x=>x.key===key);if(!p)return;p.name=inp.value.trim()||p.name;writePhases(lane,arr);});
+  box.querySelectorAll('[data-phc]').forEach(inp=>inp.onchange=()=>{
+    const [lane,key]=inp.dataset.phc.split('|');const arr=phasesOf(lane);
+    const p=arr.find(x=>x.key===key);if(!p)return;p.color=inp.value;writePhases(lane,arr);});
+  box.querySelectorAll('[data-phd]').forEach(b=>b.onclick=()=>{
+    const [lane,key,delta]=b.dataset.phd.split('|');const arr=phasesOf(lane);
+    const p=arr.find(x=>x.key===key);if(!p)return;
+    ev.dur=ev.dur||{};ev.dur[lane]=ev.dur[lane]||{};
+    ev.dur[lane][key]=Math.max(1,stageDur(ev,lane,p)+(+delta));
+    writePhases(lane,arr);});
+  box.querySelectorAll('[data-pha]').forEach(b=>b.onclick=()=>{
+    const lane=b.dataset.pha,arr=phasesOf(lane);
+    arr.push({key:'p'+DB.newId(),name:'Phase '+(arr.length+1),color:EXT_COLORS[lane]||'#A9CBEE',d:4,phase:'ext'});
+    writePhases(lane,arr);});
+  box.querySelectorAll('[data-phx]').forEach(b=>b.onclick=()=>{
+    const [lane,key]=b.dataset.phx.split('|');const arr=phasesOf(lane);
+    if(arr.length<2)return;
+    const gone=arr.find(x=>x.key===key);
+    const n=DB.substages.filter(s=>s.eventId==ev.id&&s.lane===lane&&s.stage===key).length;
+    if(!confirm('Delete the phase "'+(gone?gone.name:key)+'"?'+(n?'\n\n'+n+' item'+(n>1?'s':'')+' sitting on it will move to the first phase — their tasks are not touched.':'')))return;
+    const rest=arr.filter(x=>x.key!==key);
+    DB.substages.forEach(s=>{if(s.eventId==ev.id&&s.lane===lane&&s.stage===key)s.stage=rest[0].key;});
+    writePhases(lane,rest);});
+}
 function renderAddBar(){const bar=document.getElementById('addbar');if(!bar)return;
-  if(!DB.canManage()){bar.style.display='none';return;} // members: timeline is read-only (server enforces it too)
+  /* RENMAD timelines stay manager-only; a project is editable by whoever runs it (RLS agrees) */
+  if(!canEditPlan()){bar.style.display='none';return;}
   bar.innerHTML='<span style="font-size:12px;color:var(--muted);font-weight:600">＋ Add substage to:</span>';
   evLanes(ev).forEach(lane=>{const b=document.createElement('button');b.className='btn sm';b.textContent=LANE_LABEL[lane]||lane;b.onclick=()=>addSubstage(lane);bar.appendChild(b);});
 }
@@ -160,6 +227,7 @@ function render(){
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
+    (evKind(ev)==='external'?'<div class="panel" id="phpanel"></div>':'')+
     '<div class="panel"><h3>Timeline <span class="hint">— same lanes as the overview · <b>click a lane</b> to open its substages in full · drag a substage to move · +/− to resize · click it to edit tasks</span></h3>'+
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:2px 0 8px"><div id="addbar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>'+
       '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
@@ -177,7 +245,7 @@ function render(){
     if(b.dataset.et==='imp')renderImpactTab();
     if(b.dataset.et==='del')renderDelegatesTab();
   });
-  renderTeam(); renderAddBar(); renderTimeline(); renderTasks(); wire();
+  renderTeam(); renderPhases(); renderAddBar(); renderTimeline(); renderTasks(); wire();
   document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
   // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
@@ -355,7 +423,7 @@ function renderDelegatesTab(){
 
 function renderTeam(){
   const t=document.getElementById('team');
-  const mg=DB.canManage(); // members see the team read-only
+  const mg=canEditPlan(); // members see the team read-only (but a project is theirs to run)
   t.innerHTML=ev.team.map(m=>{const p=DB.person(m.personId);if(!p)return'';
     return mg?('<span class="member"><b>'+esc(p.name)+'</b><select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>')
              :('<span class="member"><b>'+esc(p.name)+'</b><span class="hint">'+esc(m.role)+'</span></span>');}).join('')||'<span class="empty">No one attached yet.</span>';
@@ -372,9 +440,9 @@ function renderTimeline(){
   const tl=document.getElementById('tl'), rail=document.getElementById('lanerail');
   const start=addDays(monday(ymd(ev.date)),-(preExtent(ev)+2)*7);
   const evIdx=Math.round((+monday(ymd(ev.date))-+start)/(7*86400000));
-  const NW=preExtent(ev)+2+6, BW=NW*WEEKW;
+  const NW=preExtent(ev)+2+Math.max(6,postExtent(ev)+2), BW=NW*WEEKW; // a project reaches forward, an event does not
   const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
-  const mg=DB.canManage();
+  const mg=canEditPlan();
   const OPENH=54, SUBROW=OPENH+3, COLLH=STGH+11; // expanded rows are tall so substages can hold longer text
   // a selected substage keeps its lane open
   if(selSub){const ss=DB.substages.find(s=>s.id===selSub);if(ss)expandedLane=ss.lane;}
@@ -510,8 +578,8 @@ function renderTasks(){
   const sub=DB.substages.find(s=>s.id===selSub);
   if(!sub){selSub=null;p.innerHTML='';return;}
   const tks=DB.tasksForSub(sub.id);
-  const mg=DB.canManage(); // managers & admins edit everything; members tick the status of their OWN tasks
-  let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage)+'</b>'+
+  const mg=canEditPlan(); // managers & admins edit everything; members tick the status of their OWN tasks (a project's own team edits it fully)
+  let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage,ev)+'</b>'+
     (mg?'<input id="subname" value="'+esc(sub.name||'')+'" placeholder="Name / short description — type as much as you need" style="width:min(560px,100%);flex:1 1 320px">'
        :'<span style="font-weight:600">'+esc(sub.name||'')+'</span>');
   if(sub.lane==='marketing'){h+=mg?('<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>')
@@ -552,7 +620,7 @@ document.addEventListener('mouseup',()=>{
 
 function wire(){
   document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(ev.name.replace(/[^\w]+/g,'_')+'.xlsx',[
-    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage),Substage:s?s.name:'',Task:t.title,Responsible:DB.personName(t.assignee),Deadline:deIso(t.deadline||''),Status:t.status};})},
+    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage,ev),Substage:s?s.name:'',Task:t.title,Responsible:DB.personName(t.assignee),Deadline:deIso(t.deadline||''),Status:t.status};})},
     {name:'Team',rows:ev.team.map(m=>({Name:DB.personName(m.personId),Role:m.role}))}]);};
   document.getElementById('addmem').onclick=()=>{const v=document.getElementById('newp').value;if(!v)return;ev.team.push({personId:+v,role:document.getElementById('newr').value});DB.save();renderTeam();};
 }

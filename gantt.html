@@ -92,7 +92,7 @@
       <span><span class="sw" style="background:#111"></span>Event week</span>
     </div>
   </div>
-  <p class="crit">Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane's stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.</p>
+  <p class="crit" id="critline">Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane's stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.</p>
   <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
   <p class="note">Stages only — tasks &amp; owners live inside each event. <span class="prov">prov</span> 2027 dates provisional.</p>
 </div>
@@ -142,6 +142,11 @@ function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#ex
   document.getElementById('tagline').textContent=(t==='external'
     ?'external & one-off jobs — each carries only the timelines it needs'
     :'every RENMAD event on one timeline — where the magic gets orchestrated');
+  /* the legend belongs to the RENMAD machinery — a project has none of it */
+  const cl=document.getElementById('critline');
+  if(cl)cl.innerHTML=(t==='external'
+    ?'Black <b>S</b> = the project\'s start week — drag it to reschedule. Phases run forward from there; resize one with the <b>−/+</b> on its bar. Click a project name to name its phases and add its own.'
+    :'Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane\'s stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.');
   const bn=document.getElementById('extBanner');
   if(t==='external'&&window._extColsMissing){bn.style.display='block';
     bn.innerHTML='<b>One-time setup:</b> the database is missing the two project columns. Run the 2-line SQL (ask Claude — it pastes it in chat) in the dispatch Supabase SQL editor, then reload. Until then external projects cannot be saved.';}
@@ -151,7 +156,8 @@ function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#ex
 
 function bounds(list){
   let mins=[],maxs=[];
-  list.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,8*7));});
+  /* a project's phases run forward from its start, so the board must reach past them */
+  list.forEach(ev=>{const em=monday(ymd(ev.date));mins.push(addDays(em,-(preExtent(ev)+2)*7));maxs.push(addDays(em,Math.max(8,postExtent(ev)+4)*7));});
   return {start:addDays(monday(new Date(Math.min(...mins.map(d=>+d)))),-4*7), end:addDays(new Date(Math.max(...maxs.map(d=>+d))),16*7)};
 }
 function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
@@ -196,7 +202,10 @@ function render(){
 
     // resize-button layer sits ABOVE the columns so no −/+ ever gets hidden
     const btnLayer=document.createElement('div');btnLayer.style.cssText='position:absolute;inset:0;z-index:9;pointer-events:none';body.appendChild(btnLayer);
-    function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+LINEH+'px;pointer-events:auto';b.title=(delta>0?'add a week to ':'remove a week from ')+stageName(lane,key);b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);DB.save();render();};btnLayer.appendChild(b);}
+    function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+LINEH+'px;pointer-events:auto';b.title=(delta>0?'add a week to ':'remove a week from ')+stageName(lane,key,ev);
+      b.onclick=e=>{e.stopPropagation();const o=(ev.dur[lane]=ev.dur[lane]||{}),def=stageDef(lane,key,ev);
+        o[key]=Math.max(1,(o[key]!=null?+o[key]:(def?def.d:1))+delta);DB.save();render();}; // a project's own phase starts from ITS length, not from 1
+      btnLayer.appendChild(b);}
 
     // this event's lanes of resizable stage bars
     evLs.forEach((lane,i)=>{
@@ -220,7 +229,7 @@ function render(){
       const band=document.createElement('div');band.className='colband';band.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:'+ys[0]+'px;height:'+topH+'px;background:'+color;body.appendChild(band);
       const chip=document.createElement('div');chip.className='colchip';chip.style.cssText='left:'+x+'px;width:'+WEEKW+'px;top:2px;background:'+color;
       chip.innerHTML='<span style="pointer-events:none">'+label+'</span>'+(kind==='ld'?'<span class="x" title="remove">×</span>':'');
-      chip.title=label+' (W-'+off+')'+(canEd?(kind==='w0'?' — drag to reschedule':' — drag to move'):'');
+      chip.title=(kind==='w0'?(isExt?'Project start':'Event week'):label+' (W-'+off+')')+(canEd?(kind==='w0'?' — drag to reschedule':' — drag to move'):'');
       const start=e=>{if(!canEd)return; // members can't move milestones/W0 on RENMAD events (server would refuse)
         if(e.target.classList.contains('x'))return;if(kind==='w0')dragW0={ev,startX:e.clientX,dx:0,band,chip};else dragMk={ev,field,kind,startX:e.clientX,dx:0,band,chip};e.preventDefault();};
       chip.addEventListener('mousedown',start);band.addEventListener('mousedown',start);
@@ -235,7 +244,7 @@ function render(){
       column(ev.alerts.EB.off,'EB','var(--purple)','alert','EB');
       column(ev.alerts.LC.off,'LC','var(--purple)','alert','LC');
     }
-    column(0,'W0','#111','w0','');
+    column(0,isExt?'S':'W0','#111','w0','');  // a project has a START week, not an event week
     if(!isExt&&!ev.alerts.LD.on){const a=document.createElement('div');a.className='addld';a.style.cssText='left:'+((evIdx-16)*WEEKW)+'px;top:'+ys[0]+'px';a.textContent='+LD';a.onclick=()=>{ev.alerts.LD.on=true;ev.alerts.LD.off=16;DB.save();render();};body.appendChild(a);}
 
     body.addEventListener('mousemove',e=>{if(dragMk||dragW0)return;const r=body.getBoundingClientRect();const w=Math.floor((e.clientX-r.left)/WEEKW);const diff=evIdx-w;const wm=addDays(start,w*7);showTip(e.clientX,e.clientY,(diff===0?'W0':diff>0?('W-'+diff):('+'+(-diff)))+' · wk of '+fmtD(wm));});
