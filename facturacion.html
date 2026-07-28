@@ -141,7 +141,13 @@ function actorName(){const u=DB.currentUser;return u?(u.name||u.email||''):'';}
 function finById(id){return DB.finance.find(f=>f.id==id);}
 /* clean event label — no location (Jesús: "Invest Italia 2026", not "· Milan"; keeps Excel exports clean) */
 function finLabelClean(f){return f?((f.name||'?')+' '+(f.year||'')).replace(/\s+/g,' ').trim():'';}
-function eurF(n){return finFmt(n);}
+/* Money on this board is to the CENT — Jesús squares the accounting with it, and finFmt's
+   rounded figures made the board disagree with the invoice ("IVA 3.748,50 / total 21.598,50"
+   showed as 3.749 / 21.599). Everywhere else keeps the rounded finFmt.
+   useGrouping:'always' because es-ES leaves four-digit numbers ungrouped by default — the
+   VAT line would otherwise read "3748,50" next to a total of "21.598,50". */
+function eurF(n){if(n==null||n===''||isNaN(+n))return '—';
+  return new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:'always'}).format(+n)+' €';}
 function num2(v){return Math.round((+v||0)*100)/100;}
 function isAbono(i){return i.producto==='abono'||i.status==='abono';}
 /* collected on an invoice — the split-payment ledger when it has payments, else legacy */
@@ -288,8 +294,11 @@ function prodCell(i){
   return out.join(' + ');
 }
 function renderTable(rows){
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal US$</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract salesperson</th><th>Analítica (item · código)</th><th>Comments</th><th>Entered by</th><th style="width:50px"></th></tr>';
-  if(!rows.length)h+='<tr><td colspan="16" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
+  /* "Entered by" left the board (Jesús 28 Jul): it pushed the ✎ off-screen, and getting to
+     it meant scrolling right at the very bottom of the page and back up. It stays on the
+     invoice itself and in the Excel export. "Contract salesperson" → "Contract" for width. */
+  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal US$</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract</th><th>Analítica (item · código)</th><th>Comments</th><th style="width:50px"></th></tr>';
+  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -315,7 +324,6 @@ function renderTable(rows){
       '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td style="white-space:normal;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+esc(i.comentarios||'')+'">'+esc(i.comentarios||'')+'</td>'+
-      '<td>'+esc(i.entered_by||'')+'</td>'+
       '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
   });
   document.getElementById('itbl').innerHTML=h;
@@ -1033,7 +1041,7 @@ function exportExcel(){
       'VAT €':+i.iva_importe||0,
       'Total €':+i.total_factura||0,
       'Status':INV_STATUS[i.status]||i.status||'',
-      'Contract salesperson':(function(){const p=i.spxProposalId?(DB.spxProps||[]).find(x=>x.id==i.spxProposalId):null;return p?(p.responsableName||p.responsable||''):'';})(),
+      'Contract':(function(){const p=i.spxProposalId?(DB.spxProps||[]).find(x=>x.id==i.spxProposalId):null;return p?(p.responsableName||p.responsable||''):'';})(),
       'Comments':i.comentarios||'',
       'Entered by':i.entered_by||''
     }))},
