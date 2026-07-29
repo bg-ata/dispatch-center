@@ -74,6 +74,11 @@
       </div>
     </div>
     <div style="margin-top:12px"><label class="lab">Salesperson <span class="req">*</span></label><div class="sp" id="sp"></div></div>
+    <div style="margin-top:12px">
+      <label class="lab">Client logo <span style="text-transform:none;font-weight:400;color:var(--mut)">(optional — transparent PNG works best; goes on the cover, divider, comparison and contact slides)</span></label>
+      <input type="file" id="clogo" accept="image/png,image/jpeg,image/webp" style="font-size:13px">
+      <span class="hint" id="clogomsg" style="margin-left:8px"></span>
+    </div>
   </div>
 
   <!-- ===== EVENT SPONSORSHIP mode ===== -->
@@ -163,7 +168,7 @@
 </div>
 
 <script src="store.js?v=75"></script>
-<script src="pb_bundle.js?v=7"></script>
+<script src="pb_bundle.js?v=8"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
 const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
@@ -191,7 +196,7 @@ function injectTalksEvents(){
       color:m.color,city:{en:"Madrid, Spain",es:"Madrid, España"},date:{en:m.en,es:te.date_es},short:m.short});
   });
 }
-let LANG="en", BRAND=null, SP="cintia", MODE="events", SCOPE="events";
+let LANG="en", BRAND=null, SP="cintia", MODE="events", SCOPE="events", CLIENTLOGO=null;
 /* The three portfolio pseudo-events (general / italian_market / spanish_market) are
    filtered out of the picker on purpose — they are a DECK SCOPE, not something you
    tick alongside real events. Streamlit models them the same way. They carry no SPX
@@ -226,6 +231,15 @@ function initBuilder(){
   document.getElementById('lang_en').onclick=()=>setLang('en');
   document.getElementById('lang_es').onclick=()=>setLang('es');
   document.getElementById('pull').onclick=doPull;
+  document.getElementById('clogo').onchange=function(){
+    const f=this.files&&this.files[0], m=document.getElementById('clogomsg');
+    if(!f){ CLIENTLOGO=null; m.textContent=''; return; }
+    if(f.size>4*1024*1024){ CLIENTLOGO=null; this.value=''; m.innerHTML='<span class="err">Too big — keep it under 4 MB.</span>'; return; }
+    const fr=new FileReader();
+    fr.onload=()=>{ CLIENTLOGO=fr.result; m.innerHTML='<span class="ok">✓ '+f.name+'</span>'; };
+    fr.onerror=()=>{ CLIENTLOGO=null; m.innerHTML='<span class="err">Could not read that file.</span>'; };
+    fr.readAsDataURL(f);
+  };
   document.getElementById('gen').onclick=doGenerate;
   document.querySelectorAll('#modeseg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
   document.querySelectorAll('#scopeseg button').forEach(b=>b.onclick=()=>setScope(b.dataset.scope));
@@ -387,7 +401,7 @@ async function genOptions(msg){
   try{
     const deck=PBOPT.buildOptionsDeck({lang:LANG,client:client,salesperson:Object.assign({key:SP},sp),
       events:realEvents.filter(e=>optEvents.has(e.key)),options:filled,recommended:optRec,
-      discountPct:pct,validUntil:fmtDate(until,LANG),proposalDate:fmtDate(today,LANG),images:images});
+      discountPct:pct,validUntil:fmtDate(until,LANG),proposalDate:fmtDate(today,LANG),images:images,clientLogo:CLIENTLOGO});
     await RENMAD.save(deck,fileName);
     msg.innerHTML='<span class="ok">✓ Deck downloaded.</span> Logging to the SPX board…';
   }catch(e){ msg.innerHTML='<span class="err">Deck error: '+e+'</span>'; return; }
@@ -472,7 +486,7 @@ function collect(){
     events,packages:stdPackages,talksPackages,selections,
     hasStd:events.some(e=>e.type!=='talks'),hasTalks:events.some(e=>e.type==='talks'),
     talksOnly:events.length>0&&events.every(e=>e.type==='talks'),
-    family:currentFamily(),brand:BRAND,
+    family:currentFamily(),brand:BRAND,clientLogo:CLIENTLOGO,
     source:document.getElementById('src').value,
     zoho:{accountType:document.getElementById('atype').value,productPackage:document.getElementById('ppack').value,packageTier:document.getElementById('ptier').value,followUp:document.getElementById('fup').value},
     contacts:collectContacts()};

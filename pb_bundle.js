@@ -2438,6 +2438,112 @@ window.PB = {
                    eventLogoFile: eventLogoFile };
 })(typeof window !== "undefined" ? window : this);
 
+/* ===== proposal\icons.js ===== */
+/* ============================================================================
+   RENMAD Proposal Builder  ·  deck icons in the browser
+   ----------------------------------------------------------------------------
+   The Streamlit deck draws 23 icons with PIL (spx_icons.py + utils/icons.py) and
+   drops them in as small PNGs. The browser build had no equivalent, so every
+   place the Python puts an icon the web deck drew a plain accent circle — the
+   single largest visual difference between the two decks.
+
+   These are SVGs rendered to a data: URI and placed with addImage, so they stay
+   crisp at any size and can be tinted to the deck accent (or to white on an
+   accent-filled chip) at call time.
+
+   Names match the ones already carried in data.js — `stats`, `why_cards`,
+   `brand2`, `brand_silver`, `brand_gold`, `webinar_feats` and each package's
+   `highlights` all hold their icon name at index 0, which the deck previously
+   discarded.
+
+   Geometry follows the Python: line art on a 0-100 box, inset to ~14-86, stroke
+   ~size/12, with `bolt`, `star` and `people` solid.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+
+  var S = 8;                       // default stroke width on the 100-box
+  function ln(b) { return '<g fill="none" stroke="COL" stroke-width="' + S + '" stroke-linecap="round" stroke-linejoin="round">' + b + "</g>"; }
+  function fl(b) { return '<g fill="COL" stroke="none">' + b + "</g>"; }
+
+  var ICONS = {
+    // --- universal ---------------------------------------------------------
+    check:  '<g fill="none" stroke="COL" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><polyline points="20,53 40,73 80,27"/></g>',
+    star:   fl('<polygon points="50,12 61,38 89,40 67,58 74,86 50,70 26,86 33,58 11,40 39,38"/>'),
+    bolt:   fl('<polygon points="56,8 24,54 46,54 40,92 74,44 51,44"/>'),
+    target: ln('<circle cx="50" cy="50" r="36"/><circle cx="50" cy="50" r="19"/>') + fl('<circle cx="50" cy="50" r="7"/>'),
+
+    // --- people / audience --------------------------------------------------
+    people: fl('<circle cx="34" cy="34" r="14"/><circle cx="68" cy="38" r="11"/>' +
+               '<path d="M12 82c0-14 10-24 22-24s22 10 22 24z"/>' +
+               '<path d="M56 82c0-11 7-19 16-19s16 8 16 19z"/>'),
+    speaker: fl('<circle cx="50" cy="24" r="12"/>') +
+             ln('<path d="M30 84V60c0-11 9-20 20-20s20 9 20 20v24"/><path d="M26 84h48"/>'),
+    hands:  ln('<path d="M14 56l16-14 14 10 14-10 16 14"/><path d="M14 56l14 16h44l14-16"/><path d="M44 52l12 0"/>'),
+
+    // --- stage / voice ------------------------------------------------------
+    mic:    ln('<rect x="40" y="14" width="20" height="38" rx="10"/><path d="M28 46a22 22 0 0 0 44 0"/><path d="M50 68v18"/><path d="M36 86h28"/>'),
+    mega:   ln('<path d="M20 42v16a6 6 0 0 0 6 6h10l30 18V18L36 36H26a6 6 0 0 0-6 6z"/><path d="M78 38a20 20 0 0 1 0 24"/>'),
+    monitor: ln('<rect x="14" y="20" width="72" height="46" rx="5"/><path d="M40 80h20"/><path d="M50 66v14"/>'),
+
+    // --- place / brand ------------------------------------------------------
+    booth:  ln('<path d="M14 36h72"/><path d="M20 36l8-14h44l8 14"/><path d="M22 36v48"/><path d="M78 36v48"/><path d="M22 84h56"/><path d="M38 84V60h24v24"/>'),
+    building: ln('<rect x="24" y="18" width="52" height="66" rx="4"/><path d="M38 34h8M54 34h8M38 50h8M54 50h8M38 66h8M54 66h8"/>'),
+    globe:  ln('<circle cx="50" cy="50" r="36"/><path d="M14 50h72"/><ellipse cx="50" cy="50" rx="17" ry="36"/>'),
+    net:    ln('<path d="M50 26v48M50 50L24 72M50 50l26 22"/>') +
+            fl('<circle cx="50" cy="20" r="9"/><circle cx="22" cy="78" r="9"/><circle cx="78" cy="78" r="9"/><circle cx="50" cy="50" r="7"/>'),
+    trophy: ln('<path d="M32 18h36v22a18 18 0 0 1-36 0z"/><path d="M32 24H20v6a14 14 0 0 0 12 13"/><path d="M68 24h12v6a14 14 0 0 1-12 13"/><path d="M50 58v14"/><path d="M34 84h32"/><path d="M40 72h20l4 12H36z"/>'),
+
+    // --- documents / contact ------------------------------------------------
+    doc:    ln('<path d="M28 14h30l16 16v56H28z"/><path d="M58 14v16h16"/><path d="M38 48h24M38 60h24M38 72h16"/>'),
+    mail:   ln('<rect x="14" y="26" width="72" height="48" rx="5"/><polyline points="14,32 50,56 86,32"/>'),
+    phone:  ln('<path d="M30 16h16l6 18-10 7a38 38 0 0 0 17 17l7-10 18 6v16c0 4-3 7-7 7A62 62 0 0 1 23 23c0-4 3-7 7-7z"/>'),
+    badge:  ln('<rect x="24" y="30" width="52" height="56" rx="6"/><path d="M40 30V18h20v12"/><path d="M38 50h24M38 64h16"/>'),
+    tag:    ln('<path d="M16 44V18h26l42 42-26 26z"/>') + fl('<circle cx="31" cy="33" r="7"/>'),
+
+    // --- hospitality --------------------------------------------------------
+    coffee: ln('<path d="M20 38h48v22a20 20 0 0 1-20 20H40a20 20 0 0 1-20-20z"/><path d="M68 44h8a10 10 0 0 1 0 20h-8"/><path d="M34 18v10M50 16v12"/>'),
+    meal:   ln('<path d="M30 14v30a8 8 0 0 0 16 0V14"/><path d="M38 44v42"/><path d="M68 14c-8 6-10 30 0 30v42"/>'),
+    cocktail: ln('<path d="M18 22h64L50 56z"/><path d="M50 56v26"/><path d="M34 86h32"/>') + fl('<circle cx="70" cy="20" r="6"/>'),
+    wifi:   ln('<path d="M18 40a46 46 0 0 1 64 0"/><path d="M30 54a30 30 0 0 1 40 0"/><path d="M40 67a15 15 0 0 1 20 0"/>') + fl('<circle cx="50" cy="80" r="7"/>'),
+  };
+
+  /* stats/why_cards carry a couple of names the Python maps onto the same art */
+  var ALIAS = { calendar: "doc", pin: "target", arrow: "check", clock: "target", qr: "badge" };
+
+  var cache = {};
+  function uri(name, hexColor) {
+    var key = name + "|" + hexColor;
+    if (cache[key]) return cache[key];
+    var body = ICONS[name] || ICONS[ALIAS[name]] || null;
+    if (!body) return null;
+    var col = "#" + String(hexColor || "FF4A00").replace("#", "");
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+              body.split("COL").join(col) + "</svg>";
+    var out = "data:image/svg+xml;base64," + btoa(svg);
+    cache[key] = out;
+    return out;
+  }
+
+  /* Draw one icon into a slide, sized like the Python's icon() helper. */
+  function draw(slide, name, x, y, size, hexColor) {
+    var u = uri(name, hexColor);
+    if (!u) return false;
+    try { slide.addImage({ data: u, x: x, y: y, w: size, h: size }); return true; }
+    catch (e) { return false; }
+  }
+
+  /* chip(): the filled circle + centred glyph the deck uses everywhere.
+     Falls back to a bare circle when the name is unknown, which is exactly what
+     the deck drew before this file existed. */
+  function chip(slide, x, y, dia, name, bgHex, glyphHex) {
+    slide.addShape("ellipse", { x: x, y: y, w: dia, h: dia, fill: { color: bgHex } });
+    draw(slide, name, x + dia * 0.22, y + dia * 0.22, dia * 0.56, glyphHex);
+  }
+
+  global.PBICON = { uri: uri, draw: draw, chip: chip, has: function (n) { return !!(ICONS[n] || ICONS[ALIAS[n]]); }, names: Object.keys(ICONS) };
+})(window);
+
 /* ===== proposal\deck.js ===== */
 /* ============================================================================
    RENMAD Proposal Builder  ·  browser deck generator (PptxGenJS)
@@ -2603,6 +2709,15 @@ window.PB = {
       return vo ? (calBy[vo(k)] || null) : null;
     };
     var client = (opts.client || (brand && brand.title) || "").trim();
+    /* deck_builder.client_plate(): the client's own logo, contain-fit with no box behind
+       it (it expects a transparent PNG). Falls back to the client's name set as type,
+       which is all this deck could do before. */
+    var clientLogo = opts.clientLogo || null;
+    function clientPlate(s, x, y, maxW, maxH, nameX, nameY, nameW, nameH, size, color, align) {
+      if (clientLogo && addLogo(s, x, y, maxW, maxH, clientLogo)) return true;
+      if (client) tx(s, nameX, nameY, nameW, nameH, client, size, color, true, HEAD, align || "left");
+      return false;
+    }
 
     // ---- package scope ----
     var allPkgs = PB.packages || [];
@@ -2624,6 +2739,16 @@ window.PB = {
 
     // small top-right brand mark on content slides (logo assets not available in browser)
     function badge(s) { tx(s, 9.9, 0.42, 2.72, 0.34, "RENMAD EVENTS", 11, MU, true, HEAD, "right"); }
+    /* deck_builder.chip(): filled circle + centred glyph. data.js already carries the
+       icon name at index 0 of every stats/why_cards/brand/highlight row — this deck
+       used to discard it and draw a bare circle. Unknown name => bare circle, as before. */
+    function chip(s, x, y, d, name, bg, glyph) {
+      if (global.PBICON && name && global.PBICON.has(name)) global.PBICON.chip(s, x, y, d, name, bg || O, glyph || WH);
+      else ell(s, x, y, d, bg || O);
+    }
+    function iconOnly(s, name, x, y, d, col) {
+      if (!(global.PBICON && global.PBICON.draw(s, name, x, y, d, col || O))) ell(s, x, y, d, col || O);
+    }
     function kicker(s, x, y, k, title, tsize, tcolor) {
       tx(s, x, y, 10, 0.3, k, 13, O, true, HEAD);
       tx(s, x, y + 0.30, 11.5, 0.7, title, tsize || 30, tcolor || CH, true, HEAD);
@@ -2643,9 +2768,9 @@ window.PB = {
       }
       tx(s, 0.95, 3.50, 7.3, 0.5, str("cover_kicker"), 26, WH, true, HEAD);
       tx(s, 0.95, 4.12, 7.3, 1.3, str("cover_tag"), 20, WH, true, HEAD, "left", "top", { lineSpacingMultiple: 1.1 });
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 0.95, 5.55, 6, 0.4, str("prepared_for"), 18, DM, false, BODY);
-        tx(s, 0.95, 5.95, 6.5, 0.8, client, 30, WH, true, HEAD);
+        clientPlate(s, 0.95, 6.02, 3.3, 1.15, 0.95, 5.95, 6.5, 0.8, 30, WH);
       }
     })();
 
@@ -2660,7 +2785,7 @@ window.PB = {
         var n = row[1], l = row[2];
         var x = x0 + (i % 3) * (bw + gx), y = y0 + Math.floor(i / 3) * (bh + gy);
         rc(s, x, y, bw, bh, WH, { line: LN, lw: 1, rad: 0.08 });
-        ell(s, x + 0.18, y + 0.2, 0.66, O);
+        chip(s, x + 0.18, y + 0.2, 0.66, row[0]);
         tx(s, x + 0.95, y + 0.16, bw - 1.0, 0.5, n, 26, CH, true, HEAD);
         tx(s, x + 0.95, y + 0.74, bw - 1.0, 0.4, l, 13, MU, false, BODY);
       });
@@ -2678,7 +2803,7 @@ window.PB = {
         bar(s, 0.7, y + 0.3, 4.7, 0.22, v / 100, TRACK, O);
       });
       rc(s, 6.1, 1.9, 6.5, 1.7, WH, { line: LN, lw: 1, rad: 0.08 });
-      ell(s, 6.45, 2.25, 0.95, O);
+      chip(s, 6.45, 2.25, 0.95, "target");
       tx(s, 7.65, 2.2, 4.6, 0.7, "75%", 46, CH, true, HEAD);
       tx(s, 7.65, 3.05, 4.6, 0.4, str("big75_sub"), 15, MU, false, BODY);
       tx(s, 6.1, 3.95, 4, 0.3, str("seniority"), 15, CH, true, HEAD);
@@ -2701,7 +2826,7 @@ window.PB = {
         var x = x0 + (i % 2) * (bw + g), y = y0 + Math.floor(i / 2) * (bh + g);
         rc(s, x, y, bw, bh, WH, { line: LN, lw: 1, rad: 0.08 });
         rc(s, x, y, 0.1, bh, O);
-        ell(s, x + 0.35, y + 0.35, 0.95, O);
+        chip(s, x + 0.35, y + 0.35, 0.95, c[0]);
         tx(s, x + 1.55, y + 0.42, bw - 1.7, 0.7, t, 22, CH, true, HEAD);
         tx(s, x + 0.35, y + 1.4, bw - 0.7, 0.8, b, 15, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.2 });
       });
@@ -2784,9 +2909,9 @@ window.PB = {
          it in both places printed it twice on every deck. */
       if (!evLogoImg(s, 0.85, 0.95, 5.2, 1.7) && !logoImg(s, 0.85, 1.2, 3.6, 1.2))
         tx(s, 0.85, 1.15, 8, 1.0, "RENMAD EVENTS", 30, WH, true, HEAD, "left", "middle");
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 7.5, 3.78, 5.1, 0.32, str("proposal_for"), 15, DM, true, BODY, "right");
-        tx(s, 7.5, 4.16, 5.1, 0.7, client, 26, WH, true, HEAD, "right");
+        clientPlate(s, 9.65, 4.2, 2.95, 0.95, 7.5, 4.16, 5.1, 0.7, 26, WH, "right");
       }
       var nm = ev.name || "RENMAD Events";
       tx(s, 0.9, 5.12, 11.95, 0.95, nm, nm.length <= 26 ? 40 : 34, WH, true, HEAD);
@@ -2799,9 +2924,9 @@ window.PB = {
       var s = pptx.addSlide(); s.background = { color: GR };
       tx(s, 0.7, 0.5, 9, 0.5, str("comp_title"), 30, CH, true, HEAD);
       tx(s, 0.7, 1.15, 9.9, 0.3, str("comp_sub"), 13, MU, false, BODY);
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 8.6, 0.18, 4.03, 0.26, str("prepared_for"), 11, MU, true, BODY, "right");
-        tx(s, 8.6, 0.48, 4.03, 0.4, client, 16, CH, true, HEAD, "right");
+        clientPlate(s, 11.05, 0.52, 1.6, 0.78, 8.6, 0.48, 4.03, 0.4, 16, CH, "right");
       }
       var benefits = arr("benefits");                       // 10 labels
       var compRows = arr("comp_rows");                      // 8 package labels (Diamond-first)
@@ -2856,7 +2981,8 @@ window.PB = {
       }
       // "Good for" pill
       rc(s, 0.7, 1.85, 11.95, 0.74, SOFT, { rad: 0.08 });
-      ell(s, 0.92, 2.02, 0.42, O);
+      iconOnly(s, "target", 0.92, 2.02, 0.42, O);
+      if (pk.id === "diamond") iconOnly(s, "star", 9.36, 0.56, 0.6, WH);
       tx(s, 1.5, 1.97, 2, 0.3, str("pkg_goodfor"), 13, OD, true, HEAD);
       tx(s, 1.5, 2.2, 11, 0.3, String(good).replace(/\.$/, ""), 15, CH, true, BODY);
       // pitch
@@ -2876,7 +3002,7 @@ window.PB = {
       highlights.forEach(function (hl) {
         var t = Array.isArray(hl) ? hl[1] : hl;
         rc(s, 8.4, hy, 4.25, 0.5, WH, { line: LN, lw: 1, rad: 0.06 });
-        ell(s, 8.56, hy + 0.11, 0.28, O);
+        chip(s, 8.56, hy + 0.08, 0.34, Array.isArray(hl) ? hl[0] : null);
         tx(s, 9.05, hy, 3.45, 0.5, t, 13, CH, true, BODY, "left", "middle");
         hy += 0.58;
       });
@@ -2896,7 +3022,7 @@ window.PB = {
         var x = x0 + (i % 2) * (bw + g), y = y0 + Math.floor(i / 2) * (bh + g);
         rc(s, x, y, bw, bh, WH, { line: LN, lw: 1, rad: 0.08 });
         rc(s, x, y, 0.1, bh, O);
-        ell(s, x + 0.35, y + 0.3, 0.95, O);
+        chip(s, x + 0.35, y + 0.3, 0.95, c[0]);
         tx(s, x + 1.55, y + 0.42, bw - 1.7, 0.6, nm, 19, CH, true, HEAD);
         tx(s, x + 0.35, y + 1.25, bw - 0.7, 0.8, desc, 14, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.18 });
       });
@@ -2919,7 +3045,8 @@ window.PB = {
         var yy = 3.66;
         items.forEach(function (it) {
           var nm = it[1], desc = it[2];
-          ell(s2, x + 0.28, yy + 0.05, 0.54, SOFT);
+          /* pale chip, accent glyph — the only inverted chip in the deck */
+          chip(s2, x + 0.28, yy + 0.05, 0.54, it[0], SOFT, O);
           tx(s2, x + 1.0, yy - 0.03, w - 1.18, 0.34, nm, 16.5, CH, true, HEAD);
           tx(s2, x + 1.0, yy + 0.32, w - 1.18, 0.46, desc, 13.5, IK, false, BODY);
           yy += 0.8;
@@ -2946,7 +3073,7 @@ window.PB = {
       var yy = 3.95;
       arr("webinar_feats").forEach(function (f) {
         var t = Array.isArray(f) ? f[1] : f;
-        ell(s, 0.7, yy + 0.08, 0.5, O);
+        chip(s, 0.7, yy + 0.08, 0.5, Array.isArray(f) ? f[0] : null);
         tx(s, 1.35, yy, 6.9, 0.66, t, 18, CH, false, BODY, "left", "middle", { lineSpacingMultiple: 1.04 });
         yy += 0.82;
       });
@@ -3029,17 +3156,17 @@ window.PB = {
       tx(s, 0.6, 1.2, 7.3, 1.3, str("contact_t"), 34, WH, true, HEAD, "left", "top", { lineSpacingMultiple: 1.02 });
       tx(s, 0.6, 2.7, 7.3, 0.5, str("contact_sub"), 14, DM, false, BODY);
       var cy = 3.62;
-      ell(s, 0.6, cy, 0.52, O);
+      chip(s, 0.6, cy, 0.52, "people");
       tx(s, 1.4, cy, 6.7, 0.52, sp.name, 18, WH, true, HEAD, "left", "middle"); cy += 0.58;
-      ell(s, 0.6, cy, 0.52, O);
+      chip(s, 0.6, cy, 0.52, "phone");
       s.addText(sp.phone, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "tel:" + sp.phone.replace(/\s/g, "") } }); cy += 0.58;
-      ell(s, 0.6, cy, 0.52, O);
+      chip(s, 0.6, cy, 0.52, "mail");
       s.addText(sp.email, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "mailto:" + sp.email } }); cy += 0.58;
       rc(s, 0.6, 5.92, 7.3, 0.02, "393E44");
       if (!logoImg(s, 0.6, 6.26, 3.0, 0.88)) tx(s, 0.6, 6.26, 5, 0.5, "RENMAD EVENTS", 20, WH, true, HEAD);
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 3.95, 6.02, 3.3, 0.24, str("prepared_for"), 11, DM, true, BODY);
-        tx(s, 3.95, 6.3, 3.3, 0.4, client, 18, WH, true, HEAD);
+        clientPlate(s, 3.95, 6.28, 3.15, 0.98, 3.95, 6.3, 3.3, 0.4, 18, WH);
       }
     })();
 
@@ -4720,6 +4847,12 @@ window.PB = {
     var PRICE_VAL = mix(RED, [255, 255, 255], 0.42);
     var pct = Math.max(0, Math.min(90, Number(o.discountPct) || 0));
     var client = (o.client || "").trim();
+    var clientLogo = o.clientLogo || null;
+    function clientPlate(s, x, y, mw, mh, nx, ny, nw, nh, size, color) {
+      if (clientLogo && addLogo(s, x, y, mw, mh, clientLogo)) return true;
+      if (client) tx(s, nx, ny, nw, nh, client, size, color, true, HEAD);
+      return false;
+    }
     var IMG = o.images || {};
     var slotImg = function (slot) { return IMG[slot] || null; };
     var sp = typeof o.salesperson === "string" ? SALESPEOPLE[o.salesperson] : (o.salesperson || SALESPEOPLE.cintia);
@@ -4813,9 +4946,9 @@ window.PB = {
       logoOr(s, 0.9, 1.3, 5.2, 1.0, 34);
       tx(s, 0.95, 3.25, 7.3, 0.5, t(OPT, "cover_k"), 20, WH, true, HEAD);
       twoLine(s, 0.95, 3.9, 7.3, 1.4, t(OPT, "cover_t"), 34, WH);
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 0.95, 5.85, 6, 0.4, str("prepared_for"), 16, DM, false, BODY);
-        tx(s, 0.95, 6.25, 6.5, 0.8, client, 30, WH, true, HEAD);
+        clientPlate(s, 0.95, 6.28, 3.3, 1.0, 0.95, 6.25, 6.5, 0.8, 30, WH);
       }
       rc(s, 0, SH - 0.16, SW, 0.16, O);
     })();
@@ -5160,9 +5293,9 @@ window.PB = {
       s.addText(sp.email, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "mailto:" + sp.email } });
       rc(s, 0.6, 5.92, 7.3, 0.02, "393E44");
       logoOr(s, 0.6, 6.26, 3.0, 0.88, 20);
-      if (client) {
+      if (client || clientLogo) {
         tx(s, 3.95, 6.02, 3.3, 0.24, str("prepared_for"), 11, DM, true, BODY);
-        tx(s, 3.95, 6.3, 3.3, 0.4, client, 18, WH, true, HEAD);
+        clientPlate(s, 3.95, 6.28, 3.15, 0.98, 3.95, 6.3, 3.3, 0.4, 18, WH);
       }
     })();
 
