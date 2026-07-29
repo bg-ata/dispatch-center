@@ -2712,9 +2712,15 @@ window.PB = {
     (function () {
       var s = pptx.addSlide(); s.background = { color: GR };
       kicker(s, 0.7, 0.5, str("events_k"), str("events_t"));
+      /* The RENMAD Talks encuentros are injected into PB.events at runtime so they can be
+         PICKED, but they are a different product and must never appear on the sponsorship
+         calendar — deck_builder.py's EVENTS has no Talks in it. Leaving them in listed five
+         "2026" cards instead of two, which also squeezed the cards below the 1.7in photo
+         threshold and silently killed the banner. */
+      var notTalks = function (e) { return e && e.type !== "talks"; };
       var calEvents = (ev.members && ev.members.length)
         ? ev.members.map(function (k) { return (PB.events || []).find(function (x) { return x.key === k; }); }).filter(Boolean)
-        : (PB.events || []);
+        : (PB.events || []).filter(notTalks);
       var e26 = calEvents.filter(function (e) { return e.name.indexOf("2026") >= 0; });
       var e27 = calEvents.filter(function (e) { return e.name.indexOf("2027") >= 0; });
       var HY = 1.78, BOT = 6.66;
