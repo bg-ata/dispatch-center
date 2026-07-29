@@ -228,9 +228,10 @@ function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.canManage());}
 function activeTab(){const h=location.hash.replace('#','');return visTabs().some(t=>t[0]===h)?h:'year';}
 function render(){
   const tab=activeTab();
-  /* level-1: Reporting (this whole page) vs Invoicing (facturacion.html, billing roles only) */
+  /* level-1: Reporting (this whole page) vs Invoicing. The book is open to the whole team
+     to READ (Belén, 29 Jul); only accounting can change anything in it. */
   document.getElementById('tabs1').innerHTML='<button type="button" class="on">📊 Reporting</button>'+
-    (DB.canBill()?'<a href="facturacion.html" title="Invoices — Belén &amp; Jesús only">🧾 Invoicing</a>':'');
+    '<a href="facturacion.html" title="'+(DB.canBill()?'Invoices — create, edit, credit notes':'Invoices — read only')+'">🧾 Invoicing</a>';
   document.getElementById('tabs').innerHTML=visTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
   const warn=document.getElementById('warnbox');warn.innerHTML='';

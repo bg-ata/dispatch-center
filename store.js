@@ -2345,57 +2345,67 @@ const DB={
    change". So this is ONE list, written against the same predicates the app actually
    uses — `grants` mirrors DB.canX()/isX() with the person passed in, so a new module is
    added here the day it is built and the matrix cannot drift from the code.
-   `key` groups them by where they live. */
+   SEE and EDIT are separate answers for every person — Belén, 29 Jul: "everybody needs
+   access to the invoicing, but only Jesús and accounts can edit… but also there are things
+   that are not for everybody's eyes". So each row answers both, per person. */
+const EVERYONE=p=>true, NOBODY=p=>false;
 const PERMS=[
-  {area:'📅 Projects', label:'The event board',
-   see:'Every event, every lane, every task', edit:'Own tasks; managers & admins edit anyone’s',
-   grants:p=>'all'},
-  {area:'📅 Projects', label:'Set a task’s status for anyone',
-   see:'—', edit:'Any task on any event (members only their own, or any task on a non-RENMAD project)',
-   grants:p=>p.access==='admin'||p.access==='manager'},
-  {area:'👥 Team', label:'Personnel — add & edit people',
-   see:'The roster', edit:'Name, role, email, access tier, holiday allowance',
-   grants:p=>p.access==='admin'},
-  {area:'👥 Team', label:'The four permission ticks (HR · finance · invoicing · sales lead)',
-   see:'Who holds them', edit:'Grant or remove them — and the database refuses everyone else',
-   grants:p=>isBelenP(p)},
+  {area:'📅 Projects', label:'The event board — events, lanes, tasks',
+   see:EVERYONE, edit:EVERYONE,
+   seeTxt:'Every event, every lane, every task', editTxt:'Their own tasks'},
+  {area:'📅 Projects', label:'Anyone’s task status & the plan itself',
+   see:EVERYONE, edit:p=>p.access==='admin'||p.access==='manager',
+   seeTxt:'Everyone sees the plan', editTxt:'Managers & admins (plus anyone on a non-RENMAD project)'},
+  {area:'👥 Team', label:'The roster — people, roles, emails',
+   see:EVERYONE, edit:p=>p.access==='admin',
+   seeTxt:'The whole team list', editTxt:'Admins: add, edit, remove, set the tier'},
+  {area:'👥 Team', label:'This permission list & the four ticks',
+   see:p=>isBelenP(p), edit:p=>isBelenP(p),
+   seeTxt:'Belén only', editTxt:'Belén only — the database refuses everyone else'},
   {area:'💶 Money', label:'Event money figures (targets, invoiced, margin)',
-   see:'Whole roster', edit:'Only the finance tick',
-   grants:p=>!!p.finance},
+   see:EVERYONE, edit:p=>!!p.finance,
+   seeTxt:'Whole roster', editTxt:'The finance tick only'},
   {area:'💶 Money', label:'Insights & the analysis strips',
-   see:'Managers & admins only — members see the raw figures', edit:'—',
-   grants:p=>p.access==='admin'||p.access==='manager'},
-  {area:'🧾 Invoicing', label:'Invoices, credit notes, items & codes, products',
-   see:'Only with the invoicing tick (or admin)', edit:'Same — the whole module is gated',
-   grants:p=>!!p.billing||p.access==='admin'},
+   see:p=>p.access==='admin'||p.access==='manager', edit:NOBODY,
+   seeTxt:'Managers & admins — members see the raw figures without the conclusions', editTxt:'Computed, nobody edits it'},
+  {area:'🧾 Invoicing', label:'The invoice book (invoices, credit notes, items, products)',
+   see:EVERYONE, edit:p=>!!p.billing||p.access==='admin',
+   seeTxt:'Whole roster — read, search, download', editTxt:'Accounting (invoicing tick) and admins'},
   {area:'💼 SPX', label:'The sales board & proposals',
-   see:'Whole roster', edit:'Sales roles, the sales-lead tick and admins',
-   grants:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead'},
-  {area:'🌴 HR', label:'The HR area at all',
-   see:'Team holidays, allocation, the clock', edit:'Depends on the two rows below',
-   grants:p=>!!p.hr||isBelenP(p)||!!p.finance},
-  {area:'🌴 HR', label:'⏳ Pending — decide clock corrections & holidays',
-   see:'Everyone’s requests', edit:'Approve, deny, send back, amend the legal record',
-   grants:p=>!!p.hr||isBelenP(p)},
+   see:EVERYONE, edit:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead',
+   seeTxt:'Whole roster', editTxt:'Sales roles, the sales-lead tick and admins'},
+  {area:'🌴 HR', label:'The HR area (team holidays, allocation, the clock)',
+   see:p=>!!p.hr||isBelenP(p)||!!p.finance, edit:p=>!!p.hr||isBelenP(p),
+   seeTxt:'Belén, HR and the finance tick (for allocation)', editTxt:'Belén and HR'},
+  {area:'🌴 HR', label:'⏳ Pending — decide clock corrections',
+   see:p=>!!p.hr||isBelenP(p), edit:p=>!!p.hr||isBelenP(p),
+   seeTxt:'Everyone’s requests and their punches', editTxt:'Approve, deny, send back, amend the legal record'},
   {area:'🌴 HR', label:'Hour allocation across projects',
-   see:'Everyone’s weeks', edit:'Retire or reactivate projects, fix allocations',
-   grants:p=>p.access==='admin'||!!p.finance},
+   see:p=>p.access==='admin'||!!p.finance||!!p.hr, edit:p=>p.access==='admin'||!!p.finance,
+   seeTxt:'Everyone’s weeks', editTxt:'Admins and the finance tick'},
   {area:'🌴 HR', label:'Approve time off',
-   see:'Requests where it is their turn', edit:'Their step of the chain (manager → Belén → HR)',
-   grants:p=>p.access==='manager'||p.access==='admin'||!!p.hr},
+   see:p=>p.access==='manager'||p.access==='admin'||!!p.hr, edit:p=>p.access==='manager'||p.access==='admin'||!!p.hr,
+   seeTxt:'The requests where it is their turn', editTxt:'Their step of the chain (manager → Belén → HR)'},
+  {area:'🌴 HR', label:'Someone else’s clock & hours in detail',
+   see:p=>!!p.hr||isBelenP(p), edit:p=>!!p.hr||isBelenP(p),
+   seeTxt:'Belén and HR — everyone else sees only their own', editTxt:'Amendments, always logged'},
   {area:'📇 CRM', label:'The leads CRM',
-   see:'Belén only', edit:'Belén only',
-   grants:p=>isBelenP(p)},
-  {area:'💬 People', label:'Read a person’s message thread',
-   see:'Their own; admins and HR see everyone’s', edit:'Write in the ones they can see',
-   grants:p=>p.access==='admin'||!!p.hr},
-  {area:'💡 Requests', label:'Triage the requests box',
-   see:'Everyone opens requests', edit:'Status, priority and replies: admins',
-   grants:p=>p.access==='admin'},
+   see:p=>isBelenP(p), edit:p=>isBelenP(p),
+   seeTxt:'Belén only', editTxt:'Belén only'},
+  {area:'💬 People', label:'A person’s message thread',
+   see:p=>p.access==='admin'||!!p.hr, edit:p=>p.access==='admin'||!!p.hr,
+   seeTxt:'Their own always; admins and HR see everyone’s', editTxt:'Write in the ones they can see'},
+  {area:'💡 Requests', label:'The requests box',
+   see:EVERYONE, edit:p=>p.access==='admin',
+   seeTxt:'Everyone opens and follows requests', editTxt:'Admins triage: status, priority, replies'},
 ];
-/* what does THIS person hold? -> [{perm, has}] */
-function permsOf(p){return PERMS.map(x=>({perm:x,has:x.grants(p)}));}
-function permCount(p){return PERMS.filter(x=>{const g=x.grants(p);return g===true||g==='all';}).length;}
+/* what does THIS person hold? -> [{perm, canSee, canEdit}] */
+function permsOf(p){return PERMS.map(x=>({perm:x,canSee:!!x.see(p),canEdit:!!x.edit(p)}));}
+function permCount(p){const r=permsOf(p);return {see:r.filter(x=>x.canSee).length,edit:r.filter(x=>x.canEdit).length};}
+/* and the other way round: who can see / edit THIS permission (the audit view) */
+function whoHas(perm,which){
+  return DB.people.filter(p=>!isTeamAccount(p)&&perm[which](p)).map(p=>p.name);
+}
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 /* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,
    red = linked invoice not paid, white = paid (or no invoice: speakers/freebies/manual). */
@@ -2678,6 +2688,32 @@ function navBar(active){
          '</div><span class="brandlet">RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
 }
+/* ---- "new version" banner (29 Jul UX round) ----
+   After every deploy someone swears nothing changed: the HTML itself is browser-cached,
+   so an open tab keeps requesting the OLD store.js?v= until a hard refresh (the v72/v74
+   incident, and the "Haz Ctrl+F5" line in every ticket reply). Instead of teaching the
+   team keyboard folklore, each page compares the ?v= it was ACTUALLY loaded with against
+   version.json (bumped with the cache-buster on every deploy) and offers one tap.
+   Local rigs: fetch fails or matches -> silent. */
+const PAGE_V=(()=>{try{const s=[...document.scripts].find(x=>/store\.js\?v=/.test(x.src));return +s.src.match(/v=(\d+)/)[1];}catch(e){return 0;}})();
+async function dcCheckBuild(){
+  if(!PAGE_V)return;
+  try{
+    const r=await fetch('version.json?ts='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    const j=await r.json();
+    if(j&&+j.v>PAGE_V&&!document.getElementById('dcUpd')){
+      const d=document.createElement('div');d.id='dcUpd';
+      d.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99998;background:#FF4A00;color:#fff;font:600 13px Segoe UI,system-ui,sans-serif;padding:12px 16px;text-align:center;cursor:pointer;box-shadow:0 -4px 18px rgba(0,0,0,.18)';
+      d.textContent='⚡ The Dispatch has been updated — tap here to load the new version';
+      d.onclick=()=>location.reload();
+      document.body.appendChild(d);
+    }
+  }catch(e){}
+}
+setInterval(dcCheckBuild,5*60*1000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)dcCheckBuild();});
+setTimeout(dcCheckBuild,15000);
 function changePasswordUI(){
   if(!sb){alert('Login required.');return;}
   const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,system-ui,sans-serif';

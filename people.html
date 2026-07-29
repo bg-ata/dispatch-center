@@ -159,31 +159,53 @@ function renderPerms(){
   const tick=(p,f,label)=>'<td style="text-align:center"><input type="checkbox" data-pf="'+f+'" data-id="'+p.id+'"'+(p[f]?' checked':'')+' title="'+label+'"></td>';
   let h='<h3>🔐 Permissions — who can see and edit what'+
       '<span title="Only you can see this panel" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#F6E9E3;color:#A83A12">👁 you only</span></h3>'+
-    '<p class="hint">The tier sets the baseline; the four ticks add a specific power on top. Change anything here and it applies immediately — the database enforces the same rules, and refuses these four ticks to everyone but you. Click a name to see, in words, exactly what that person can open and change.</p>'+
+    '<p class="hint"><b>Seeing and editing are two different permissions.</b> Most of the system is open to read — the invoice book included — and only a few people can change each part; a handful of things are not for everybody’s eyes at all, and those say so below. '+
+      'The tier sets the baseline, the four ticks add a specific power on top, and changing either here applies immediately (the database enforces the same rules and refuses these four ticks to everyone but you). '+
+      'Click a name for their full 👁/✏ list; the second table answers it the other way round, permission by permission.</p>'+
     '<div style="overflow-x:auto"><table style="font-size:12.5px">'+
     '<tr><th>Person</th><th>Tier</th><th style="text-align:center" title="Final step of the holiday chain + the ⏳ Pending decisions">HR</th>'+
+    /* see/edit are two different answers — Belén, 29 Jul */
     '<th style="text-align:center" title="Edits the € figures on Money">Finance</th>'+
     '<th style="text-align:center" title="Opens and edits the whole Invoicing module">Invoicing</th>'+
     '<th style="text-align:center" title="Sales lead: edits anyone’s proposals on the SPX board">Sales lead</th>'+
-    '<th class="num" title="How many of the powers listed below they hold">Powers</th></tr>';
+    '<th class="num" title="How many of the powers below they can open">👁 sees</th>'+
+    '<th class="num" title="How many of them they can change">✏ edits</th></tr>';
   roster.forEach(p=>{
+    const c=permCount(p);
     h+='<tr><td><a href="#" data-perm="'+p.id+'" style="font-weight:700;color:var(--charcoal)">'+esc(p.name)+'</a>'+
         '<div style="font-size:11px;color:var(--muted)">'+esc(p.role||'')+(isBelenP(p)?' · you':'')+'</div></td>'+
       '<td><select data-pa="'+p.id+'" style="font:inherit;font-size:12px;padding:2px 4px">'+
         ACCESS.map(a=>'<option value="'+a+'"'+((p.access||'member')===a?' selected':'')+'>'+ACCESS_LABEL[a]+'</option>').join('')+'</select></td>'+
       tick(p,'hr','HR')+tick(p,'finance','Finance')+tick(p,'billing','Invoicing')+tick(p,'salesLead','Sales lead')+
-      '<td class="num">'+permCount(p)+'</td></tr>';
+      '<td class="num">'+c.see+'</td><td class="num"><b>'+c.edit+'</b></td></tr>';
     if(_permOpen==p.id){
-      h+='<tr><td colspan="7" style="background:#faf9f6">'+
-        '<table style="font-size:12px;width:100%"><tr><th style="width:120px">Where</th><th>What</th><th style="width:34%">Can see</th><th style="width:34%">Can edit</th></tr>'+
+      h+='<tr><td colspan="8" style="background:#faf9f6">'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:5px">What <b>'+esc(p.name)+'</b> can do today — 👁 open it, ✏ change it:</div>'+
+        '<table style="font-size:12px;width:100%"><tr><th style="width:110px">Where</th><th>What</th><th style="width:52px;text-align:center">👁</th><th style="width:52px;text-align:center">✏</th><th style="width:44%">Who it is for</th></tr>'+
         permsOf(p).map(x=>{
-          const on=x.has===true||x.has==='all';
-          return '<tr style="opacity:'+(on?1:.4)+'"><td>'+esc(x.perm.area)+'</td>'+
-            '<td>'+(on?'✅ ':'—&nbsp; ')+esc(x.perm.label)+'</td>'+
-            '<td style="white-space:normal;color:var(--muted)">'+esc(x.perm.see)+'</td>'+
-            '<td style="white-space:normal;color:var(--muted)">'+esc(x.perm.edit)+'</td></tr>';
+          const yn=v=>v?'<span style="color:var(--green);font-weight:700">✔</span>':'<span style="color:#c9c6bf">—</span>';
+          return '<tr style="opacity:'+(x.canSee?1:.5)+'"><td>'+esc(x.perm.area)+'</td>'+
+            '<td>'+esc(x.perm.label)+'</td>'+
+            '<td style="text-align:center">'+yn(x.canSee)+'</td><td style="text-align:center">'+yn(x.canEdit)+'</td>'+
+            '<td style="white-space:normal;color:var(--muted)">👁 '+esc(x.perm.seeTxt)+'<br>✏ '+esc(x.perm.editTxt)+'</td></tr>';
         }).join('')+'</table></td></tr>';
     }
+  });
+  h+='</table></div>';
+  /* the same truth the other way round: one row per permission, naming who can see it and
+     who can change it. This is the list to read when deciding whether something is "not for
+     everybody's eyes" — the counts above answer per person, this answers per permission. */
+  h+='<h3 style="margin:18px 0 4px;font-size:14px">Every permission, and who has it</h3>'+
+    '<div style="overflow-x:auto"><table style="font-size:12px">'+
+    '<tr><th style="width:105px">Where</th><th style="width:30%">What</th><th>👁 Can see</th><th>✏ Can edit</th></tr>';
+  PERMS.forEach(perm=>{
+    const s=whoHas(perm,'see'),e=whoHas(perm,'edit');
+    const all=roster.length;
+    const nm=(list,none)=>!list.length?'<span style="color:#c9c6bf">'+none+'</span>'
+      :(list.length===all?'<b>everyone</b>':esc(list.join(', ')));
+    h+='<tr><td>'+esc(perm.area)+'</td><td style="white-space:normal"><b>'+esc(perm.label)+'</b></td>'+
+      '<td style="white-space:normal">'+nm(s,'nobody')+'</td>'+
+      '<td style="white-space:normal">'+nm(e,'nobody — it is computed')+'</td></tr>';
   });
   h+='</table></div>';
   box.innerHTML=h;

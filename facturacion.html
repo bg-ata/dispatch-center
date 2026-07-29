@@ -216,11 +216,13 @@ function linkedNet(propId,exceptId){return DB.invoices.filter(x=>x.spxProposalId
 /* ---------- main render ---------- */
 function render(){
   const W=document.getElementById('warnbox'),C=document.getElementById('content');
-  if(!DB.canBill()){
-    C.innerHTML='<div class="panel"><h3>🔒 Billing only</h3><p class="hint">This area is for the invoicing editor (billing permission) and admins. '+
-      'The figures it produces are visible to everyone in 💶 Money and the event delegate lists.</p></div>';W.innerHTML='';return;
-  }
-  W.innerHTML=(DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>')+
+  /* Belén, 29 Jul: "everybody needs access to the invoicing, but only Jesús and accounts
+     can edit". The page used to lock everyone else out entirely — even though the database
+     already worked exactly that way (SELECT = whole roster, INSERT/UPDATE = dc_can_bill()).
+     So the book is open to read and every control that WRITES is gated instead. */
+  const RO=!DB.canBill();
+  W.innerHTML=(RO?'<div class="banner" style="background:#EEF3FB;border:1px solid #cfe0f5;color:#1c4f8f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px">👁 You can read the invoice book — searching, filtering and downloading. Only the invoicing editors (accounting) can create or change anything.</div>':'')+
+    (DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>')+
     (DB.billReady()&&window._inv2Ready===false?'<div class="warn">Invoicing 2.0 line details (product · qty · price per line) will not persist until <b>dispatch_invoicing2.sql</b> is run in Supabase. Amounts, códigos and passes still save fine.</div>':'');
   renderDraftBar();
   const rows=filtered();
@@ -250,7 +252,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected <span style="font-weight:400;opacity:.75">— cash in '+yearLab+'</span></div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding <span style="font-weight:400;opacity:.75">— invoices of '+yearLab+'</span></div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="cfgProd" title="The products a line can be sold as — add your own (Pase Online…) without asking anyone">🏷 Products</button><button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
+    '<div class="panel"><h3>Invoices '+(RO?'':'<button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="cfgProd" title="The products a line can be sold as — add your own (Pase Online…) without asking anyone">🏷 Products</button> ')+'<button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button>'+(RO?'':' <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button>')+'</h3>'+
     '<div class="ytabs">'+yearTabsHtml()+'</div>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
@@ -265,11 +267,13 @@ function render(){
     '<p class="hint">Sorted by date, then invoice nº — <b>click any column header</b> to sort by it, click again to reverse. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
     '';
   renderTable(rows);
-  document.getElementById('addInv').onclick=()=>openModal(null);
-  document.getElementById('addCredit').onclick=openCreditPicker;
-  document.getElementById('histLoad').onclick=openImportModal;
-  document.getElementById('cfgCod').onclick=()=>openCodigosModal();
-  document.getElementById('cfgProd').onclick=()=>openProductosModal();
+  /* the write buttons only exist for an invoicing editor — wire whatever is on the page */
+  const on=(id,fn)=>{const el=document.getElementById(id);if(el)el.onclick=fn;};
+  on('addInv',()=>openModal(null));
+  on('addCredit',openCreditPicker);
+  on('histLoad',openImportModal);
+  on('cfgCod',()=>openCodigosModal());
+  on('cfgProd',()=>openProductosModal());
   document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
   set('f_item','item');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
@@ -356,9 +360,10 @@ function renderTable(rows){
   /* "Entered by" left the board (Jesús 28 Jul): it pushed the ✎ off-screen, and getting to
      it meant scrolling right at the very bottom of the page and back up. It stays on the
      invoice itself and in the Excel export. "Contract salesperson" → "Contract" for width. */
+  const canWrite=DB.canBill();      // everyone reads the book; only accounting changes it
   rows=applyInvSort(rows);
   let h='<tr>'+invThCells()+'</tr>';
-  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
+  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':(canWrite?' yet — create the first one with “+ New invoice”.':' yet.'))+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -369,7 +374,9 @@ function renderTable(rows){
        Credit-note rows are locked too (Jesús 2.5): an R-document is always a credit note. */
     const stOpts=Object.keys(INV_STATUS).filter(s=>(s!=='cancelado'||i.status==='cancelado')&&(s!=='abono'||i.status==='abono'));
     const stLock=i.status==='cancelado'?'disabled title="Cancelled via credit note — final"':i.status==='abono'?'disabled title="Credit note — status is fixed"':'';
-    const stSel='<select class="inl" data-st="'+i.id+'" '+stLock+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>';
+    /* read-only reader: the status is a fact to look at, not a control */
+    const stSel=canWrite?'<select class="inl" data-st="'+i.id+'" '+stLock+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'
+                        :esc(INV_STATUS[i.status]||i.status||'');
     const passes=invPasses(i);
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
       '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
@@ -384,7 +391,7 @@ function renderTable(rows){
       '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td style="white-space:normal;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+esc(i.comentarios||'')+'">'+esc(i.comentarios||'')+'</td>'+
-      '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
+      '<td>'+(canWrite?'<button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button>':'')+'</td></tr>';
   });
   document.getElementById('itbl').innerHTML=h;
   document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>setSort(th.dataset.sort));
@@ -418,7 +425,7 @@ function renderTable(rows){
    A11: the ⚠ now compares the CONTRACT VALUE vs the linked invoices' net — warn only, never block. */
 function contractOwnerCell(i){
   if(!i.spxProposalId){
-    if((i.producto==='sponsorship'||i.producto==='upgrade'||DB.allocsFor(i.id).some(a=>a.producto==='sponsorship'||a.producto==='upgrade'))&&i.status!=='cancelado')
+    if(DB.canBill()&&(i.producto==='sponsorship'||i.producto==='upgrade'||DB.allocsFor(i.id).some(a=>a.producto==='sponsorship'||a.producto==='upgrade'))&&i.status!=='cancelado')
       return '<button class="btn sm" data-ctr="'+i.id+'" title="Link this invoice to the contract the salesperson sent — mandatory for new SPX/upgrade invoices" style="color:#C77800">link contract</button>';
     return '<span class="hint">—</span>';
   }
@@ -696,6 +703,9 @@ function rowsFromInvoice(inv){
 }
 function blankRow(){return {id:null,producto:'',tipo_pase:'',qty:1,price:'',codigoId:'',codigo:'',eventId:'',passes:''};}
 function openModal(inv,preset){
+  /* last gate before the form: the buttons are already hidden for a reader, and the
+     database refuses the write anyway — this stops a stale page from opening it at all */
+  if(!DB.canBill()){alert('Only the invoicing editors (accounting) can create or change invoices. You can read the book and download it.');return;}
   editingId=inv?inv.id:null;
   allocRows=preset&&preset.lines?preset.lines.map(r=>Object.assign({},r)):(inv?rowsFromInvoice(inv):[blankRow()]);
   if(!allocRows.length)allocRows=[blankRow()];
