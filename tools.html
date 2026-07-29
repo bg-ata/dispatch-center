@@ -33,21 +33,16 @@
   <h1>Team tools</h1>
   <p class="sub">Everything in one place — each tool opens inside the Dispatch Center. Tools marked “own login” still ask for their own credentials inside the window for now.</p>
   <div class="grid" id="grid"></div>
-  <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished.</p>
+  <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished. Something broken or clunky? The 💡 request box now lives with your <a href="inbox.html#requests" style="color:var(--muted)">🔔 notifications</a>.</p>
+  <p class="note" id="oldpb"></p>
 </div>
 <script src="store.js?v=75"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
 function render(){
   const g=document.getElementById('grid');g.innerHTML='';
-  /* the team request box lives here now (it left the top nav to keep it uncluttered) */
-  const rq=document.createElement('a');rq.className='tile';rq.href='tickets.html';
-  let rqBadge='';
-  try{if(DB.isAdmin()&&DB.tickReady()){const nt=DB.tickets.filter(t=>t.status==='new').length;
-    if(nt>0)rqBadge='<span class="badge" style="background:#D32230;color:#fff">'+nt+' new</span>';}}catch(e){}
-  rq.innerHTML='<span class="ic" style="background:#C77800">💡</span>'+
-    '<span><h3>Requests</h3><p>The team request box — bugs, usability, changes and ideas. Also one tap away via the 💡 button on any page.</p></span>'+rqBadge;
-  g.appendChild(rq);
+  /* the Requests tile moved to 🔔 inbox.html#requests (29 Jul UX round) — questions and
+     their answers now live in the same place the bell badge points to */
   /* The browser Proposal Builder — a real Dispatch page (opens directly, not embedded).
      CUTOVER 29 Jul 2026: this is now THE proposal builder. It reached parity with the
      Streamlit app (all 21 slides, the icon set, client logo, Options mode, the portfolio
@@ -59,24 +54,22 @@ function render(){
   g.appendChild(pb);
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
+    if(t.id==='proposal')return; // old Streamlit builder: demoted to the footnote link below (29 Jul UX round)
     const pending=!t.url;
     const el=document.createElement(pending?'div':'a');
     el.className='tile'+(pending?' pending':'');
     if(!pending){el.href='tool.html?id='+t.id;} // open through the dispatch shell, not a bare new tab
-    let name=t.name, desc=t.desc;
-    let badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
-    /* The old Streamlit builder is superseded by the page above. Relabelled here rather
-       than in store.js so the cutover is one reversible edit in one file. */
-    if(t.id==='proposal'){
-      name='Proposal Builder <span style="color:var(--muted);font-weight:400">(old Streamlit)</span>';
-      desc='The previous version, kept as a fallback while the browser builder settles in. Use the one above unless something is missing.';
-      badge='fallback';
-    }
+    const badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
     el.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
-      '<span><h3>'+name+'</h3><p>'+desc+'</p></span>'+
+      '<span><h3>'+t.name+'</h3><p>'+t.desc+'</p></span>'+
       (badge?'<span class="badge'+(t.ownLogin?' own':'')+'">'+badge+'</span>':'');
     g.appendChild(el);
   });
+  /* Superseded 29 Jul 2026 cutover: the browser builder above is THE builder. The Streamlit
+     one stays reachable as a quiet fallback link until it is retired for good. */
+  const old=DISPATCH_TOOLS.find(t=>t.id==='proposal');
+  if(old&&old.url)document.getElementById('oldpb').innerHTML=
+    'Fallback: the <a href="tool.html?id=proposal" style="color:var(--muted)">previous Proposal Builder (Streamlit)</a> is still reachable while the browser builder settles in — use it only if something is missing.';
 }
 boot(render);
 window.addEventListener('dc-remote',render);
