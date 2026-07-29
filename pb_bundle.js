@@ -3388,6 +3388,30 @@ window.PB = {
         ? opts.lines.map(function (l) { return Object.assign({}, l, { parentId: pid }); })
         : buildLines(opts.quote, pid, isGeneral);
 
+      /* THE SLUG FIX (Belen 29 Jul, batch 3B): the builder's own event keys
+         (almacenamiento_27, dc_27, ...) name the same events the SPX registry lists
+         under their E-codes. Writing the slug made one event count as two-to-four on
+         every report grouped by eventKey - 41 lines / ~339k EUR had to be remapped by
+         hand on 28 Jul. Translate at the boundary: resolve each line against
+         dc_spx_events with the board's own precedence (exact key -> financeId ->
+         aliases) and write the REGISTRY key + canonical name. No match -> keep the
+         slug (a genuinely new event; the board folds it in later via aliases).
+         Best-effort: if the registry cannot be fetched, the untranslated write still
+         goes through - a slugged row beats a lost row. */
+      try {
+        const rr = await _dcRest("GET", "dc_spx_events", token, null,
+          { select: "eventKey,name,financeId,convByStatus", deleted: "eq.false" });
+        const regs = await rr.json();
+        const nk = function (k) { return ("" + (k == null ? "" : k)).trim().toLowerCase(); };
+        lines.forEach(function (l) {
+          const lk = nk(l.eventKey);
+          let e = lk ? regs.find(function (x) { return nk(x.eventKey) === lk; }) : null;
+          if (!e && l.eventId != null) e = regs.find(function (x) { return x.financeId != null && x.financeId == l.eventId; });
+          if (!e && lk) e = regs.find(function (x) { return ((x.convByStatus && x.convByStatus.aliases) || []).some(function (a) { return nk(a) === lk; }); });
+          if (e) { l.eventKey = e.eventKey; if (e.name) l.eventName = e.name; }
+        });
+      } catch (e) { /* registry unreachable -> proceed untranslated */ }
+
       await _dcRest("POST", "dc_spx_proposals", token, [parent], null);
       if (lines.length) {
         await _dcRest("POST", "dc_spx_lines", token, lines, null);
