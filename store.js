@@ -715,6 +715,62 @@ function hrVisiblePeople(){
 }
 /* ---- time clock (registro horario) helpers ---- */
 const TC_START='2026-07-13'; // first day punching is expected (module go-live Monday)
+/* ---- where was this punched from? (Belén, 29 Jul: "if there is a request from the
+   government we should be able to say the person was working in a different time zone
+   and which it was") ----
+   deviceTz()  = the zone the browser is set to. This is the truth about the recorded
+                 time string, and it is captured, never typed.
+   workPlace   = what the person declares on 🙋 Me. It exists because the device can be
+                 honestly wrong: Carlos's laptop stays on Madrid while he is in Chile,
+                 so his punches ARE Madrid times even though he is 6 hours away. */
+function deviceTz(){try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch(e){return '';}}
+function deviceOffsetMin(){try{return -new Date().getTimezoneOffset();}catch(e){return null;}} // minutes EAST of UTC
+const HOME_TZ='Europe/Madrid';
+function tzStamp(){
+  const me=DB.currentUser;
+  return {tz:deviceTz()||null,tzOffset:deviceOffsetMin(),place:(me&&me.workPlace)||null};
+}
+/* the places this team actually works from (events + remote spells). Label → IANA zone;
+   the label is what gets written on the punch, the zone is only used to warn when the
+   laptop clock disagrees with where the person says they are. */
+const WORK_PLACES=[['Spain','Europe/Madrid'],['Poland','Europe/Warsaw'],['Italy','Europe/Rome'],
+  ['United Kingdom','Europe/London'],['Germany','Europe/Berlin'],['Mexico','America/Mexico_City'],
+  ['Chile','America/Santiago'],['Colombia','America/Bogota'],['Brazil','America/Sao_Paulo'],
+  ['Dominican Republic','America/Santo_Domingo'],['United States (East)','America/New_York'],
+  ['United States (West)','America/Los_Angeles'],['Elsewhere','']];
+function placeZone(label){const p=WORK_PLACES.find(x=>x[0]===label);return p?p[1]:'';}
+/* what is the clock in that zone right now, in minutes east of UTC */
+function tzOffsetOf(zone,date){
+  if(!zone)return null;
+  try{
+    const d=date||new Date();
+    const p={};
+    new Intl.DateTimeFormat('en-US',{timeZone:zone,hour12:false,year:'numeric',month:'2-digit',
+      day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'})
+      .formatToParts(d).forEach(x=>{p[x.type]=x.value;});
+    const asUTC=Date.UTC(+p.year,+p.month-1,(+p.day),(+p.hour)%24,+p.minute,+p.second);
+    return Math.round((asUTC-d.getTime())/60000);
+  }catch(e){return null;}
+}
+function tzOffsetLabel(off){
+  if(off==null||off==='')return '';
+  const s=off<0?'−':'+',a=Math.abs(+off);
+  return 'UTC'+s+Math.floor(a/60)+(a%60?':'+String(a%60).padStart(2,'0'):'');
+}
+/* one short human label for a punch's origin — '' when it is a plain Madrid punch */
+function tzLabel(e){
+  if(!e)return '';
+  const off=e.tzOffset==null?null:+e.tzOffset;
+  /* "odd" = worth flagging. Someone who simply declares Spain on a Spanish laptop is the
+     normal case and must not carry a globe on every punch. 60/120 = Madrid winter/summer. */
+  const oddDevice=(e.tz&&e.tz!==HOME_TZ)||(off!=null&&off!==120&&off!==60);
+  const oddPlace=e.place&&placeZone(e.place)!==HOME_TZ;
+  if(!oddDevice&&!oddPlace)return '';
+  const parts=[];
+  if(e.place)parts.push(e.place);
+  if(e.tz)parts.push(e.tz+(off==null?'':' · '+tzOffsetLabel(off)));
+  return parts.join(' — ');
+}
 function tcRows(personId,day){return DB.timeclock.filter(r=>r.personId==personId&&r.day===day);}
 function tcEffective(personId,day){ // resolve the amendment graph: a punch dies only if a LIVE row amends it
   const rows=tcRows(personId,day);
@@ -750,6 +806,7 @@ function tcDayInfo(personId,day){ // pair in→out; open pair counts to "now" if
 const CLAIM_MAX_DAYS = 14;      // how far back a claim may reach (her call)
 const CLAIM_TOLERANCE_H = 1;    // auto-apply only up to expected + 1h
 window._claimReady = true;      // flipped off at boot if dispatch_hr11_claims.sql has not run
+window._tzReady = true;         // flipped off at boot if dc_people has no workPlace column yet
 window._inv2Ready = true;       // flipped off at boot if dispatch_invoicing2.sql has not run
 /* claim = {type, time?, from?, to?, entryId?, text?}
    types: forgot_out | forgot_in | wrong_time | extra_punch | whole_day | other */
@@ -1259,6 +1316,71 @@ function notifySend(to,kind,text,link){
   if(ids.length)DB.save();
   return ids.length;
 }
+/* ================= 💬 the conversation on a person =================
+   Belén, 29 Jul: "a little area in each person for the messages — whether they are for
+   holidays, changes in clock ins and outs, changes to the platform — so there can be a
+   conversation". One thread per person, plus a short index of the open items that already
+   have their own threads elsewhere, so this page is where you START and never the place
+   where a decision quietly ends up duplicated.
+   Visible to the person, to admins and to HR (RLS says the same thing on the server). */
+function canSeePersonThread(personId){
+  const me=DB.currentUser;if(!me)return false;
+  return me.id==personId||me.access==='admin'||!!me.hr;
+}
+function personThreadHtml(personId,opts){
+  opts=opts||{};
+  if(!DB.pmsgReady())return '<p class="hint">Messages are not active yet — the dc_person_msgs table is missing.</p>';
+  if(!canSeePersonThread(personId))return '';
+  const ms=DB.pmsgsFor(personId),me=DB.currentUser;
+  let h='<div id="pmsgList" style="max-height:280px;overflow:auto">';
+  h+=ms.length?ms.map(m=>{
+    const mine=m.byId==me.id;
+    return '<div style="margin-bottom:8px;padding:7px 10px;border-radius:9px;background:'+(mine?'#FFF3EC':'#f6f5f1')+';border:1px solid '+(mine?'#F3D9B8':'var(--line)')+'">'+
+      '<div style="font-size:11px;color:var(--muted)"><b style="color:var(--charcoal)">'+esc(m.byName||'?')+'</b> · '+esc(deIso(m.created||''))+'</div>'+
+      '<div style="font-size:13px;white-space:pre-wrap">'+esc(m.text||'')+'</div></div>';
+  }).join(''):'<div class="hint">No messages yet.</div>';
+  h+='</div>'+
+    '<div style="display:flex;gap:6px;margin-top:8px">'+
+    '<input id="pmsgTxt" placeholder="'+(personId==me.id?'Write to Belén / HR…':'Write to '+esc(DB.personName(personId))+'…')+'" style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px">'+
+    '<button class="btn primary" id="pmsgSend" style="font-size:12px">Send</button></div>'+
+    '<div class="hint" style="margin-top:4px">'+(personId==me.id?'Belén and HR see this.':'They get it in their 🔔 inbox.')+'</div>';
+  return h;
+}
+function wirePersonThread(personId,rerender){
+  const btn=document.getElementById('pmsgSend'),inp=document.getElementById('pmsgTxt');
+  if(!btn||!inp)return;
+  const send=async()=>{
+    const t=(inp.value||'').trim();if(!t)return;
+    const me=DB.currentUser;
+    btn.disabled=true;
+    DB.pmsgs.push({id:DB.newId(),personId:personId,byId:me.id,byName:me.name,text:t,
+      created:toISO(new Date())+' '+nowHMS().slice(0,5)});
+    await DB.saveNow();
+    /* the point of the thread is that the other side hears about it */
+    if(personId==me.id){
+      const to=DB.people.filter(p=>!isTeamAccount(p)&&(p.hr||isBelenP(p))).map(p=>p.id);
+      notifySend(to,'notice','💬 '+me.name+': “'+t+'”','person.html?id='+personId);
+    }else{
+      notifySend(personId,'notice','💬 '+me.name+' wrote to you: “'+t+'”','home.html');
+    }
+    btn.disabled=false;inp.value='';
+    if(rerender)rerender();
+  };
+  btn.onclick=send;
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')send();});
+}
+/* the open items about this person that live in their own modules — listed, never duplicated */
+function personOpenItemsHtml(personId){
+  const out=[];
+  if(DB.tcReady())DB.tcreports.filter(r=>r.personId==personId&&r.status!=='resolved')
+    .forEach(r=>out.push('🕘 Clock correction · '+fmtHuman(r.day)+' — <a href="hr.html#pending" style="color:var(--orange)">'+(r.status==='needs_info'?'sent back to them':'waiting for a decision')+'</a>'));
+  if(DB.hrReady())DB.holidays.filter(h=>h.personId==personId&&['manager','belen','hr'].includes(h.status))
+    .forEach(h=>out.push('🌴 Time off · '+fmtHumanRange(h.dateFrom,h.dateTo)+' — <a href="home.html" style="color:var(--orange)">'+esc(holStageLabel(h))+'</a>'));
+  if(DB.tickReady())DB.tickets.filter(t=>t.personId==personId&&(t.status==='new'||t.status==='open'))
+    .forEach(t=>out.push('💡 Request · '+esc(t.title||'')+' — <a href="tickets.html" style="color:var(--orange)">open</a>'));
+  if(!out.length)return '<div class="hint">Nothing open right now.</div>';
+  return '<div style="font-size:12.5px">'+out.map(x=>'<div style="margin-bottom:3px">'+x+'</div>').join('')+'</div>';
+}
 function inboxMine(){const me=DB.currentUser;return me?DB.inbox.filter(m=>m.personId==me.id):[];}
 function inboxUnread(){return inboxMine().filter(m=>!m.isRead).length;}
 
@@ -1551,10 +1673,10 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql)
-  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
+  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace'], // startDate + workPlace tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -1566,7 +1688,11 @@ const COLS={
      if dispatch_hol_year.sql hasn't been run yet. */
   holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces','chargeYear'],
   timesheets:['id','personId','week','hours'],
-  timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId'], // hash/created_* are server-set
+  /* tz/tzOffset = the DEVICE zone the 	ime string is expressed in (captured, never typed);
+     place = what the person declares they are working FROM. Both tolerant: stripped at boot
+     if the 3-line SQL has not run. Kept apart because they can legitimately disagree —
+     Carlos's laptop says Madrid while he is in Chile. */
+  timeclock:['id','personId','day','time','kind','manual','amends','reason','note','reportId','tz','tzOffset','place'], // hash/created_* are server-set
   tcreports:['id','personId','day','entryId','thread','status','claim','ratify'], // claim/ratify tolerant (dispatch_hr11_claims.sql)
   eventaway:['id','personId','dateFrom','dateTo','title','note'], // "at an event" — away from the office
   /* Facturación: "eventId" in invalloc/delegates = dc_finance.id (the event-edition money
@@ -1617,8 +1743,10 @@ const COLS={
      the first. `pases` = behaves like Tickets (pass type × qty, delegate row, counts as
      ticket money on the SPX board). Retire, never delete: old invoices still resolve. */
   productos:['id','key','label','pases','sort','archived'],
+  /* the conversation on a person's page: personId = whose thread it is (not the sender) */
+  pmsgs:['id','personId','byId','byName','text','created'],
 };
-let _prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+let _pmsgReady=false,_prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -1638,7 +1766,7 @@ const DB={
         projects:[],holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],
         invoices:[],invalloc:[],delegates:[],codigos:[],payments:[],tickets:[],
         todos:[],inbox:[],holmsgs:[],spxProps:[],spxLines:[],spxTargets:[],
-        companyMap:[],spxFrags:[],spxEventReg:[],productos:[]};
+        companyMap:[],spxFrags:[],spxEventReg:[],productos:[],pmsgs:[]};
       const D=this.data;
       /* paged: Supabase caps a select at 1000 rows and TRUNCATES SILENTLY (audit Critical 4) */
       const paged=async tbl=>{const out=[];let from=0,page=1000;
@@ -1664,6 +1792,9 @@ const DB={
         if(D.events.length && !('stages' in D.events[0])){window._phaseColMissing=true;strip('events',['stages']);}
         /* startDate on people is tolerant the same way (1-line SQL adds it) */
         if(D.people.length && !('startDate' in D.people[0]))strip('people',['startDate']);
+        /* …and so is the declared working place */
+        window._tzReady=true;
+        if(D.people.length && !('workPlace' in D.people[0])){window._tzReady=false;strip('people',['workPlace']);}
       })();
 
       /* claims are tolerant: until dispatch_hr11_claims.sql runs, never push claim/ratify
@@ -1719,6 +1850,11 @@ const DB={
       _tcReady=false;
       const pTc=(async()=>{
         try{
+          /* tz/tzOffset/place are tolerant: probe the column, because the table is
+             append-only and row 0 is the OLDEST punch — it will never have them */
+          window._tzColsReady=true;
+          try{const tp=await sb.from('dc_timeclock').select('tz').limit(1);if(tp.error)throw tp.error;}
+          catch(e){window._tzColsReady=false;strip('timeclock',['tz','tzOffset','place']);}
           const out=[];let from=0,page=1000;
           for(;;){const tr=await sb.from('dc_timeclock').select('*').order('id').range(from,from+page-1);
             if(tr.error)throw tr.error;out.push.apply(out,tr.data||[]);
@@ -1757,6 +1893,13 @@ const DB={
         catch(e){window._inv2Ready=false;strip('invalloc',['producto','tipo_pase','qty','price']);}
       })();
 
+      /* the per-person conversation (tolerant like everything else) */
+      _pmsgReady=false;
+      const pPmsg=(async()=>{
+        try{const pm=await sb.from('dc_person_msgs').select('*').eq('deleted',false).order('id');
+          if(pm.error)throw pm.error;D.pmsgs=pm.data||[];_pmsgReady=true;
+        }catch(e){console.warn('person messages not ready:',e.message||e);}
+      })();
       /* the products a line can be sold as (dc_productos). Tolerant: without the table
          the built-in list still works, the "Products" pop-up just says to run the SQL. */
       _prodReady=false;
@@ -1838,7 +1981,7 @@ const DB={
         }catch(e){console.warn('SPX event registry not ready:',e.message||e);}
       })();
 
-      await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg]);
+      await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPmsg,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg]);
       rebuildProductos();
       if(!D.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
@@ -1854,6 +1997,7 @@ const DB={
     if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
     if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
     if(!this.data.productos)this.data.productos=[]; // …and predate the custom-product list
+    if(!this.data.pmsgs)this.data.pmsgs=[];         // …and the per-person conversation
     rebuildProductos();
     return this.data;
   },
@@ -1892,6 +2036,7 @@ const DB={
         if(k==='inbox'&&!_inboxReady)continue; // inbox table not created yet
         if(k==='holmsgs'&&!_holmsgReady)continue; // holiday messages table not created yet
         if(k==='productos'&&!_prodReady)continue; // custom-products table not created yet
+        if(k==='pmsgs'&&!_pmsgReady)continue; // person-messages table not created yet
         if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)||(k==='spxFrags'&&!_spxFragReady)))continue; // SPX tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
@@ -1946,7 +2091,7 @@ const DB={
       _punchAck={ok:false,blocked:true,kind,time:_now,msg,at:Date.now()};
       return {ok:false,blocked:true,msg};
     }
-    const row={id:this.newId(),personId:me.id,day:_day,time:_now,kind,manual:false,amends:null,reason:null,note:null,reportId:null};
+    const row=Object.assign({id:this.newId(),personId:me.id,day:_day,time:_now,kind,manual:false,amends:null,reason:null,note:null,reportId:null},tzStamp());
     if(!USE_SUPABASE){this.timeclock.push(row);this.save();_punchAck={ok:true,kind,time:row.time,at:Date.now()};return {ok:true,row};}
     try{
       const {error}=await sb.from('dc_timeclock').insert([pickRow(row,'timeclock')]);
@@ -1967,7 +2112,7 @@ const DB={
      the caller has already decided, and the reason goes into the permanent record. */
   async punchAt(kind,day,time,reason){
     const me=this.currentUser;if(!me)return {ok:false};
-    const row={id:this.newId(),personId:me.id,day:day,time:time,kind:kind,manual:false,amends:null,reason:reason||null,note:null,reportId:null};
+    const row=Object.assign({id:this.newId(),personId:me.id,day:day,time:time,kind:kind,manual:false,amends:null,reason:reason||null,note:null,reportId:null},tzStamp());
     if(!USE_SUPABASE){this.timeclock.push(row);this.save();return {ok:true,row};}
     try{
       const {error}=await sb.from('dc_timeclock').insert([pickRow(row,'timeclock')]);
@@ -2043,6 +2188,10 @@ const DB={
   /* ---- products accounting maintains itself (built-ins live in the code) ---- */
   get productos(){return this.data.productos||[];},
   prodReady(){return !USE_SUPABASE||_prodReady;},
+  /* ---- the conversation on a person's page ---- */
+  get pmsgs(){return this.data.pmsgs||[];},
+  pmsgReady(){return !USE_SUPABASE||_pmsgReady;},
+  pmsgsFor(personId){return this.pmsgs.filter(m=>m.personId==personId).sort((a,b)=>(''+(a.created||'')).localeCompare(''+(b.created||''))||a.id-b.id);},
   /* ---- split-payment ledger: partial payments against an invoice ---- */
   get payments(){return this.data.payments||[];},
   payReady(){return !USE_SUPABASE||_payReady;},
@@ -2190,6 +2339,63 @@ const DB={
     const e=t&&this.event(t.eventId);if(e&&evKind(e)==='external')return true; // a project's team runs its own tasks
     return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
 };
+/* ================= 🔐 THE PERMISSION REGISTRY (Belén only) =================
+   Belén, 29 Jul: "I'd like a list of the permissions each person has, and what they can
+   see and what they can edit… as we are expanding the system the permits are likely to
+   change". So this is ONE list, written against the same predicates the app actually
+   uses — `grants` mirrors DB.canX()/isX() with the person passed in, so a new module is
+   added here the day it is built and the matrix cannot drift from the code.
+   `key` groups them by where they live. */
+const PERMS=[
+  {area:'📅 Projects', label:'The event board',
+   see:'Every event, every lane, every task', edit:'Own tasks; managers & admins edit anyone’s',
+   grants:p=>'all'},
+  {area:'📅 Projects', label:'Set a task’s status for anyone',
+   see:'—', edit:'Any task on any event (members only their own, or any task on a non-RENMAD project)',
+   grants:p=>p.access==='admin'||p.access==='manager'},
+  {area:'👥 Team', label:'Personnel — add & edit people',
+   see:'The roster', edit:'Name, role, email, access tier, holiday allowance',
+   grants:p=>p.access==='admin'},
+  {area:'👥 Team', label:'The four permission ticks (HR · finance · invoicing · sales lead)',
+   see:'Who holds them', edit:'Grant or remove them — and the database refuses everyone else',
+   grants:p=>isBelenP(p)},
+  {area:'💶 Money', label:'Event money figures (targets, invoiced, margin)',
+   see:'Whole roster', edit:'Only the finance tick',
+   grants:p=>!!p.finance},
+  {area:'💶 Money', label:'Insights & the analysis strips',
+   see:'Managers & admins only — members see the raw figures', edit:'—',
+   grants:p=>p.access==='admin'||p.access==='manager'},
+  {area:'🧾 Invoicing', label:'Invoices, credit notes, items & codes, products',
+   see:'Only with the invoicing tick (or admin)', edit:'Same — the whole module is gated',
+   grants:p=>!!p.billing||p.access==='admin'},
+  {area:'💼 SPX', label:'The sales board & proposals',
+   see:'Whole roster', edit:'Sales roles, the sales-lead tick and admins',
+   grants:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead'},
+  {area:'🌴 HR', label:'The HR area at all',
+   see:'Team holidays, allocation, the clock', edit:'Depends on the two rows below',
+   grants:p=>!!p.hr||isBelenP(p)||!!p.finance},
+  {area:'🌴 HR', label:'⏳ Pending — decide clock corrections & holidays',
+   see:'Everyone’s requests', edit:'Approve, deny, send back, amend the legal record',
+   grants:p=>!!p.hr||isBelenP(p)},
+  {area:'🌴 HR', label:'Hour allocation across projects',
+   see:'Everyone’s weeks', edit:'Retire or reactivate projects, fix allocations',
+   grants:p=>p.access==='admin'||!!p.finance},
+  {area:'🌴 HR', label:'Approve time off',
+   see:'Requests where it is their turn', edit:'Their step of the chain (manager → Belén → HR)',
+   grants:p=>p.access==='manager'||p.access==='admin'||!!p.hr},
+  {area:'📇 CRM', label:'The leads CRM',
+   see:'Belén only', edit:'Belén only',
+   grants:p=>isBelenP(p)},
+  {area:'💬 People', label:'Read a person’s message thread',
+   see:'Their own; admins and HR see everyone’s', edit:'Write in the ones they can see',
+   grants:p=>p.access==='admin'||!!p.hr},
+  {area:'💡 Requests', label:'Triage the requests box',
+   see:'Everyone opens requests', edit:'Status, priority and replies: admins',
+   grants:p=>p.access==='admin'},
+];
+/* what does THIS person hold? -> [{perm, has}] */
+function permsOf(p){return PERMS.map(x=>({perm:x,has:x.grants(p)}));}
+function permCount(p){return PERMS.filter(x=>{const g=x.grants(p);return g===true||g==='all';}).length;}
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 /* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,
    red = linked invoice not paid, white = paid (or no invoice: speakers/freebies/manual). */

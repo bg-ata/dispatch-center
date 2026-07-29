@@ -75,6 +75,7 @@
   </div>
   <div class="panel"><table id="tbl"></table></div>
   <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to open their page — their events &amp; tasks on a timeline. Each person will eventually log in and see only their own.</p>
+  <div class="panel calpanel" id="permPanel" style="display:none"></div>
   <div class="panel calpanel"><h3>📆 Team calendar<span title="Visible to the whole team" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#E9F0FB;color:#185FA5">👁 everyone</span></h3><p class="hint" id="calHint"></p>
     <div class="mnav"><button class="btn" id="c_prev">‹</button><b id="c_lab"></b><button class="btn" id="c_next">›</button></div>
     <div class="cal" id="cal"></div>
@@ -141,6 +142,62 @@ function render(){
   tbl.querySelectorAll('[data-who]').forEach(el=>el.onclick=()=>location.href='person.html?id='+el.dataset.who);
   tbl.querySelectorAll('[data-edit]').forEach(el=>el.onclick=()=>openModal(+el.dataset.edit));
   tbl.querySelectorAll('[data-del]').forEach(el=>el.onclick=()=>{const p=DB.person(+el.dataset.del);if(!confirm('Remove '+(p?p.name:'this person')+' from the team? Their tasks become unassigned. (recoverable from the audit log)'))return;DB.tasks.forEach(t=>{if(t.assignee==el.dataset.del)t.assignee=null;});DB.data.people=DB.people.filter(p=>p.id!=el.dataset.del);DB.save();render();});
+  renderPerms();
+}
+/* ================= 🔐 permissions (Belén only) =================
+   Belén, 29 Jul: "a list of the permissions each person has, and what they can see and
+   what they can edit… as we are expanding the system the permits are likely to change".
+   It reads the SAME predicates the app enforces (PERMS in store.js), so it cannot drift
+   from reality — and the ticks are editable right here, which is how she promotes and
+   demotes people. The four ticks are Belén-only in the database too, not just here. */
+let _permOpen=null;
+function renderPerms(){
+  const box=document.getElementById('permPanel');if(!box)return;
+  if(!isBelenP(DB.currentUser)){box.style.display='none';return;}   // her eyes only
+  box.style.display='';
+  const roster=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const tick=(p,f,label)=>'<td style="text-align:center"><input type="checkbox" data-pf="'+f+'" data-id="'+p.id+'"'+(p[f]?' checked':'')+' title="'+label+'"></td>';
+  let h='<h3>🔐 Permissions — who can see and edit what'+
+      '<span title="Only you can see this panel" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#F6E9E3;color:#A83A12">👁 you only</span></h3>'+
+    '<p class="hint">The tier sets the baseline; the four ticks add a specific power on top. Change anything here and it applies immediately — the database enforces the same rules, and refuses these four ticks to everyone but you. Click a name to see, in words, exactly what that person can open and change.</p>'+
+    '<div style="overflow-x:auto"><table style="font-size:12.5px">'+
+    '<tr><th>Person</th><th>Tier</th><th style="text-align:center" title="Final step of the holiday chain + the ⏳ Pending decisions">HR</th>'+
+    '<th style="text-align:center" title="Edits the € figures on Money">Finance</th>'+
+    '<th style="text-align:center" title="Opens and edits the whole Invoicing module">Invoicing</th>'+
+    '<th style="text-align:center" title="Sales lead: edits anyone’s proposals on the SPX board">Sales lead</th>'+
+    '<th class="num" title="How many of the powers listed below they hold">Powers</th></tr>';
+  roster.forEach(p=>{
+    h+='<tr><td><a href="#" data-perm="'+p.id+'" style="font-weight:700;color:var(--charcoal)">'+esc(p.name)+'</a>'+
+        '<div style="font-size:11px;color:var(--muted)">'+esc(p.role||'')+(isBelenP(p)?' · you':'')+'</div></td>'+
+      '<td><select data-pa="'+p.id+'" style="font:inherit;font-size:12px;padding:2px 4px">'+
+        ACCESS.map(a=>'<option value="'+a+'"'+((p.access||'member')===a?' selected':'')+'>'+ACCESS_LABEL[a]+'</option>').join('')+'</select></td>'+
+      tick(p,'hr','HR')+tick(p,'finance','Finance')+tick(p,'billing','Invoicing')+tick(p,'salesLead','Sales lead')+
+      '<td class="num">'+permCount(p)+'</td></tr>';
+    if(_permOpen==p.id){
+      h+='<tr><td colspan="7" style="background:#faf9f6">'+
+        '<table style="font-size:12px;width:100%"><tr><th style="width:120px">Where</th><th>What</th><th style="width:34%">Can see</th><th style="width:34%">Can edit</th></tr>'+
+        permsOf(p).map(x=>{
+          const on=x.has===true||x.has==='all';
+          return '<tr style="opacity:'+(on?1:.4)+'"><td>'+esc(x.perm.area)+'</td>'+
+            '<td>'+(on?'✅ ':'—&nbsp; ')+esc(x.perm.label)+'</td>'+
+            '<td style="white-space:normal;color:var(--muted)">'+esc(x.perm.see)+'</td>'+
+            '<td style="white-space:normal;color:var(--muted)">'+esc(x.perm.edit)+'</td></tr>';
+        }).join('')+'</table></td></tr>';
+    }
+  });
+  h+='</table></div>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-perm]').forEach(a=>a.onclick=e=>{e.preventDefault();_permOpen=_permOpen==a.dataset.perm?null:+a.dataset.perm;renderPerms();});
+  box.querySelectorAll('[data-pa]').forEach(s=>s.onchange=()=>{
+    const p=DB.person(+s.dataset.pa);if(!p)return;
+    if(!confirm('Set '+p.name+' to '+ACCESS_LABEL[s.value]+'?'))
+      {s.value=p.access||'member';return;}
+    p.access=s.value;DB.save();renderPerms();render();
+  });
+  box.querySelectorAll('[data-pf]').forEach(c=>c.onchange=()=>{
+    const p=DB.person(+c.dataset.id);if(!p)return;
+    p[c.dataset.pf]=c.checked;DB.save();renderPerms();
+  });
 }
 const modal=document.getElementById('modal');
 function openModal(idv){editingId=idv;const p=idv?DB.person(idv):{name:'',role:'PM',access:'member',email:'',finance:false,hr:false};

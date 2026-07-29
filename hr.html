@@ -680,7 +680,7 @@ let tcWho=null;                    // person shown in the team time sheet
 let phWho=null;                    // person shown in the history panel
 let tcWk=null;                     // Monday of the week shown in the everyone×week grid
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
-function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')+(/^automatic midnight split/.test(e.reason||'')?' 🌙':'');} // display HH:MM, full HH:MM:SS kept in the record
+function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')+(/^automatic midnight split/.test(e.reason||'')?' 🌙':'')+(tzLabel(e)?' 🌍':'');} // display HH:MM, full HH:MM:SS kept in the record
 const DEV_ICON={phone:'📱',tablet:'📲',desktop:'💻'};
 function devIcons(rows){
   return rows.map(l=>'<span title="'+esc(l.device||'device')+(l.standalone?' · installed app':'')+'">'+(DEV_ICON[l.device]||'💻')+(l.standalone?'⭐':'')+'</span>').join(' ');
@@ -825,6 +825,7 @@ function exportTimeclockRange(fromISO,toISO_,personId){
         .forEach(e=>punches.push({Person:p.name,Date:e.day,Time:e.time,Kind:e.kind,
           'Counted?':effIds.has(e.id)?'yes':'',
           'Added afterwards':e.manual?'yes':'',Amends:e.amends||'',Reason:e.reason||'',
+          'Time zone':e.tz||'','UTC offset':e.tzOffset==null?'':tzOffsetLabel(e.tzOffset),'Working from':e.place||'',
           RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
     }
   });
@@ -1173,7 +1174,7 @@ function exportTcMonth(){
       DB.timeclock.filter(x=>x.personId==p.id&&x.day===iso)
         .sort((a,b)=>(a.time||'').localeCompare(b.time||''))
         .forEach(e=>raw.push({Person:p.name,Day:e.day,Time:e.time,Kind:e.kind,'Counted?':effIdsM.has(e.id)?'yes':'',Manual:e.manual?'yes':'',
-          Reason:e.reason||'',RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
+          Reason:e.reason||'','Time zone':e.tz||'','UTC offset':e.tzOffset==null?'':tzOffsetLabel(e.tzOffset),'Working from':e.place||'',RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
     }
   });
   exportXLSX('RENMAD_timeclock_'+y+'-'+String(m+1).padStart(2,'0')+'.xlsx',[{name:'Month',rows},{name:'Raw entries',rows:raw}]);
@@ -1182,6 +1183,7 @@ function exportTcArchive(){
   const rows=DB.timeclock.slice().sort((a,b)=>a.id-b.id).map(e=>({
     Id:e.id,Person:DB.personName(e.personId),Day:e.day,Time:e.time,Kind:e.kind,Manual:e.manual?'yes':'',
     Amends:e.amends||'',Reason:e.reason||'',ReportId:e.reportId||'',
+    'Time zone':e.tz||'','UTC offset':e.tzOffset==null?'':tzOffsetLabel(e.tzOffset),'Working from':e.place||'',
     RecordedAt:e.created_at||'',RecordedBy:e.created_by||'',Hash:e.hash||''}));
   exportXLSX('RENMAD_timeclock_ARCHIVE_'+new Date().toISOString().slice(0,16).replace(':','')+'.xlsx',
     [{name:'Archive',rows}]);
