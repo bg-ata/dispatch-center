@@ -48,11 +48,14 @@ function render(){
   rq.innerHTML='<span class="ic" style="background:#C77800">💡</span>'+
     '<span><h3>Requests</h3><p>The team request box — bugs, usability, changes and ideas. Also one tap away via the 💡 button on any page.</p></span>'+rqBadge;
   g.appendChild(rq);
-  /* NEW browser Proposal Builder — a real Dispatch page (opens directly, not embedded) */
+  /* The browser Proposal Builder — a real Dispatch page (opens directly, not embedded).
+     CUTOVER 29 Jul 2026: this is now THE proposal builder. It reached parity with the
+     Streamlit app (all 21 slides, the icon set, client logo, Options mode, the portfolio
+     decks) and its SPX write was fixed — it had been logging blank rows. The Streamlit
+     tile below stays reachable as a fallback for ~2 weeks before being retired. */
   const pb=document.createElement('a');pb.className='tile';pb.href='proposal.html';
   pb.innerHTML='<span class="ic" style="background:#FF4A00">PB</span>'+
-    '<span><h3>Proposal Builder <span style="color:var(--muted);font-weight:400">(web)</span></h3><p>Build the sponsorship deck and log it straight to the SPX board — the new browser version, no Streamlit.</p></span>'+
-    '<span class="badge" style="background:#FFE6DB;color:#b5390f">NEW · try</span>';
+    '<span><h3>Proposal Builder</h3><p>Sponsorship, Options and Webinar decks — plus the portfolio and market decks — built in the browser and logged straight to the SPX board.</p></span>';
   g.appendChild(pb);
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
@@ -60,9 +63,17 @@ function render(){
     const el=document.createElement(pending?'div':'a');
     el.className='tile'+(pending?' pending':'');
     if(!pending){el.href='tool.html?id='+t.id;} // open through the dispatch shell, not a bare new tab
-    const badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
+    let name=t.name, desc=t.desc;
+    let badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
+    /* The old Streamlit builder is superseded by the page above. Relabelled here rather
+       than in store.js so the cutover is one reversible edit in one file. */
+    if(t.id==='proposal'){
+      name='Proposal Builder <span style="color:var(--muted);font-weight:400">(old Streamlit)</span>';
+      desc='The previous version, kept as a fallback while the browser builder settles in. Use the one above unless something is missing.';
+      badge='fallback';
+    }
     el.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
-      '<span><h3>'+t.name+'</h3><p>'+t.desc+'</p></span>'+
+      '<span><h3>'+name+'</h3><p>'+desc+'</p></span>'+
       (badge?'<span class="badge'+(t.ownLogin?' own':'')+'">'+badge+'</span>':'');
     g.appendChild(el);
   });
