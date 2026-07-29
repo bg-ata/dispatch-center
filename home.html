@@ -454,11 +454,14 @@ function renderAlarms(){
     if(mw)a.push({t:mw+' week'+(mw===1?'':'s')+' without your hours filled in',scroll:'allocPanel'});
   }
   if(DB.tcReady()){
+    /* sent back to me — this is now MY move, not Belén's */
+    const back=myReportsToFix().length;
+    if(back)a.push({t:back+' clock request'+(back===1?'':'s')+' sent back to you — correct '+(back===1?'it':'them')+' and send again',fold:'reportFold'});
     const mp=tcMissingDays(me.id).length;
     if(mp)a.push({t:mp+' day'+(mp===1?'':'s')+' with no clock punches — report what happened',fold:'reportFold'});
     const ot=tcOvertimeWeeks(me.id).length;
     if(ot)a.push({t:ot+' week'+(ot===1?'':'s')+' over the allowed hours — please balance it',fold:'monthFold'});
-    if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',href:'hr.html#timeclock'});}
+    if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',href:'hr.html#pending'});}
   }
   const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
   box.innerHTML='<h3>🔔 Needs you</h3>'+
@@ -973,14 +976,21 @@ function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(
 /* Fail-proof corrections (2026-07-15): the person states WHAT HAPPENED, the system
    works out the punches. Simple fixes apply at once (Belén ratifies after); odd ones
    wait for her. Falls back to the old free-text flow until dispatch_hr11_claims.sql runs. */
+/* "The whole day" first, on purpose (Belén, 29 Jul): it is the one option that always
+   ends in two concrete times, so it can be approved in a single click. Nearly every
+   request that arrived as "Something else" — a phone in another timezone, a session the
+   clock cut at midnight — was really this one, and each of those cost a hand correction. */
 const CLAIM_TYPES=[
+  ['whole_day','My day was actually from … to … (simplest — fixes anything)'],
   ['forgot_out','I forgot to clock out'],
   ['forgot_in','I forgot to clock in'],
   ['wrong_time','A punch has the wrong time'],
   ['extra_punch','There is a punch that should not be there'],
-  ['whole_day','The whole day is wrong'],
-  ['other','Something else'],
+  ['other','Something else — I can’t give the times'],
 ];
+/* who decides clock corrections: Belén + whoever carries the HR flag */
+function clockApprovers(){return DB.people.filter(p=>!isTeamAccount(p)&&(p.hr||isBelenP(p))).map(p=>p.id);}
+let editingReportId=null;   // set when I am correcting a request Belén sent back to me
 function dayRecordLine(personId,day){
   const es=tcEffective(personId,day),info=pairTotals(es);
   if(!es.length)return '<span style="color:var(--muted)">no punches that day</span>';
@@ -1007,6 +1017,26 @@ function renderReportFold(){
     '<div id="myReports" style="margin-top:14px"></div>';
   wireClaim();renderMyReports();
 }
+/* load a sent-back request into the form so it can be corrected and resent (Belén:
+   "say I realized they wanted to clock in at 9pm instead of 9am, so I send it back") */
+function prefillClaim(r){
+  try{openFold('reportFold');}catch(e){}
+  const day=document.getElementById('cl_day'),type=document.getElementById('cl_type');
+  if(!day||!type)return;
+  day.value=r.day||day.value;
+  type.value=(r.claim&&r.claim.type)||'';
+  if(type.onchange)type.onchange();                     // rebuild the fields for that type…
+  const c=r.claim||{};
+  const set=(id,v)=>{const e=document.getElementById(id);if(e&&v!=null&&v!=='')e.value=v;};
+  set('cl_time',c.time);set('cl_from',c.from);set('cl_to',c.to);set('cl_entry',c.entryId);set('cl_text',c.text);
+  /* …then refresh the preview through a field (not through the day, which would rebuild
+     the fields again and wipe what we just filled in) */
+  const fire=['cl_time','cl_from','cl_entry','cl_text'].map(id=>document.getElementById(id)).find(Boolean);
+  if(fire)fire.dispatchEvent(new Event('change'));
+  const s=document.getElementById('cl_send');if(s)s.textContent='Send again';
+  const m=document.getElementById('cl_msg');if(m){m.style.color='var(--orange)';m.textContent='Correcting your earlier request — fix what is wrong and send it again.';}
+  day.scrollIntoView({block:'center',behavior:'smooth'});
+}
 function claimInputsHtml(type,es){
   const punchSel='<label>Which punch<select id="cl_entry">'+(es.length?es.map(e=>'<option value="'+e.id+'">'+entryLabel(e)+'</option>').join(''):'<option value="">— no punches that day —</option>')+'</select></label>';
   switch(type){
@@ -1015,7 +1045,9 @@ function claimInputsHtml(type,es){
     case 'wrong_time': return punchSel+'<label>It should say<input type="time" id="cl_time"></label>';
     case 'extra_punch':return punchSel;
     case 'whole_day':  return '<label>I worked from<input type="time" id="cl_from"></label><label>to<input type="time" id="cl_to"></label>';
-    case 'other':      return '<label style="min-width:60%">Tell HR what happened<input id="cl_text" placeholder="describe it — Belén will handle it"></label>';
+    /* the honest warning: a wordy report cannot be approved with one click, so it waits */
+    case 'other':      return '<label style="min-width:60%">Tell HR what happened<input id="cl_text" placeholder="describe it — Belén will handle it by hand"></label>'+
+                              '<div class="hint" style="flex-basis:100%;color:#C77800">If you can give the times, pick “My day was actually from … to …” instead — that one is approved in a click, usually the same day.</div>';
     default: return '';
   }
 }
@@ -1058,6 +1090,20 @@ function wireClaim(){
     const p=planAmendments(me.id,day.value,c);
     if(p.blocked&&CLAIM_HARD_BLOCK[p.blocked]){alert(CLAIM_BLOCK_MSG[p.blocked]||p.blocked);return;}
     const human=(c.type==='other'?(c.text||note):p.describe+(note?' — '+note:''));
+    /* RESENDING a request Belén sent back: same report, so her question and my correction
+       stay in one thread instead of turning into two half-answered requests. */
+    const editing=editingReportId?DB.tcreports.find(x=>x.id==editingReportId):null;
+    if(editing){
+      const btn0=document.getElementById('cl_send');btn0.disabled=true;
+      editing.day=day.value;editing.claim=c;editing.entryId=c.entryId||null;editing.status='open';
+      editing.thread=(editing.thread||[]).concat([{by:me.name,at:new Date().toISOString(),text:'✏ Corrected: '+human}]);
+      const ok=await DB.saveNow();
+      try{notifySend(clockApprovers(),'notice','🕘 '+me.name+' corrected the clock request for '+fmtHuman(day.value)+': '+human,'hr.html#pending');}catch(e){}
+      editingReportId=null;btn0.disabled=false;
+      renderReportFold();
+      const m0=document.getElementById('cl_msg');if(m0)m0.textContent=ok?'Sent again — Belén has it.':'⚠ Not saved — try again.';
+      return;
+    }
     const rep={id:DB.newId(),personId:me.id,day:day.value,entryId:c.entryId||null,claim:c,ratify:null,
       thread:[{by:me.name,at:new Date().toISOString(),text:human}],status:'open'};
     const btn=document.getElementById('cl_send');btn.disabled=true;
@@ -1073,6 +1119,9 @@ function wireClaim(){
       if(!okAmend)rep.ratify=null;
       window.dispatchEvent(new Event('dc-remote'));
     }
+    /* tell the approvers it is there — the queue used to be something Belén had to
+       remember to go and look at */
+    try{notifySend(clockApprovers(),'notice','🕘 '+me.name+' — clock request for '+fmtHuman(day.value)+': '+human,'hr.html#pending');}catch(e){}
     btn.disabled=false;
     renderReportFold();renderClock&&renderClock();       // rebuild first (this resets the form)…
     const m=document.getElementById('cl_msg');if(m){m.textContent=msg;setTimeout(()=>{const m2=document.getElementById('cl_msg');if(m2)m2.textContent='';},8000);} // …then show the confirmation on the fresh element
@@ -1116,6 +1165,7 @@ function reportChip(r){
   if(r.ratify==='pending')return '<span class="chip" style="background:var(--blue)">Applied — Belén reviewing</span>';
   if(r.ratify==='accepted')return '<span class="chip" style="background:var(--green)">Accepted</span>';
   if(r.ratify==='denied')return '<span class="chip" style="background:var(--red)">Denied — reversed</span>';
+  if(r.status==='needs_info')return '<span class="chip" style="background:#C77800">Sent back — needs their answer</span>';
   return r.status==='resolved'?'<span class="chip" style="background:var(--green)">Resolved</span>'
     :r.status==='answered'?'<span class="chip" style="background:var(--blue)">Answered</span>'
     :'<span class="chip" style="background:var(--amber)">Open</span>';
@@ -1126,13 +1176,28 @@ function renderMyReports(){
   const mine=DB.tcreports.filter(r=>r.personId==me.id).sort((a,b)=>b.id-a.id).slice(0,6);
   if(!mine.length){box.innerHTML='';return;}
   box.innerHTML='<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">My reports</div>'+
-    mine.map(r=>'<div style="margin-bottom:10px"><b>'+fmtHuman(r.day)+'</b> '+reportChip(r)+threadHtml(r)+
-      (r.status!=='resolved'?'<input id="rr_'+r.id+'" placeholder="reply…" style="width:70%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-rr="'+r.id+'">Send</button>':'')+'</div>').join('');
+    mine.map(r=>{
+      /* sent back to me: say so loudly, with the question, and let me correct the request
+         itself instead of arguing in a reply thread nobody re-reads */
+      const back=r.status==='needs_info';
+      const q=back?[...(r.thread||[])].reverse().find(m=>/^↩/.test(m.text||'')):null;
+      return '<div style="margin-bottom:10px'+(back?';border-left:3px solid var(--orange);padding-left:9px':'')+'"><b>'+fmtHuman(r.day)+'</b> '+reportChip(r)+
+      (back?'<div style="background:#FFF7EE;border:1px solid #F3D9B8;border-radius:8px;padding:8px 11px;margin:5px 0;font-size:13px">'
+            +'↩ <b>Sent back to you</b>'+(q?': “'+esc((q.text||'').replace(/^↩\s*/,''))+'”':'')
+            +'<div style="margin-top:7px"><button class="btn primary" style="font-size:12px" data-redo="'+r.id+'">✏ Correct it and send again</button></div></div>':'')+
+      threadHtml(r)+
+      (r.status!=='resolved'?'<input id="rr_'+r.id+'" placeholder="reply…" style="width:70%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-rr="'+r.id+'">Send</button>':'')+'</div>';}).join('');
+  box.querySelectorAll('[data-redo]').forEach(b=>b.onclick=()=>{
+    const r=DB.tcreports.find(x=>x.id==b.dataset.redo);if(!r)return;
+    editingReportId=r.id;
+    prefillClaim(r);
+  });
   box.querySelectorAll('[data-rr]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.rr);const inp=document.getElementById('rr_'+r.id);
     if(!inp.value.trim())return;
     r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),text:inp.value.trim()}]);
-    if(r.status==='answered')r.status='open';
+    if(r.status==='answered'||r.status==='needs_info')r.status='open';
+    try{notifySend(clockApprovers(),'notice','🕘 '+me.name+' replied about '+fmtHuman(r.day)+': “'+inp.value.trim()+'”','hr.html#pending');}catch(e){}
     DB.save();renderMyReports();});
 }
 

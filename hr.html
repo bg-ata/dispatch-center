@@ -117,9 +117,30 @@ const MONTHS=['January','February','March','April','May','June','July','August',
    Full HR admins (Belén + the HR flag) get all three tabs.
    Finance-only users (Jesús) get ONLY Allocation.
    Everyone else meets a wall — their own stuff lives in 🙋 Me. */
-const HRTABS=[['holidays','Holidays admin'],['allocation','Allocation'],['timeclock','Time clock admin']];
+/* ⏳ Pending goes FIRST and carries the count: Belén, 29 Jul — "we have so many bits and
+   bobs I never know where to find them". Everything that is waiting on a decision is
+   parked there, whichever module it belongs to. */
+const HRTABS=[['pending','⏳ Pending'],['holidays','Holidays admin'],['allocation','Allocation'],['timeclock','Time clock admin']];
 function fullHR(){return DB.isHRAdmin()||DB.isHR();}
 function myTabs(){return fullHR()?HRTABS:HRTABS.filter(t=>t[0]==='allocation');}
+/* what is waiting, per source */
+function pendingCounts(){
+  const clock=DB.tcReady()?openReports().length:0;   // sent-back ones wait on the person, not on her
+  const hols=DB.hrReady()?DB.holidays.filter(holActsOnMe).length:0;
+  const reqs=DB.tickReady()?DB.tickets.filter(t=>t.status==='new'||t.status==='open').length:0;
+  return {clock,hols,reqs,total:clock+hols+reqs};
+}
+function tabLabel(k,l){
+  if(k!=='pending')return l;
+  const n=pendingCounts().total;
+  return l+(n?' <span style="background:#fff;color:var(--orange);border-radius:8px;padding:0 6px;font-size:11px">'+n+'</span>':'');
+}
+function refreshPendingBadge(){
+  const tabsEl=document.getElementById('tabs');if(!tabsEl)return;
+  const tab=activeTab();
+  tabsEl.innerHTML=myTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+tabLabel(k,l)+'</button>').join('');
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
+}
 function activeTab(){const h=location.hash.replace('#','');const ts=myTabs();return ts.some(t=>t[0]===h)?h:ts[0][0];}
 function render(){
   const tabsEl=document.getElementById('tabs'),warn=document.getElementById('warnbox'),banner=document.getElementById('banner');
@@ -134,11 +155,55 @@ function render(){
   banner.innerHTML='<div class="banner">Your own clock, hours &amp; holidays are in <a href="home.html" style="color:var(--orange);font-weight:700">🙋 Me</a> — this page is for managing the team’s time.</div>';
   const tab=activeTab();
   tabsEl.style.display='';
-  tabsEl.innerHTML=myTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
+  tabsEl.innerHTML=myTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+tabLabel(k,l)+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
   if(!DB.hrReady()){warn.innerHTML='<div class="warn">The HR module is not active yet — run <b>dispatch_hr.sql</b> (and <b>dispatch_hr2.sql</b>) in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
   warn.innerHTML='';
-  ({holidays:renderHolidays,allocation:renderAlloc,timeclock:renderTimeclock})[tab]();
+  ({pending:renderPending,holidays:renderHolidays,allocation:renderAlloc,timeclock:renderTimeclock})[tab]();
+}
+/* ================= TAB 0: PENDING =================
+   One place for everything waiting on a decision, so nothing has to be hunted for:
+   clock corrections (decided right here), time off (decided in 🙋 Me, where the whole
+   approval chain lives) and the team's requests about the Dispatch itself. */
+function renderPending(){
+  const c=pendingCounts();
+  const cnt=n=>'<span class="chip" style="background:'+(n?'var(--amber)':'var(--green)')+'">'+n+'</span>';
+  document.getElementById('content').innerHTML=
+    '<p class="hint" style="margin:0 0 10px">Everything that is waiting on you, whichever part of the Dispatch it came from. '+
+      (c.total?'<b>'+c.total+'</b> item'+(c.total===1?'':'s')+' open.':'<b style="color:var(--green)">Nothing is waiting — you are clear.</b>')+'</p>'+
+    '<div class="panel"><h3>🕘 Clock corrections '+cnt(c.clock)+'</h3>'+
+      '<p class="hint">What the record says, what they are asking for, and the decision — all in the card. '+
+      '<b>Approve &amp; apply</b> writes the correction and tells them. <b>Ask them</b> sends it back so they can fix their own request and resend it. '+
+      'Every button here lands in their 🔔 inbox.</p>'+
+      '<div id="tcQueue"></div></div>'+
+    '<div class="panel"><h3>🌴 Time off waiting for your decision '+cnt(c.hols)+'</h3><div id="pendHol"></div></div>'+
+    '<div class="panel"><h3>💡 Requests about the Dispatch '+cnt(c.reqs)+'</h3><div id="pendReq"></div></div>';
+  if(DB.tcReady())renderTcQueue();
+  else document.getElementById('tcQueue').innerHTML='<div class="empty">The time clock is not active yet.</div>';
+  renderPendingHolidays();renderPendingRequests();
+}
+function renderPendingHolidays(){
+  const box=document.getElementById('pendHol');if(!box)return;
+  const mine=DB.hrReady()?DB.holidays.filter(holActsOnMe).sort((a,b)=>(''+a.dateFrom).localeCompare(''+b.dateFrom)):[];
+  if(!mine.length){box.innerHTML='<div class="empty">Nothing to approve.</div>';return;}
+  /* decided in Me, not here: the approval chain, the messages to the requester and the
+     approvers-only thread all live there — duplicating the buttons would fork that logic. */
+  box.innerHTML='<table><tr><th>Who</th><th>When</th><th>Type</th><th>Step</th><th style="width:130px"></th></tr>'+
+    mine.map(h=>'<tr><td><b>'+esc(DB.personName(h.personId)||'?')+'</b></td><td>'+esc(fmtRange(h))+'</td>'+
+      '<td>'+esc(TYPE_LABEL[h.type]||h.type||'Holidays')+'</td>'+
+      '<td><span class="chip" style="background:var(--amber)">'+esc(holStageLabel(h))+'</span></td>'+
+      '<td><a class="btn" href="home.html" style="font-size:11px;padding:3px 9px;text-decoration:none">Decide in 🙋 Me →</a></td></tr>').join('')+
+    '</table>';
+}
+function renderPendingRequests(){
+  const box=document.getElementById('pendReq');if(!box)return;
+  const open=DB.tickReady()?DB.tickets.filter(t=>t.status==='new'||t.status==='open').sort((a,b)=>a.id-b.id):[];
+  if(!open.length){box.innerHTML='<div class="empty">No open requests.</div>';return;}
+  box.innerHTML='<table><tr><th>Who</th><th>What</th><th>Area</th><th style="width:110px"></th></tr>'+
+    open.map(t=>'<tr><td><b>'+esc(DB.personName(t.personId)||'?')+'</b></td>'+
+      '<td style="white-space:normal">'+esc(t.title||'')+'</td><td>'+esc(t.area||'')+'</td>'+
+      '<td><a class="btn" href="tickets.html" style="font-size:11px;padding:3px 9px;text-decoration:none">Open →</a></td></tr>').join('')+
+    '</table>';
 }
 function fmtRange(h){return fmtHumanRange(h.dateFrom,h.dateTo);}
 /* ================= TAB 1: HOLIDAYS ADMIN ================= */
@@ -630,7 +695,10 @@ function renderTimeclock(){
     '<div class="mx" id="tcWeek"></div></div>'+
     '<div class="panel"><h3>🕵 Person history'+visBadge('Belén + HR')+'</h3><p class="hint">One person at a time: their punches this month plus the devices they’ve logged in from over the last 30 days.</p>'+
     '<div class="mnav"><select id="ph_who"></select></div><div class="mx" id="phMonth"></div><div id="phDev" style="margin-top:12px"></div></div>'+
-    '<div class="panel decide"><h3>🛠 Corrections queue'+visBadge('Belén + HR')+'</h3><p class="hint">Workers report (from 🙋 Me), you correct. Amendments are new linked entries — the original is never touched. Replies and resolutions are all logged.</p><div id="tcQueue"></div></div>'+
+    /* the queue itself moved to ⏳ Pending (29 Jul) — one place for everything waiting,
+       instead of a decision buried under the week grid on an admin screen */
+    '<div class="panel decide"><h3>🛠 Corrections queue'+visBadge('Belén + HR')+'</h3><p class="hint">Clock corrections are decided in <a href="hr.html#pending" style="color:var(--orange);font-weight:700">⏳ Pending</a> now, together with everything else waiting on you. Amendments are new linked entries — the original is never touched, and every decision is logged and sent to the person.</p>'+
+      '<div id="tcQueueLink"></div></div>'+
     '<div class="panel"><h3>⬇ Download station'+visBadge('Belén + HR')+'</h3>'+
     '<p class="hint">Any stretch of dates, one person or everybody. Two sheets: a day-by-day summary and every individual punch with its hash-chain fields, which is the format an inspection asks for.</p>'+
     '<div class="padd">'+
@@ -660,7 +728,7 @@ function renderTimeclock(){
   document.getElementById('wk_prev').onclick=()=>{tcWk=addDays(tcWk,-7);renderWeekGrid();};
   document.getElementById('wk_next').onclick=()=>{const thisMon=mondayOf(new Date());if(toISO(tcWk)<toISO(thisMon)){tcWk=addDays(tcWk,7);renderWeekGrid();}};
   document.getElementById('wk_now').onclick=()=>{tcWk=mondayOf(new Date());renderWeekGrid();};
-  renderAttendance();renderPersonHistory();renderTcQueue();renderTeamMonth();renderEventAway();renderWeekGrid();
+  renderAttendance();renderPersonHistory();renderTeamMonth();renderEventAway();renderWeekGrid();
 }
 /* ---- 🗓 everyone × week clock grid: in→out times + hours done, week by week ---- */
 function mondayOf(d){const x=ymd(toISO(d));const wd=(x.getDay()+6)%7;return addDays(x,-wd);}
@@ -857,6 +925,7 @@ function reportChip(r){
   if(r.ratify==='pending')return '<span class="chip" style="background:var(--blue)">Applied — review</span>';
   if(r.ratify==='accepted')return '<span class="chip" style="background:var(--green)">Accepted</span>';
   if(r.ratify==='denied')return '<span class="chip" style="background:var(--red)">Denied — reversed</span>';
+  if(r.status==='needs_info')return '<span class="chip" style="background:#C77800">Sent back — needs their answer</span>';
   return r.status==='resolved'?'<span class="chip" style="background:var(--green)">Resolved</span>'
     :r.status==='answered'?'<span class="chip" style="background:var(--blue)">Answered</span>'
     :'<span class="chip" style="background:var(--amber)">Open</span>';
@@ -889,37 +958,73 @@ function renderTeamMonth(){
   if(lab)lab.textContent=MONTHS[tcM.getMonth()]+' '+tcM.getFullYear();
   if(tcWho)el.innerHTML=monthTable(tcWho);
 }
+/* one line that says what the record ACTUALLY holds for that day — the thing Belén
+   said she was missing: "we should see what they did clock in and out". */
+function dayRecordLine(personId,day){
+  const es=tcEffective(personId,day),info=pairTotals(es);
+  if(!es.length)return '<span style="color:var(--red)">no punches at all that day</span>';
+  return es.map(e=>entryLabel(e)).join(' → ')
+    +(info.open?' → <b style="color:#C77800">(no clock-out)</b>':'')
+    +' &nbsp;=&nbsp; <b>'+fmtMin(info.total)+'</b>';
+}
+function tcAskBack(r,q){
+  const me=DB.currentUser;
+  r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),text:'↩ '+q}]);
+  r.status='needs_info';
+  tcNotify(r,me.name+' asks about your '+fmtHuman(r.day)+' clock request: “'+q+'” — open 🙋 Me to correct it and send it again.');
+  DB.save();
+}
+/* ================= the clock-change queue =================
+   Rebuilt 29 Jul 2026 (Belén: "I never know how it is working and I suspect people don't
+   get messages back"). Three things changed, nothing else:
+     1. every card shows WHAT IS RECORDED vs WHAT THEY ASK, one under the other;
+     2. every decision writes to the person's 🔔 inbox — before, the answer only lived
+        inside this thread, which they had no reason to reopen;
+     3. "↩ Ask them" sends the request BACK for them to edit and resend (status
+        needs_info), instead of forcing her to guess or to do the surgery herself. */
 function renderTcQueue(){
   const box=document.getElementById('tcQueue');if(!box)return;
   const list=DB.tcreports.filter(r=>r.status!=='resolved').sort((a,b)=>a.id-b.id);
-  if(!list.length){box.innerHTML='<div class="empty">No open reports — the record is clean.</div>';return;}
+  if(!list.length){box.innerHTML='<div class="empty">Nothing waiting — every clock request is answered.</div>';return;}
   box.innerHTML=list.map(r=>{
     const p=DB.person(r.personId);
+    const st=tcReportState(r);
     const es=tcEffective(r.personId,r.day||toISO(new Date()));
     const dayOpen=tcDayInfo(r.personId,r.day||toISO(new Date())).open;
-    /* --- claims (the fail-proof flow): a decision, not a form --- */
-    let claimBlock='',hasClaim=!!(r.claim&&r.claim.type&&r.claim.type!=='other');
-    if(hasClaim&&r.ratify==='pending'){
+    const hasClaim=!!(r.claim&&r.claim.type&&r.claim.type!=='other');
+    const rec='<div style="margin-bottom:3px"><span style="color:var(--muted)">Recorded now:</span> '+dayRecordLine(r.personId,r.day)+'</div>';
+    let block='';
+    if(st==='applied'){
       const now=pairTotals(tcEffective(r.personId,r.day));
-      claimBlock='<div style="background:#F0F7EE;border:1px solid #CBE3C4;border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
-        +'⚡ <b>Applied automatically:</b> '+esc(claimDescribe(r.claim,r.day))+'. Their '+esc(fmtHuman(r.day))+' now reads <b>'+fmtMin(now.total)+(now.open?' · still open':'')+'</b>.'
-        +'<div style="margin-top:8px"><button class="btn ok" style="font-size:12px" data-acc="'+r.id+'">✔ Received &amp; accepted</button> '
-        +'<button class="btn no" style="font-size:12px" data-den="'+r.id+'">✖ Deny — reverse it</button></div></div>';
+      block='<div style="background:#F0F7EE;border:1px solid #CBE3C4;border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
+        +'✅ <b>Already on the record</b> — '+esc(hasClaim?claimDescribe(r.claim,r.day):'the correction was written')+'.'
+        +'<br>Their '+esc(fmtHuman(r.day))+' now reads <b>'+fmtMin(now.total)+(now.open?' · still open':'')+'</b>. Nothing left to apply — just say yes or put it back.'
+        +'<div style="margin-top:8px"><button class="btn ok" style="font-size:12px" data-acc="'+r.id+'">✔ Fine — close it</button> '
+        +'<button class="btn no" style="font-size:12px" data-den="'+r.id+'">✖ Not right — reverse it</button> '
+        +'<button class="btn" style="font-size:12px" data-ask="'+r.id+'">↩ Ask them</button></div></div>';
     }else if(hasClaim){
       const plan=planAmendments(r.personId,r.day,r.claim);
-      const nowT=pairTotals(tcEffective(r.personId,r.day));
-      claimBlock='<div style="background:#FFF7EE;border:1px solid #F3D9B8;border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
-        +'⏳ <b>Waiting for you:</b> '+esc(claimDescribe(r.claim,r.day))
-        +'<br>Record now: <b>'+fmtMin(nowT.total)+(nowT.open?' · open':'')+'</b>'
-        +(plan.blocked?'<br><span style="color:var(--red)">Cannot apply as-is: '+esc(CLAIM_BLOCK_MSG[plan.blocked]||plan.blocked)+'</span> — use Adjust below.'
-                      :' → after the fix: <b>'+fmtMin(plan.after.total)+(plan.after.open?' · still open':'')+'</b>')
+      block='<div style="background:#FFF7EE;border:1px solid #F3D9B8;border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
+        +rec
+        +'<div><span style="color:var(--muted)">They ask for:</span> <b>'+esc(claimDescribe(r.claim,r.day))+'</b></div>'
+        +(plan.blocked?'<div style="color:var(--red);margin-top:3px">Can’t be applied as it stands: '+esc(CLAIM_BLOCK_MSG[plan.blocked]||plan.blocked)+' — ask them, or fix it by hand below.</div>'
+                      :'<div style="margin-top:3px">→ after approving, the day reads <b>'+fmtMin(plan.after.total)+(plan.after.open?' · still open':'')+'</b></div>')
         +'<div style="margin-top:8px">'+(plan.blocked?'':'<button class="btn ok" style="font-size:12px" data-app="'+r.id+'">✔ Approve &amp; apply</button> ')
-        +'<button class="btn" style="font-size:12px" data-adj="'+r.id+'">✎ Adjust…</button></div></div>';
+        +'<button class="btn" style="font-size:12px" data-ask="'+r.id+'">↩ Ask them</button> '
+        +'<button class="btn no" style="font-size:12px" data-den="'+r.id+'">✖ Deny</button> '
+        +'<button class="btn" style="font-size:12px" data-adj="'+r.id+'">✎ Fix by hand…</button></div></div>';
+    }else{
+      block='<div style="background:#F6F5F1;border:1px solid var(--line);border-radius:8px;padding:9px 12px;margin:6px 0;font-size:13px">'
+        +rec
+        +'<div style="color:var(--muted);margin-top:3px">They described it in words instead of giving the times, so there is nothing to approve in one click. Ask them for the times — their answer comes back as a normal request — or fix it by hand.</div>'
+        +'<div style="margin-top:8px"><button class="btn ok" style="font-size:12px" data-ask="'+r.id+'">↩ Ask them for the times</button> '
+        +'<button class="btn" style="font-size:12px" data-adj="'+r.id+'">✎ Fix by hand…</button></div></div>';
     }
-    const manualHidden=hasClaim; // claim cards start with the manual surgery hidden
+    const sentBack=st==='needs_info'?'<div style="font-size:12px;color:#C77800;margin:4px 0">↩ Sent back — waiting for their answer.</div>':'';
+    const manualHidden=true;      // the by-hand surgery is always folded away now
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px">'+
-      '<b>'+esc(p?p.name:'?')+'</b> · '+fmtHuman(r.day)+' '+reportChip(r)+threadHtml(r)+claimBlock+
-      '<input id="qr_'+r.id+'" placeholder="reply…" style="width:46%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-qr="'+r.id+'">Reply</button> '+
+      '<b>'+esc(p?p.name:'?')+'</b> · '+fmtHuman(r.day)+' '+reportChip(r)+sentBack+threadHtml(r)+block+
+      '<input id="qr_'+r.id+'" placeholder="write to them…" style="width:46%;font-size:12px;padding:4px 8px"> <button class="btn" style="font-size:11px;padding:3px 9px" data-qr="'+r.id+'">Send message</button> '+
       '<span style="margin-left:12px"></span>'+
       '<span id="adj_'+r.id+'" style="'+(manualHidden?'display:none':'')+'">'+
       '<select id="qa_act_'+r.id+'" style="font-size:12px"><option value="add">add missed punch</option><option value="fix">correct a punch</option><option value="void">void a punch</option></select> '+
@@ -934,22 +1039,26 @@ function renderTcQueue(){
       '<input id="qa_time_'+r.id+'" type="time" style="font-size:12px;padding:4px 6px"> '+
       '<button class="btn ok" style="font-size:11px;padding:4px 10px" data-qa="'+r.id+'">Apply amendment</button>'+
       '</span> '+
-      '<button class="btn" style="font-size:11px;padding:4px 10px" data-qres="'+r.id+'">Resolve without change</button>'+
+      '<button class="btn" style="font-size:11px;padding:4px 10px" data-qres="'+r.id+'">Close without changing anything</button>'+
       '</div>';
   }).join('');
-  /* claim decisions: accept / deny / approve / adjust */
+  /* ---- decisions. Every one of them tells the person. ---- */
   box.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.acc);if(!r)return;
     r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'✔ Received and accepted.'}]);
-    r.ratify='accepted';r.status='resolved';DB.save();renderTcQueue();
+    r.ratify='accepted';r.status='resolved';
+    tcNotify(r,'✔ Your '+fmtHuman(r.day)+' correction is accepted — the record is settled.');
+    DB.save();renderTcQueue();refreshPendingBadge();
   });
   box.querySelectorAll('[data-den]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.den);if(!r)return;
     const reason=prompt('Why is this wrong? (goes back to '+(DB.personName(r.personId)||'them')+' and into the record)');
     if(!reason)return;
     const n=reversePlan(r.id,'denied by '+DB.currentUser.name+': '+reason);
-    r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'✖ Denied — correction reversed ('+n+' entr'+(n===1?'y':'ies')+'). '+reason}]);
-    r.ratify='denied';r.status='resolved';DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
+    r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'✖ Denied'+(n?' — correction reversed ('+n+' entr'+(n===1?'y':'ies')+')':'')+'. '+reason}]);
+    r.ratify='denied';r.status='resolved';
+    tcNotify(r,'✖ Your '+fmtHuman(r.day)+' clock request was not approved: “'+reason+'”'+(n?' — the record is back as it was.':''));
+    DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();refreshPendingBadge();
   });
   box.querySelectorAll('[data-app]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.app);if(!r)return;
@@ -959,7 +1068,19 @@ function renderTcQueue(){
     if(!confirm('Amend '+who+"'s legal time record?\n\n  Day:    "+fmtHuman(r.day)+'\n  Change: '+plan.describe+'\n\nTheir '+fmtHuman(r.day)+' then reads: '+fmtMin(plan.after.total)+(plan.after.open?' (still open)':'')+'\n\nThe original entries are never deleted — this adds linked corrections.'))return;
     applyPlan(r.personId,r.day,plan,r.id,(r.thread[0]&&r.thread[0].text)||plan.describe);
     r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'✔ Approved and applied: '+plan.describe}]);
-    r.ratify='accepted';r.status='resolved';DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
+    r.ratify='accepted';r.status='resolved';
+    tcNotify(r,'✔ Approved: '+plan.describe+'. Your '+fmtHuman(r.day)+' now reads '+fmtMin(plan.after.total)+'.');
+    DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();refreshPendingBadge();
+  });
+  /* ↩ send it back so THEY can correct and resend — the loop Belén asked for
+     ("say I realized they wanted to clock in at 9pm instead of 9am, so I send it back") */
+  box.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{
+    const r=DB.tcreports.find(x=>x.id==b.dataset.ask);if(!r)return;
+    const q=prompt('What do you need to ask '+(DB.personName(r.personId)||'them')+'?\n\nThey get it in their 🔔 inbox and can edit the request and send it again.',
+      'Is that 9:00 in the morning or 21:00? Correct it and send it back to me.');
+    if(!q||!q.trim())return;
+    tcAskBack(r,q.trim());
+    renderTcQueue();refreshPendingBadge();
   });
   box.querySelectorAll('[data-adj]').forEach(b=>b.onclick=()=>{
     const el=document.getElementById('adj_'+b.dataset.adj);
@@ -969,11 +1090,15 @@ function renderTcQueue(){
     const r=DB.tcreports.find(x=>x.id==b.dataset.qr);const inp=document.getElementById('qr_'+r.id);
     if(!inp.value.trim())return;
     r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:inp.value.trim()}]);
-    r.status='answered';DB.save();renderTcQueue();});
+    r.status='answered';
+    tcNotify(r,DB.currentUser.name+' about your '+fmtHuman(r.day)+' clock request: “'+inp.value.trim()+'”');
+    DB.save();renderTcQueue();refreshPendingBadge();});
   box.querySelectorAll('[data-qres]').forEach(b=>b.onclick=()=>{
     const r=DB.tcreports.find(x=>x.id==b.dataset.qres);
-    r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'Resolved without changes to the record.'}]);
-    r.status='resolved';DB.save();renderTcQueue();});
+    r.thread=(r.thread||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),text:'Closed without changes to the record.'}]);
+    r.status='resolved';
+    tcNotify(r,'Your '+fmtHuman(r.day)+' clock request is closed — the record was left as it is.');
+    DB.save();renderTcQueue();refreshPendingBadge();});
   /* changing the day reloads that day's punches, so "fix/void" always targets the right entry */
   box.querySelectorAll('[id^="qa_day_"]').forEach(d=>d.onchange=()=>{
     const rid=d.id.replace('qa_day_',''),r=DB.tcreports.find(x=>x.id==rid);if(!r)return;
@@ -1029,7 +1154,8 @@ function renderTcQueue(){
     r.thread=(r.thread||[]).concat([{by:me.name,at:new Date().toISOString(),
       text:'✔ Amendment applied ('+fmtHuman(day)+'): '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided the punch')+' — '+reason}]);
     r.status='resolved';
-    DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();
+    tcNotify(r,'✔ '+me.name+' corrected your '+fmtHuman(day)+': '+(act==='add'?('added '+kind.toUpperCase()+' '+time):act==='fix'?('corrected to '+kind.toUpperCase()+' '+time):'voided a punch')+'. It now reads '+after+'.');
+    DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();refreshPendingBadge();
   });
 }
 function exportTcMonth(){

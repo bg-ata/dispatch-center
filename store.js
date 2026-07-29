@@ -899,6 +899,32 @@ function reversePlan(reportId, reason) {
   DB.save();
   return n;
 }
+/* ---- what STATE is a clock request in? (Belén, 29 Jul: "I never know how it is working")
+   Derived from the LEDGER, never from a flag: a report is "applied" when it has live rows
+   in dc_timeclock carrying its id. The old code read r.ratify, and when the second save of
+   a self-service claim did not land (Cintia, 23 Jul) the punch existed while the card still
+   said "waiting for you" and then refused to apply it again ("that would not change
+   anything"). Asking the ledger cannot drift. */
+function tcAppliedRows(reportId){
+  if(reportId==null)return [];
+  const rows=DB.timeclock.filter(r=>r.reportId==reportId);
+  if(!rows.length)return [];
+  /* a row that something else amends (i.e. a reversal) no longer counts as applied */
+  const amended={};DB.timeclock.forEach(r=>{if(r.amends!=null)amended[r.amends]=true;});
+  return rows.filter(r=>!amended[r.id]&&r.kind!=='void');
+}
+function tcReportState(r){
+  if(!r)return 'waiting';
+  if(r.status==='resolved')return 'resolved';
+  if(r.status==='needs_info')return 'needs_info';        // sent back — the person has to answer
+  if(tcAppliedRows(r.id).length)return 'applied';        // written already; only needs a yes/no
+  return 'waiting';                                      // Belén has to decide
+}
+/* every decision on a clock request goes back to the person's 🔔 inbox. Before this,
+   the answer only lived inside the report thread — so people wrote in twice, or gave up. */
+function tcNotify(r,text){
+  try{return notifySend(r.personId,'notice','🕘 '+text,'home.html');}catch(e){return 0;}
+}
 const CLAIM_BLOCK_MSG = {
   future: 'That time has not happened yet. A punch dated in the future stops the clock.',
   too_old: 'That day is more than ' + CLAIM_MAX_DAYS + ' days ago — Belén has to make this one.',
@@ -979,7 +1005,10 @@ function tcMissingDays(personId){ // expected days with no punches at all (since
   }
   return out.slice(-15);
 }
-function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved');}
+/* what is on HR's plate. A request that was sent back is waiting on the PERSON, so it
+   stops nagging Belén and starts nagging them instead (openReports vs myReportsToFix). */
+function openReports(){return DB.tcreports.filter(r=>r.status!=='resolved'&&r.status!=='needs_info');}
+function myReportsToFix(){const me=DB.currentUser;return me?DB.tcreports.filter(r=>r.personId==me.id&&r.status==='needs_info'):[];}
 /* ---- pending-punch safety net ----
    Punches are too important for the debounced background sync: they are inserted
    IMMEDIATELY and awaited. If the database cannot be reached (offline, expired
