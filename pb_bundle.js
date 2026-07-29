@@ -2349,6 +2349,27 @@ window.PB = {
     return "sets/" + v + "/" + slot + ".jpg";
   }
 
+  /* Per-event marks, mirroring spx_data.EVENTS[...]["logo"]. All of these are already
+     in the bucket. Events deliberately absent (usefulai_27 and the three portfolio
+     pseudo-events) have no mark of their own and fall back to the RENMAD one, which is
+     what deck_builder.evbadge() does. */
+  var EVENT_LOGO = {
+    almacenamiento_27: "logo_almacenamiento.png",
+    storage_italia_27: "logo_storage_italia.png",
+    storage_polska_27: "logo_storage_polska.png",
+    biometano_27:      "logo_biometano.png",
+    h2_26:             "logo_hidrogeno.png",
+    h2_27:             "logo_hidrogeno.png",
+    dc_27:             "logo_datacenters.png",
+    dc_italia_26:      "logo_datacenters_italia.png",
+    dc_italia_27:      "logo_datacenters_italia.png",
+    invest_27:         "logo_invest.png",
+    invest_italia_27:  "logo_invest_italia.png",
+    chile_27:          "logo_chile.png",
+    mexico_27:         "logo_mexico.png",
+  };
+  function eventLogoFile(evKey) { return EVENT_LOGO[String(evKey)] || null; }
+
   function objectUrl(base, path) {
     return String(base).replace(/\/+$/, "") + "/storage/v1/object/" + BUCKET + "/" + path;
   }
@@ -2392,15 +2413,29 @@ window.PB = {
       var file = sp === "cintia" ? "photos/cintia.png" : "photos/" + sp + ".jpg";
       keys.push("photo"); jobs.push(fetchOne(cfg, file));
     }
-    if (opts.eventLogo) { keys.push("evlogo"); jobs.push(fetchOne(cfg, "logos/" + opts.eventLogo)); }
+    /* the event's own mark, resolved from the key so no caller has to know the filename */
+    var evLogo = opts.eventLogo || eventLogoFile(evKey);
+    if (evLogo) { keys.push("evlogo"); jobs.push(fetchOne(cfg, "logos/" + evLogo)); }
+    /* The calendar slide's 2026 cards are OTHER events, each with its own vertical, so the
+       primary event's calendar shot is not enough. Four small fetches (cached) cover every
+       card the slide can ever draw; deck.js picks per card via calByVertical. */
+    var VERTICALS = ["storage", "hidrogeno", "biometano", "datacenters"];
+    VERTICALS.forEach(function (v) {
+      keys.push("cal__" + v); jobs.push(fetchOne(cfg, "sets/" + v + "/calendar.jpg"));
+    });
     return Promise.all(jobs).then(function (vals) {
-      var out = {};
-      keys.forEach(function (k, i) { out[k] = vals[i]; });
+      var out = {}, calBy = {};
+      keys.forEach(function (k, i) {
+        if (k.indexOf("cal__") === 0) calBy[k.slice(5)] = vals[i];
+        else out[k] = vals[i];
+      });
+      out.calByVertical = calBy;
       return out;
     });
   }
 
-  global.PBIMG = { verticalOf: verticalOf, slotPath: slotPath, load: load, slots: ALL_SLOTS };
+  global.PBIMG = { verticalOf: verticalOf, slotPath: slotPath, load: load, slots: ALL_SLOTS,
+                   eventLogoFile: eventLogoFile };
 })(typeof window !== "undefined" ? window : this);
 
 /* ===== proposal\deck.js ===== */
@@ -2515,6 +2550,15 @@ window.PB = {
       return true;
     } catch (e) { return false; }
   }
+  /* A logo must never be cropped (feedback_linkedin_cards: "el logo no se recorta"), so
+     it is placed with "contain" inside its box rather than "cover" like photography. */
+  function addLogo(s, x, y, maxW, maxH, dataUrl) {
+    try {
+      if (!dataUrl) return false;
+      s.addImage({ data: dataUrl, x: x, y: y, w: maxW, h: maxH, sizing: { type: "contain", w: maxW, h: maxH } });
+      return true;
+    } catch (e) { return false; }
+  }
 
   // ==========================================================================
   function buildFullDeck(opts) {
@@ -2548,6 +2592,16 @@ window.PB = {
        a flat accent block is the fallback to that — which is all this deck had before. */
     var IMG = opts.images || {};
     var slotImg = function (slot, i) { return IMG[slot] || bimg(i); };
+    /* The RENMAD mark and the per-event mark both arrive from the pb-assets bucket.
+       Both are optional: every caller falls back to the drawn wordmark. */
+    var logoImg = function (s, x, y, w, h) { return addLogo(s, x, y, w, h, IMG.logo); };
+    var evLogoImg = function (s, x, y, w, h) { return addLogo(s, x, y, w, h, IMG.evlogo); };
+    /* Calendar cards are OTHER events, so each needs its own vertical's shot. */
+    var calBy = IMG.calByVertical || {};
+    var calImg = function (k) {
+      var vo = global.PBIMG && global.PBIMG.verticalOf;
+      return vo ? (calBy[vo(k)] || null) : null;
+    };
     var client = (opts.client || (brand && brand.title) || "").trim();
 
     // ---- package scope ----
@@ -2581,8 +2635,12 @@ window.PB = {
       var s = pptx.addSlide(); s.background = { color: CH };
       addImg(s, SW - 4.7, 0, 4.7, SH, slotImg("cover", 0));
       rc(s, SW - 4.7, 0, 0.06, SH, O);
-      tx(s, 0.95, 1.30, 6, 0.9, "RENMAD", 44, WH, true, HEAD);
-      tx(s, 0.97, 2.18, 6, 0.4, "EVENTS", 19, O, true, HEAD, "left", "top", { charSpacing: 6 });
+      /* the real RENMAD logo when the bucket gave us one (deck_builder.py places it at
+         0.9,1.4 w=5.4); the drawn wordmark is the fallback it always used to be */
+      if (!logoImg(s, 0.9, 1.4, 5.4, 1.1)) {
+        tx(s, 0.95, 1.30, 6, 0.9, "RENMAD", 44, WH, true, HEAD);
+        tx(s, 0.97, 2.18, 6, 0.4, "EVENTS", 19, O, true, HEAD, "left", "top", { charSpacing: 6 });
+      }
       tx(s, 0.95, 3.50, 7.3, 0.5, str("cover_kicker"), 26, WH, true, HEAD);
       tx(s, 0.95, 4.12, 7.3, 1.3, str("cover_tag"), 20, WH, true, HEAD, "left", "top", { lineSpacingMultiple: 1.1 });
       if (client) {
@@ -2673,10 +2731,21 @@ window.PB = {
           var sel = e.key === ev.key, ec = String(e.color).replace("#", "");
           rc(s, Lx, ry, Lw, rh, sel ? O : WH, sel ? { rad: 0.08 } : { line: LN, lw: 1, rad: 0.08 });
           rc(s, Lx, ry, 0.11, rh, sel ? WH : ec);
-          var gy = ry + (rh - 0.92) / 2;
-          tx(s, Lx + 0.34, gy, Lw - 0.55, 0.4, e.short, 15, sel ? WH : CH, true, HEAD);
-          tx(s, Lx + 0.34, gy + 0.44, Lw - 0.55, 0.26, e.date[lang], 11.5, sel ? WH : ec, true, BODY);
-          tx(s, Lx + 0.34, gy + 0.7, Lw - 0.55, 0.24, e.city[lang], 10.5, sel ? DM : MU, false, BODY);
+          /* Tall cards (<=2 events in 2026) carry a photo banner, exactly as the Python
+             deck; short cards keep the compact centred variant. */
+          var banner = rh > 1.7 ? calImg(e.key) : null;
+          var ty;
+          if (banner && addImg(s, Lx + 0.3, ry + 0.18, Lw - 0.56, rh * 0.44, banner)) {
+            ty = ry + 0.32 + rh * 0.44;
+            tx(s, Lx + 0.34, ty, Lw - 0.55, 0.34, e.short, 15, sel ? WH : CH, true, HEAD);
+            tx(s, Lx + 0.34, ty + 0.36, Lw - 0.55, 0.24, e.date[lang], 11.5, sel ? WH : ec, true, BODY);
+            tx(s, Lx + 0.34, ty + 0.60, Lw - 0.55, 0.22, e.city[lang], 10.5, sel ? DM : MU, false, BODY);
+          } else {
+            var gy = ry + (rh - 0.92) / 2;
+            tx(s, Lx + 0.34, gy, Lw - 0.55, 0.4, e.short, 15, sel ? WH : CH, true, HEAD);
+            tx(s, Lx + 0.34, gy + 0.44, Lw - 0.55, 0.26, e.date[lang], 11.5, sel ? WH : ec, true, BODY);
+            tx(s, Lx + 0.34, gy + 0.7, Lw - 0.55, 0.24, e.city[lang], 10.5, sel ? DM : MU, false, BODY);
+          }
           ry += rh + 0.16;
         });
       }
@@ -2704,7 +2773,11 @@ window.PB = {
       var s = pptx.addSlide(); s.background = { color: CH };
       if (!addImg(s, 0, 0, SW, 4.6, slotImg("divider", 2))) rc(s, 0, 0, SW, 4.6, darken(accent, 0.35));
       rc(s, 0, 3.4, SW, 1.2, CH);
-      tx(s, 0.85, 1.15, 8, 1.0, ev.name || "RENMAD Events", 34, WH, true, HEAD, "left", "middle");
+      /* Top-left is the event MARK (deck_builder.py: logo_contain(ev_logo) -> RENMAD logo).
+         It is NOT the event name: the name already runs across y=5.12 below, and drawing
+         it in both places printed it twice on every deck. */
+      if (!evLogoImg(s, 0.85, 0.95, 5.2, 1.7) && !logoImg(s, 0.85, 1.2, 3.6, 1.2))
+        tx(s, 0.85, 1.15, 8, 1.0, "RENMAD EVENTS", 30, WH, true, HEAD, "left", "middle");
       if (client) {
         tx(s, 7.5, 3.78, 5.1, 0.32, str("proposal_for"), 15, DM, true, BODY, "right");
         tx(s, 7.5, 4.16, 5.1, 0.7, client, 26, WH, true, HEAD, "right");
@@ -2720,6 +2793,10 @@ window.PB = {
       var s = pptx.addSlide(); s.background = { color: GR };
       tx(s, 0.7, 0.5, 9, 0.5, str("comp_title"), 30, CH, true, HEAD);
       tx(s, 0.7, 1.15, 9.9, 0.3, str("comp_sub"), 13, MU, false, BODY);
+      if (client) {
+        tx(s, 8.6, 0.18, 4.03, 0.26, str("prepared_for"), 11, MU, true, BODY, "right");
+        tx(s, 8.6, 0.48, 4.03, 0.4, client, 16, CH, true, HEAD, "right");
+      }
       var benefits = arr("benefits");                       // 10 labels
       var compRows = arr("comp_rows");                      // 8 package labels (Diamond-first)
       // avail row values come from the package data (row r -> packages[r].avail)
@@ -2825,12 +2902,15 @@ window.PB = {
       var s2 = pptx.addSlide(); s2.background = { color: GR };
       kicker(s2, 0.7, 0.5, str("brand_k"), str("brand_t"));
       tx(s2, 0.7, 1.7, 11.9, 0.5, str("brand_intro"), 14, IK, false, BODY);
-      var bcard = function (x, head, items) {
+      var bcard = function (x, head, items, photo) {
         var w = 5.85, h = 4.5;
         rc(s2, x, 2.35, w, h, WH, { line: LN, lw: 1, rad: 0.08 });
+        /* photo band across the top of the card, with the accent header laid over it —
+           the visible strip is y 2.85 -> 3.55, exactly as deck_builder.bcard() */
+        if (!addImg(s2, x, 2.35, w, 1.2, photo)) rc(s2, x, 2.35, w, 1.2, mix(accent, [255, 255, 255], 0.82));
         rc(s2, x, 2.35, w, 0.5, O, { rad: 0.08 });
         tx(s2, x + 0.28, 2.35, w - 0.4, 0.5, head, 15, WH, true, HEAD, "left", "middle");
-        var yy = 3.16;
+        var yy = 3.66;
         items.forEach(function (it) {
           var nm = it[1], desc = it[2];
           ell(s2, x + 0.28, yy + 0.05, 0.54, SOFT);
@@ -2839,8 +2919,8 @@ window.PB = {
           yy += 0.8;
         });
       };
-      bcard(0.7, str("brand_silver_head"), arr("brand_silver"));
-      bcard(6.78, str("brand_gold_head"), arr("brand_gold"));
+      bcard(0.7, str("brand_silver_head"), arr("brand_silver"), slotImg("branding_a", 1));
+      bcard(6.78, str("brand_gold_head"), arr("brand_gold"), slotImg("branding_b", 2));
       badge(s2);
     }
 
@@ -2898,13 +2978,22 @@ window.PB = {
       badge(s);
     })();
 
-    // ===== 20 MULTI-EVENT SAVINGS (only when >1 event) =====================
-    if (multi) {
+    /* ===== 20 MULTI-EVENT SAVINGS ==========================================
+       ALWAYS rendered, exactly as deck_builder.py. It is an upsell: a single-event
+       prospect is precisely who it is aimed at. Gating it on `multi` (as this port
+       originally did) silently dropped it from every single-event proposal. */
+    (function () {
       var s = pptx.addSlide(); s.background = { color: GR };
       kicker(s, 0.7, 0.5, str("save_k"), str("save_t"));
       tx(s, 0.7, 1.7, 11.9, 0.5, str("save_intro"), 14, IK, false, BODY);
       if (!addImg(s, 0.7, 2.3, 11.95, 1.4, slotImg("discount", 3))) rc(s, 0.7, 2.3, 11.95, 1.4, darken(accent, 0.25), { rad: 0.18 });
-      tx(s, 0.95, 2.55, 8, 0.8, String(str("save_hero")).replace(/\n/g, " "), 26, WH, true, HEAD);
+      /* save_hero carries a literal \n ("One partnership,\nmany stages.") and is set over
+         two lines in the Python deck — flattening it to a space lost the break. */
+      var heroLines = String(str("save_hero")).split("\n");
+      s.addText(heroLines.map(function (ln, i) {
+        return { text: ln, options: { breakLine: i < heroLines.length - 1 } };
+      }), { x: 0.95, y: 2.55, w: 8, h: 0.8, fontFace: HEAD, fontSize: 26, color: WH,
+            bold: true, align: "left", valign: "top", lineSpacingMultiple: 1.0 });
       var x0 = 0.7, cw = 2.86, g = 0.27;
       arr("save_tiers").forEach(function (t, i) {
         var n = t[0], lab = t[1], val = t[2], hl = t[3];
@@ -2918,7 +3007,7 @@ window.PB = {
       });
       tx(s, 0.7, 6.7, 11, 0.3, str("save_foot"), 11, MU, false, BODY);
       badge(s);
-    }
+    })();
 
     // ===== 21 CONTACT ======================================================
     (function () {
@@ -2941,7 +3030,7 @@ window.PB = {
       ell(s, 0.6, cy, 0.52, O);
       s.addText(sp.email, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "mailto:" + sp.email } }); cy += 0.58;
       rc(s, 0.6, 5.92, 7.3, 0.02, "393E44");
-      tx(s, 0.6, 6.26, 5, 0.5, "RENMAD EVENTS", 20, WH, true, HEAD);
+      if (!logoImg(s, 0.6, 6.26, 3.0, 0.88)) tx(s, 0.6, 6.26, 5, 0.5, "RENMAD EVENTS", 20, WH, true, HEAD);
       if (client) {
         tx(s, 3.95, 6.02, 3.3, 0.24, str("prepared_for"), 11, DM, true, BODY);
         tx(s, 3.95, 6.3, 3.3, 0.4, client, 18, WH, true, HEAD);

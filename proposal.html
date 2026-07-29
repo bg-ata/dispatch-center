@@ -78,6 +78,16 @@
   <!-- ===== EVENT SPONSORSHIP mode ===== -->
   <div id="mode-events">
     <div class="card">
+      <label class="lab">Deck scope</label>
+      <span class="seg" id="scopeseg">
+        <button data-scope="events" class="on">📅 Pick events</button>
+        <button data-scope="general">🌍 Full portfolio</button>
+        <button data-scope="italian_market">🇮🇹 Italian market</button>
+        <button data-scope="spanish_market">🇪🇸 Spanish market</button>
+      </span>
+      <div class="hint" id="scopehint"></div>
+    </div>
+    <div class="card" id="evcard">
       <label class="lab">Events <span class="req">*</span> — pick one, or several for a multi-event proposal</label>
       <div class="hint" id="datemsg" style="margin:0 0 7px"></div>
       <div class="evlist" id="evlist"></div>
@@ -124,7 +134,7 @@
 </div>
 
 <script src="store.js?v=74"></script>
-<script src="pb_bundle.js?v=4"></script>
+<script src="pb_bundle.js?v=5"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
 const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
@@ -151,7 +161,16 @@ function injectTalksEvents(){
       color:m.color,city:{en:"Madrid, Spain",es:"Madrid, España"},date:{en:m.en,es:te.date_es},short:m.short});
   });
 }
-let LANG="en", BRAND=null, SP="cintia", MODE="events";
+let LANG="en", BRAND=null, SP="cintia", MODE="events", SCOPE="events";
+/* The three portfolio pseudo-events (general / italian_market / spanish_market) are
+   filtered out of the picker on purpose — they are a DECK SCOPE, not something you
+   tick alongside real events. Streamlit models them the same way. They carry no SPX
+   registry code, so their proposals land on the board under their own slug. */
+const portfolioEv=()=>SCOPE==='events'?null:(PB.events||[]).find(e=>e.key===SCOPE)||null;
+const SCOPE_HINT={events:"",
+  general:"Every RENMAD event in the 2026–2027 season, priced on the Storage column.",
+  italian_market:"The four Italian events only — Datacenters Italia 2026/2027, Storage Italia 2027, Invest Italia 2027.",
+  spanish_market:"The seven Spain events only — Hidrógeno, Datacenters, Biometano, Almacenamiento, Invest, UsefulAI."};
 let realEvents=[], y26=[], y27=[]; const selEvents=new Set();
 const money=(n)=>(window.RENMAD?RENMAD.money(n):("€"+n));
 
@@ -179,6 +198,7 @@ function initBuilder(){
   document.getElementById('pull').onclick=doPull;
   document.getElementById('gen').onclick=doGenerate;
   document.querySelectorAll('#modeseg button').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+  document.querySelectorAll('#scopeseg button').forEach(b=>b.onclick=()=>setScope(b.dataset.scope));
 
   (async function(){
     const dm=document.getElementById('datemsg');
@@ -208,6 +228,12 @@ function setMode(m){ MODE=m;
   document.getElementById('msg').innerHTML='';
 }
 
+function setScope(sc){ SCOPE=sc;
+  document.querySelectorAll('#scopeseg button').forEach(b=>b.classList.toggle('on',b.dataset.scope===sc));
+  document.getElementById('evcard').classList.toggle('hide',sc!=='events');
+  document.getElementById('scopehint').textContent=SCOPE_HINT[sc]||'';
+  updateGroup();
+}
 function evRow(e){return '<div class="ev" data-ev="'+e.key+'"><input type="checkbox"><span class="swatch" style="background:#'+e.color+'"></span><span><span class="nm">'+e.short+'</span><br><span class="meta">'+e.date[LANG]+' · '+e.city[LANG]+'</span></span></div>';}
 function renderEvents(){
   const el=document.getElementById('evlist');
@@ -218,8 +244,16 @@ function renderEvents(){
 const isTalksEv=(e)=>e.type==='talks';
 function stdSel(){return realEvents.filter(e=>selEvents.has(e.key)&&!isTalksEv(e));}
 function talksEvSel(){return realEvents.filter(e=>selEvents.has(e.key)&&isTalksEv(e));}
-function currentFamily(){const c=stdSel();return c.length?c[0].family:"storage";}
+function currentFamily(){const p=portfolioEv();if(p)return p.family;const c=stdSel();return c.length?c[0].family:"storage";}
 function updateGroup(){
+  const pf=portfolioEv();
+  if(pf){
+    document.getElementById('grpmsg').innerHTML='Portfolio deck: <span class="pill">'+pf.short+'</span>　·　pricing group <span class="pill">'+PB.families[pf.family]+'</span>';
+    document.getElementById('pkStdWrap').style.display='';
+    document.getElementById('pkStdH').style.display='none';
+    document.getElementById('pkTalksWrap').style.display='none';
+    renderPks(); return;
+  }
   const std=stdSel(), tlk=talksEvSel(), c=std.concat(tlk), g=document.getElementById('grpmsg');
   if(!c.length){ g.innerHTML='Pick at least one event.'; }
   else{ const parts=[];
@@ -243,7 +277,8 @@ const pkChecked=(id)=>{const el=document.getElementById(id);return !!(el&&el.che
 function collect(){
   // std events first so the combined deck's primary event has a real pricing family;
   // Talks-only proposals route to the bespoke Talks deck instead.
-  const events=realEvents.filter(e=>selEvents.has(e.key)).sort((a,b)=>(a.type==='talks')-(b.type==='talks'));
+  const pf=portfolioEv();
+  const events=pf?[pf]:realEvents.filter(e=>selEvents.has(e.key)).sort((a,b)=>(a.type==='talks')-(b.type==='talks'));
   const stdPackages=PB.packages.map(p=>p.id).filter(id=>pkChecked('pk_'+id));
   const talksPackages=(PB.talksPackages||[]).map(p=>p.id).filter(id=>pkChecked('tpk_'+id));
   const selections=events.map(e=>[e.key, e.type==='talks'?talksPackages:stdPackages]);
