@@ -202,7 +202,7 @@ function renderPendingRequests(){
   box.innerHTML='<table><tr><th>Who</th><th>What</th><th>Area</th><th style="width:110px"></th></tr>'+
     open.map(t=>'<tr><td><b>'+esc(DB.personName(t.personId)||'?')+'</b></td>'+
       '<td style="white-space:normal">'+esc(t.title||'')+'</td><td>'+esc(t.area||'')+'</td>'+
-      '<td><a class="btn" href="tickets.html" style="font-size:11px;padding:3px 9px;text-decoration:none">Open →</a></td></tr>').join('')+
+      '<td><a class="btn" href="inbox.html#requests" style="font-size:11px;padding:3px 9px;text-decoration:none">Open →</a></td></tr>').join('')+
     '</table>';
 }
 function fmtRange(h){return fmtHumanRange(h.dateFrom,h.dateTo);}

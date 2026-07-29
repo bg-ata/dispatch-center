@@ -1377,7 +1377,7 @@ function personOpenItemsHtml(personId){
   if(DB.hrReady())DB.holidays.filter(h=>h.personId==personId&&['manager','belen','hr'].includes(h.status))
     .forEach(h=>out.push('🌴 Time off · '+fmtHumanRange(h.dateFrom,h.dateTo)+' — <a href="home.html" style="color:var(--orange)">'+esc(holStageLabel(h))+'</a>'));
   if(DB.tickReady())DB.tickets.filter(t=>t.personId==personId&&(t.status==='new'||t.status==='open'))
-    .forEach(t=>out.push('💡 Request · '+esc(t.title||'')+' — <a href="tickets.html" style="color:var(--orange)">open</a>'));
+    .forEach(t=>out.push('💡 Request · '+esc(t.title||'')+' — <a href="inbox.html#requests" style="color:var(--orange)">open</a>'));
   if(!out.length)return '<div class="hint">Nothing open right now.</div>';
   return '<div style="font-size:12.5px">'+out.map(x=>'<div style="margin-bottom:3px">'+x+'</div>').join('')+'</div>';
 }
@@ -1447,7 +1447,7 @@ function quickTicketUI(){
    +'<textarea id="qt_desc" rows="3" placeholder="Details (optional) — what happened, what you expected, where…" style="width:100%;box-sizing:border-box;font:inherit;padding:10px;border:1px solid #e3e1da;border-radius:8px;margin-bottom:12px;resize:vertical"></textarea>'
    +'<div style="display:flex;gap:8px;align-items:center"><button id="qt_send" style="font:inherit;flex:1;padding:11px;background:#FF4A00;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Send</button>'
    +'<button id="qt_cancel" style="font:inherit;padding:11px 16px;border:1px solid #e3e1da;background:#fff;border-radius:8px;cursor:pointer">Cancel</button></div>'
-   +'<div style="font-size:11.5px;color:#7c7c78;margin-top:10px"><a href="tickets.html" style="color:#7c7c78">See all requests →</a> <span style="opacity:.8">(maybe it’s already reported — you can add a comment there instead)</span></div></div>';
+   +'<div style="font-size:11.5px;color:#7c7c78;margin-top:10px"><a href="inbox.html#requests" style="color:#7c7c78">See all requests →</a> <span style="opacity:.8">(maybe it’s already reported — you can add a comment there instead)</span></div></div>';
   document.body.appendChild(ov);
   const close=()=>ov.remove();
   document.getElementById('qt_cancel').onclick=close;
@@ -1461,7 +1461,7 @@ function quickTicketUI(){
       status:'new',priority:null,thread:[],created:toISO(new Date())+' '+nowHMS().slice(0,5)});
     DB.save();
     ov.firstChild.innerHTML='<div style="font-size:17px;font-weight:700;color:#3E8C28">✓ Sent — thank you!</div>'
-      +'<div style="font-size:13px;color:#3a3a3a;margin:8px 0 14px">It’s in the queue. You can follow it (and comment) on the <a href="tickets.html">Requests page</a>.</div>'
+      +'<div style="font-size:13px;color:#3a3a3a;margin:8px 0 14px">It’s in the queue. You can follow it (and comment) on the <a href="inbox.html#requests">Requests page</a>.</div>'
       +'<div style="text-align:right"><button id="qt_done" style="font:inherit;padding:9px 18px;background:#FF4A00;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">Close</button></div>';
     document.getElementById('qt_done').onclick=close;
     try{window.dispatchEvent(new Event('dc-remote'));}catch(e){}
