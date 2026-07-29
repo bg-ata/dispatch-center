@@ -1341,6 +1341,74 @@ function spxStatusAll(){
   return Object.values(rows).sort((a,b)=>a.sort-b.sort);
 }
 
+/* ---- automatic weekly rows (Belén, 29 Jul night: "Why do I need to click anything.
+   Can you just add it when the invoice is added by Jesús?") ----
+   Recomputes the CURRENT week's dc_weekly row per selling event from the SPX board +
+   the invoice lines. Runs by itself after any save that touches invoicing or the SPX
+   board (see the syncNow hook) and when a finance user opens Money — the ⟳ button
+   remains only as a manual "recalculate now".
+   RLS: dc_weekly writes need dc_can_finance(), so it only acts for finance holders
+   (Jesús, Belén). A salesperson's Won deal is picked up at the next finance touchpoint.
+   Change-detected: writes ONLY when a value differs, which also breaks the save loop
+   (refresh -> save -> sync -> hook -> refresh -> no change -> stop).
+   Leads/telesales columns are never touched — marketing is not in the platform. */
+function weeklyAutoRefresh(){
+  const res={updated:[],skipped:[],changed:false};
+  try{
+    if(!DB.canFinance()||!DB.weeklyReady()||!DB.spxReady()||!DB.billReady())return res;
+    spxStatusAll().filter(r=>r.active&&r.financeId!=null).forEach(r=>{
+      const f=DB.finance.find(x=>x.id==r.financeId);if(!f)return;
+      const evRow=f.eventId?DB.event(f.eventId):null;
+      const m=evRow?/^E\d+/.exec(evRow.name||''):null;
+      if(!m||!evRow.date){res.skipped.push(r.name+' — needs a Money row linked to a board event with an E-code and a date');return;}
+      const code=m[0];
+      let tkAcc=0,grAcc=0,svAcc=0,passes=0;
+      DB.invoiceAllocs.forEach(a=>{
+        if(a.eventId!=f.id)return;const inv=DB.invoice(a.invoice_id);
+        if(!inv||inv.status==='cancelado'||inv.status==='abono')return;
+        const eur=DB.allocEur(a);
+        if(isTicketProd(a.producto)){tkAcc+=eur;passes+=(+a.passes||0);}
+        else if(a.producto==='grabaciones')grAcc+=eur;
+        else if(a.producto==='sitevisits')svAcc+=eur;
+      });
+      const nowMon=monday(new Date()),wk=Math.round((nowMon-monday(ymd(evRow.date)))/(7*864e5));
+      const rows=DB.weekly.filter(x=>x.eventCode===code);
+      const prev=rows.filter(x=>x.week<wk),sum=k=>prev.reduce((a,x)=>a+(+x[k]||0),0);
+      let row=rows.find(x=>x.week==wk);const isNew=!row;
+      const vals={
+        sponsorsEur:Math.max(0,r.won-sum('sponsorsEur')),sponsorsN:Math.max(0,r.wonN-sum('sponsorsN')),spxAcc:r.won,
+        ticketsEur:Math.max(0,tkAcc-sum('ticketsEur')),ticketsAcc:tkAcc,
+        delegatesN:Math.max(0,passes-sum('delegatesN')),
+        grabacionesEur:Math.max(0,grAcc-sum('grabacionesEur')),siteVisitsEur:Math.max(0,svAcc-sum('siteVisitsEur'))};
+      vals.totalEur=vals.sponsorsEur+vals.ticketsEur+vals.grabacionesEur+vals.siteVisitsEur+((row&&+row.telesalesEur)||0);
+      vals.soFarEur=r.won+tkAcc+grAcc+svAcc+prev.reduce((a,x)=>a+(+x.telesalesEur||0),0)+((row&&+row.telesalesEur)||0);
+      if(f.target!=null)vals.target=+f.target;
+      if(f.stretch!=null)vals.stretch=+f.stretch;
+      const dirty=isNew||Object.keys(vals).some(k=>(+((row||{})[k])||0)!==(+vals[k]||0));
+      if(!dirty)return;
+      if(isNew){row={id:DB.newId(),eventCode:code,name:(f.name+' '+(f.year||'')).trim(),year:f.year||null,
+        date:toISO(nowMon),week:wk,topicLeads:null,eventLeads:null,telesalesN:null,telesalesEur:null};
+        DB.weekly.push(row);}
+      Object.assign(row,vals);
+      res.changed=true;
+      res.updated.push(code+' W'+wk+(isNew?' · new row':' · updated'));
+    });
+  }catch(e){console.warn('weekly auto-refresh:',e.message||e);}
+  return res;
+}
+let _wkAutoTimer=null;
+/* called from syncNow with the set of tables the sync just pushed */
+function weeklyAutoHook(touched){
+  if(!touched)return;
+  const rel=['invoices','invalloc','spxProps','spxLines','spxFrags','finance'];
+  if(!rel.some(k=>touched[k]))return;
+  clearTimeout(_wkAutoTimer);
+  _wkAutoTimer=setTimeout(()=>{_wkAutoTimer=null;
+    const r=weeklyAutoRefresh();
+    if(r.changed){DB.save();try{window.dispatchEvent(new CustomEvent('dc-remote',{detail:{src:'weekly-auto'}}));}catch(e){}}
+  },400);
+}
+
 /* ================= notifications inbox (🔔) ================= */
 const INBOX_KINDS={ticket:{label:'Request update',icon:'💡',color:'#185FA5'},
   notice:{label:'Team notice',icon:'📢',color:'#FF4A00'},
@@ -2124,6 +2192,7 @@ const DB={
     this._dirtyAt=Date.now();   // a background snapshot-refresh started before this edit must re-run
     if(_syncing){_pendingSync=true;return true;}
     _syncing=true;
+    const touched={};   // tables this sync actually pushed — feeds the weekly auto-refresh
     try{
       for(const k of Object.keys(TABLES)){
         if(k==='finance'&&!_finReady)continue; // finance table not created yet
@@ -2151,9 +2220,13 @@ const DB={
         if(inserts.length){const {error}=await sb.from(tbl).insert(inserts);if(error)throw error;}
         for(const p of updates){const {error}=await sb.from(tbl).update(p).eq('id',p.id);if(error)throw error;}
         if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
+        if(inserts.length||updates.length||dels.length)touched[k]=true;
       }
       snapshot();
       this._writeSnap();                        // keep the page-boot snapshot as fresh as the DB
+      /* an invoice or board change re-derives this week's dc_weekly rows by itself
+         (Belén, 29 Jul night) — change-detected, so it cannot loop */
+      try{weeklyAutoHook(touched);}catch(e){}
       _syncFails=0;renderSyncBanner();          // success clears the not-saved banner
     }catch(e){
       /* audit Critical 3: do NOT reload — a reload discards every unsaved edit in
