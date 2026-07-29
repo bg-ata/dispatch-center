@@ -1802,19 +1802,78 @@ const DB={
   data:null,
   async load(){
     if(USE_SUPABASE){
+      /* SNAPSHOT-FIRST (batch 3, 29 Jul 2026): render NOW from the last-known copy in
+         sessionStorage, fetch fresh data in the background, re-render through the same
+         'dc-remote' event realtime already uses. Every click between pages used to
+         re-download the whole DB (~2 MB) before drawing; now only the first page of the
+         session pays that, and even it pays only once. The snapshot is per-user (RLS!),
+         per-STORE_VERSION, tab-scoped (sessionStorage) and ≤30 min old — anything else
+         falls through to a normal live load. */
+      try{const {data}=await sb.auth.getSession();this._snapEm=(data&&data.session&&data.session.user&&data.session.user.email)||'';}catch(e){this._snapEm='';}
+      const snap=this._readSnap();
+      if(snap){
+        this.data=snap;rebuildProductos();snapshot();this.fromSnapshot=true;
+        setTimeout(()=>{this._refresh();},0);
+        setTimeout(()=>{try{subscribeRealtime();}catch(e){console.warn('realtime:',e.message||e);}},0);
+        return this.data;
+      }
+      await this._live();
+      this._writeSnap();
+      setTimeout(()=>{try{subscribeRealtime();}catch(e){console.warn('realtime:',e.message||e);}},0);
+      return this.data;
+    }
+    try{this.data=JSON.parse(localStorage.getItem('dispatchStore'));}catch(e){this.data=null;}
+    if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
+    if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
+    if(!this.data.productos)this.data.productos=[]; // …and predate the custom-product list
+    if(!this.data.pmsgs)this.data.pmsgs=[];         // …and the per-person conversation
+    rebuildProductos();
+    return this.data;
+  },
+  /* fresh copy in the background after a snapshot boot. If a save raced the refresh,
+     run one more pass so the fetched picture cannot bury an edit made mid-flight. */
+  async _refresh(){
+    const started=Date.now();
+    try{
+      await this._live();
+      this._writeSnap();
+      window.dispatchEvent(new CustomEvent('dc-remote',{detail:{src:'snap-refresh'}}));
+      if(this._dirtyAt&&this._dirtyAt>started)setTimeout(()=>this._refresh(),500);
+    }catch(e){console.warn('background refresh failed — keeping the cached copy:',e.message||e);}
+  },
+  _snapKey(){return 'dcSnap:'+STORE_VERSION+':'+(this._snapEm||'');},
+  _readSnap(){
+    try{
+      const raw=sessionStorage.getItem(this._snapKey());if(!raw)return null;
+      const s=JSON.parse(raw);
+      if(!s||!s.t||Date.now()-s.t>30*60*1000)return null;      // too old to flash at the user
+      if(!s.data||!Array.isArray(s.data.people)||!s.data.people.length)return null;
+      return s.data;
+    }catch(e){return null;}
+  },
+  _writeSnap(){
+    try{
+      if(!USE_SUPABASE||!this.data)return;
+      Object.keys(sessionStorage).filter(k=>k.indexOf('dcSnap:')===0&&k!==this._snapKey())
+        .forEach(k=>sessionStorage.removeItem(k));                // user/version switch: drop foreign snapshots
+      sessionStorage.setItem(this._snapKey(),JSON.stringify({t:Date.now(),data:this.data}));
+    }catch(e){/* quota / private mode: the snapshot is a luxury, never an error */}
+  },
+  async _live(){
       /* ONE WAVE, NOT TWENTY (Belén, 29 Jul 2026 — "las páginas tardan en cargar").
          Every module below used to be awaited in turn, so opening any page paid ~20
          round trips to Supabase (2–4 s on a normal connection) before it drew a single
          pixel — and this app is multi-page, so every click paid it again. The loads do
          not depend on each other, so they now all start together: the boot costs the
          SLOWEST query instead of the sum of all of them. Each module keeps its own
-         try/catch, so a table that has not been created yet still degrades on its own. */
-      this.data={events:[],people:[],substages:[],tasks:[],finance:[],weekly:[],
+         try/catch, so a table that has not been created yet still degrades on its own.
+         Built into a LOCAL object and swapped into this.data in one piece at the end —
+         a background refresh must never blank a page that is already drawn. */
+      const D={events:[],people:[],substages:[],tasks:[],finance:[],weekly:[],
         projects:[],holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],
         invoices:[],invalloc:[],delegates:[],codigos:[],payments:[],tickets:[],
         todos:[],inbox:[],holmsgs:[],spxProps:[],spxLines:[],spxTargets:[],
         companyMap:[],spxFrags:[],spxEventReg:[],productos:[],pmsgs:[]};
-      const D=this.data;
       /* paged: Supabase caps a select at 1000 rows and TRUNCATES SILENTLY (audit Critical 4) */
       const paged=async tbl=>{const out=[];let from=0,page=1000;
         for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
@@ -2029,24 +2088,14 @@ const DB={
       })();
 
       await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPmsg,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg]);
-      rebuildProductos();
       if(!D.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
       }
+      this.data=D;            // one-piece swap (see note above)
+      rebuildProductos();
       snapshot();
-      /* the websocket + ~25 channel subscriptions used to be set up before the page drew.
-         A macrotask puts them AFTER the first render, where the user cannot feel them. */
-      setTimeout(()=>{try{subscribeRealtime();}catch(e){console.warn('realtime:',e.message||e);}},0);
       return this.data;
-    }
-    try{this.data=JSON.parse(localStorage.getItem('dispatchStore'));}catch(e){this.data=null;}
-    if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
-    if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
-    if(!this.data.productos)this.data.productos=[]; // …and predate the custom-product list
-    if(!this.data.pmsgs)this.data.pmsgs=[];         // …and the per-person conversation
-    rebuildProductos();
-    return this.data;
   },
   save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>{_saveTimer=null;this.syncNow();},700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
   /* save and WAIT for the database to confirm it. Use this behind any button that then
@@ -2067,6 +2116,7 @@ const DB={
      Two people editing different rows no longer overwrite each other. */
   async syncNow(){
     if(!USE_SUPABASE||!sb)return true;
+    this._dirtyAt=Date.now();   // a background snapshot-refresh started before this edit must re-run
     if(_syncing){_pendingSync=true;return true;}
     _syncing=true;
     try{
@@ -2098,6 +2148,7 @@ const DB={
         if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
       }
       snapshot();
+      this._writeSnap();                        // keep the page-boot snapshot as fresh as the DB
       _syncFails=0;renderSyncBanner();          // success clears the not-saved banner
     }catch(e){
       /* audit Critical 3: do NOT reload — a reload discards every unsaved edit in
