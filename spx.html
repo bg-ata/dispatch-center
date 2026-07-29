@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=84"></script>
+<script src="store.js?v=85"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -964,8 +964,12 @@ function healthCard(ev){
     +tile('Proyección',money(projection),projPct==null?'':pct(projPct)+' del target',gapT>=0?'good':'bad')
     +'</div>';
 
-  // detail table: Specs | Tickets | TOTAL
-  h+='<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Specs (sponsorship)</th><th class="num">Tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
+  // detail table: Specs | Tickets | TOTAL — side by side with the pace chart
+  // (Belén, 29 Jul night: numbers on the left, "a visual interpretation of how
+  //  things are going" on the right, with a clear line for right now)
+  h+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">'+
+     '<div style="flex:1 1 460px;min-width:340px">'+
+     '<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Specs (sponsorship)</th><th class="num">Tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
   if(T.source==='money'){
     // Money is master: total read-only (edit in Money), specs/tickets DERIVED from the specs %
     h+='<tr><td>Target <span class="ro-note">(total = Money)</span></td><td class="num">'+money(spTarget)+'</td><td class="num">'+money(tkTarget)+'</td><td class="num">'+money(totTarget)+'</td></tr>';
@@ -984,7 +988,16 @@ function healthCard(ev){
   h+='<tr><td>% de conversión asumido</td><td class="num">'+convCell(conv,editable)+'</td><td class="num">—</td><td class="num"></td></tr>';
   h+='<tr><td>Ingreso esperado del pipeline</td><td class="num">'+money(expected)+'</td><td class="num">—</td><td class="num">'+money(expected)+'</td></tr>';
   h+='<tr class="row-total"><td>PROYECCIÓN (firmado + esperado + tickets)</td><td class="num">'+money(wonSpecs+expected)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(projection)+'</td></tr>';
-  h+='</tbody></table>';
+  h+='</tbody></table></div>'+
+    /* right column: the pace picture — this edition vs the previous one vs a typical
+       event with this target, with a vertical HOY line. Data = dc_weekly (which now
+       fills itself from invoicing + the board). */
+    '<div style="flex:1 1 320px;min-width:280px">'+
+      '<div class="ro-note" style="margin:0 0 4px"><b>¿Cómo va?</b> — esta edición (naranja) vs la anterior (gris) vs el ritmo típico hacia este target (discontinua) · la línea vertical = hoy</div>'+
+      '<div class="cw" style="height:250px"><canvas id="c_hcpace"></canvas></div>'+
+      '<div class="ro-note" id="hcpaceNote" style="margin-top:4px"></div>'+
+    '</div></div>';
+  setTimeout(function(){try{drawHcPace(ev);}catch(e){console.warn('hc pace chart:',e.message||e);}},0);
 
   // verdicts — projection now includes signed Won (fixes the −25.000 that ignored the Won deal)
   h+='<div class="tiles" style="margin-top:16px">'
@@ -996,6 +1009,69 @@ function healthCard(ev){
   h+='<p class="ro-note">«Alcanzado» = lo ya firmado (Won + tickets) sobre el target total. «Fuera de target» = lo que queda por firmar. La proyección añade el pipeline pendiente por su conversión.</p>';
   h+='</div>';
   return h;
+}
+/* ---- the pace chart beside the health-check (Belén, 29 Jul night) ----
+   Three curves on one money axis, weeks W-30→W0:
+   · Esta edición — cumulative soFar from dc_weekly (self-filling since v84)
+   · Edición anterior — same family (name minus the year), latest completed edition
+   · Evento típico — median fraction-of-final across ALL completed events × this
+     event's target ("how an average event of the same objective normally flows")
+   plus a dotted target line and a vertical HOY marker at the current week. */
+function drawHcPace(ev){
+  const el=document.getElementById('c_hcpace');
+  if(!el)return;
+  if(!DB.weeklyReady()||!DB.weekly.length){const p=el.parentElement;if(p)p.innerHTML='<div class="ro-note" style="padding:20px 8px">Aún no hay datos semanales — se rellenan solos según entra facturación y ventas.</div>';return;}
+  const fid=ev.financeId,f=fid!=null?DB.finance.find(x=>x.id==fid):null;
+  const fam=n=>(''+(n||'')).replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim().toLowerCase();
+  const byCode={};DB.weekly.forEach(r=>{(byCode[r.eventCode]=byCode[r.eventCode]||[]).push(r);});
+  const today=toISO(new Date());
+  const metas=Object.keys(byCode).map(c=>{
+    const rows=byCode[c].slice().sort((a,b)=>a.week-b.week);
+    let final=0;rows.forEach(r=>{final=Math.max(final,+r.soFarEur||0);});
+    /* completed = the curve REACHED the event week. "Last row dated in the past" is
+       wrong here: a live event's rows are always dated in the past — that bug made a
+       half-run edition pollute the fraction-of-final benchmark. */
+    return {code:c,rows,final,name:rows[0].name||c,year:+rows[0].year||null,completed:rows.some(r=>+r.week>=0)};});
+  const myFam=fam(f?f.name:ev.name),myYear=f?+f.year:null;
+  const mine=metas.filter(m=>fam(m.name)===myFam);
+  const cur=mine.find(m=>m.year===myYear)||mine.filter(m=>!m.completed).sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;
+  const prevEd=mine.filter(m=>(!cur||m.code!==cur.code)&&m.completed).sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;
+  const T=eventTargets(ev);let target=T.totTarget||0;
+  if(!target&&f&&f.target!=null)target=+f.target;   // Money total even before Cintia sets the specs %
+  const weeks=[];for(let w=-30;w<=0;w++)weeks.push(w);
+  /* typical flow: per-week median of (soFar ÷ final) over completed events, scaled to OUR target */
+  const shares={};metas.filter(m=>m.completed&&m.final>0).forEach(m=>m.rows.forEach(r=>{
+    if(r.week==null||r.week<-30||r.week>0)return;(shares[r.week]=shares[r.week]||[]).push(Math.min(1,(+r.soFarEur||0)/m.final));}));
+  const med=weeks.map(w=>{const a=(shares[w]||[]).slice().sort((x,y)=>x-y);if(!a.length||!target)return null;
+    const v=a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;return v*target;});
+  const carry=m=>weeks.map(w=>{if(!m)return null;let v=null;m.rows.forEach(r=>{if(r.week<=w&&r.soFarEur!=null)v=+r.soFarEur;});return v;});
+  const curData=carry(cur),prevData=carry(prevEd);
+  /* HOY: from the linked board event's date; fallback = the edition's latest dated row */
+  let nowWk=null;
+  if(f&&f.eventId){const e=DB.event(f.eventId);if(e&&e.date)nowWk=Math.round((monday(new Date())-monday(ymd(e.date)))/(7*864e5));}
+  if(nowWk==null&&cur){cur.rows.forEach(r=>{if((r.date||'')<=today)nowWk=r.week;});}
+  const note=document.getElementById('hcpaceNote');
+  if(note)note.textContent=(cur?'':'Esta edición aún no tiene semanas registradas. ')+
+    (prevEd?('Edición anterior: '+prevEd.name+(prevEd.year&&(''+prevEd.name).indexOf(''+prevEd.year)<0?' '+prevEd.year:'')+' · cerró en '+money(prevEd.final)+'.'):'Sin edición anterior con datos.');
+  const ds=[];
+  if(curData.some(v=>v!=null))ds.push({label:'Esta edición',data:curData,borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:2.5,pointRadius:0,tension:.25,spanGaps:true});
+  if(prevData.some(v=>v!=null))ds.push({label:'Edición anterior',data:prevData,borderColor:'#9AA0A8',backgroundColor:'#9AA0A8',borderWidth:1.5,pointRadius:0,tension:.25,spanGaps:true});
+  if(med.some(v=>v!=null))ds.push({label:'Evento típico → target',data:med,borderColor:'#2B2B2B',backgroundColor:'#2B2B2B',borderDash:[6,4],borderWidth:1.5,pointRadius:0,tension:.25,spanGaps:true});
+  if(!ds.length){const p=el.parentElement;if(p)p.innerHTML='<div class="ro-note" style="padding:20px 8px">Aún no hay curvas que dibujar para esta familia de eventos.</div>';return;}
+  if(target)ds.push({label:'Target',data:weeks.map(()=>target),borderColor:'#C77800',borderDash:[2,3],borderWidth:1,pointRadius:0});
+  mkChart('c_hcpace',{type:'line',data:{labels:weeks.map(w=>'W'+w),datasets:ds},
+    options:{maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:14,font:{size:10}}},
+        tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},
+      scales:{x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}},y:{ticks:{callback:v=>money(v),font:{size:9}}}}},
+    plugins:[{id:'hoyline',afterDraw:ch=>{
+      if(nowWk==null||nowWk<weeks[0]||nowWk>0)return;
+      const x=ch.scales.x.getPixelForValue(weeks.indexOf(nowWk));
+      const c2=ch.ctx;c2.save();
+      c2.strokeStyle='#FF4A00';c2.lineWidth=2;c2.setLineDash([4,3]);
+      c2.beginPath();c2.moveTo(x,ch.chartArea.top);c2.lineTo(x,ch.chartArea.bottom);c2.stroke();
+      c2.fillStyle='#FF4A00';c2.font='bold 10px Segoe UI';c2.fillText('HOY',x+4,ch.chartArea.top+10);
+      c2.restore();}}]});
 }
 function hcRow(label,pases,spons,total,editable,pf,sf){
   const c=(v,fld)=>editable?'<span class="mval" data-tf="'+fld+'" title="Click to edit">'+money(v)+'</span>':money(v);
