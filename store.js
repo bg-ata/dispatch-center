@@ -1511,7 +1511,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql)
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate'], // startDate tolerant (2-line SQL)
@@ -1571,8 +1571,14 @@ const COLS={
      Deliberately its own table, not a jsonb on dc_holidays: row-level security cannot hide
      one column of a row the requester is allowed to read. */
   holmsgs:['id','holidayId','personId','byName','text','toRequester','created'],
+  /* the products an invoice line can be sold as. The ten originals are built into the
+     code (they carry behaviour: tickets counts passes, abono is a credit note…); this
+     table only holds the ones accounting adds itself — "Pase Online" for the Talks was
+     the first. `pases` = behaves like Tickets (pass type × qty, delegate row, counts as
+     ticket money on the SPX board). Retire, never delete: old invoices still resolve. */
+  productos:['id','key','label','pases','sort','archived'],
 };
-let _finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+let _prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -1581,197 +1587,234 @@ const DB={
   data:null,
   async load(){
     if(USE_SUPABASE){
-      const keys=['events','people','substages','tasks'];
-      const res=await Promise.all(keys.map(k=>sb.from(TABLES[k]).select('*').eq('deleted',false).order('id')));
-      const bad=res.find(r=>r.error);
-      if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
-      this.data={};keys.forEach((k,i)=>{this.data[k]=res[i].data||[];});
-      /* Projects split is tolerant: until the 2-line SQL adds kind/lanes to dc_events,
-         never push those columns (PostgREST rejects unknowns) and flag the UI */
-      window._extColsMissing=false;
-      if(this.data.events.length && !('kind' in this.data.events[0])){
-        window._extColsMissing=true;
-        ['kind','lanes'].forEach(c=>{const i2=COLS.events.indexOf(c);if(i2>=0)COLS.events.splice(i2,1);});
-      }
-      /* per-project phases are tolerant the same way (dispatch_projects_phases.sql adds
-         `stages`); without it a project still renders — it just cannot save custom phases */
-      window._phaseColMissing=false;
-      if(this.data.events.length && !('stages' in this.data.events[0])){
-        window._phaseColMissing=true;
-        const i4=COLS.events.indexOf('stages');if(i4>=0)COLS.events.splice(i4,1);
-      }
-      /* startDate on people is tolerant the same way (1-line SQL adds it) */
-      if(this.data.people.length && !('startDate' in this.data.people[0])){
-        const i3=COLS.people.indexOf('startDate');if(i3>=0)COLS.people.splice(i3,1);
-      }
-      /* claims are tolerant too: until dispatch_hr11_claims.sql runs, never push
-         claim/ratify (PostgREST rejects unknowns) and fall back to the old report
-         form. Explicit probe — the table may legitimately have zero rows. */
-      window._claimReady=true;
-      try{const cp=await sb.from('dc_tcreports').select('claim').limit(1);if(cp.error)throw cp.error;}
-      catch(e){window._claimReady=false;
-        ['claim','ratify'].forEach(c=>{const i2=COLS.tcreports.indexOf(c);if(i2>=0)COLS.tcreports.splice(i2,1);});}
+      /* ONE WAVE, NOT TWENTY (Belén, 29 Jul 2026 — "las páginas tardan en cargar").
+         Every module below used to be awaited in turn, so opening any page paid ~20
+         round trips to Supabase (2–4 s on a normal connection) before it drew a single
+         pixel — and this app is multi-page, so every click paid it again. The loads do
+         not depend on each other, so they now all start together: the boot costs the
+         SLOWEST query instead of the sum of all of them. Each module keeps its own
+         try/catch, so a table that has not been created yet still degrades on its own. */
+      this.data={events:[],people:[],substages:[],tasks:[],finance:[],weekly:[],
+        projects:[],holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],
+        invoices:[],invalloc:[],delegates:[],codigos:[],payments:[],tickets:[],
+        todos:[],inbox:[],holmsgs:[],spxProps:[],spxLines:[],spxTargets:[],
+        companyMap:[],spxFrags:[],spxEventReg:[],productos:[]};
+      const D=this.data;
+      /* paged: Supabase caps a select at 1000 rows and TRUNCATES SILENTLY (audit Critical 4) */
+      const paged=async tbl=>{const out=[];let from=0,page=1000;
+        for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
+          if(r.error)throw r.error;out.push.apply(out,r.data||[]);
+          if(!r.data||r.data.length<page)break;from+=page;}return out;};
+      /* a column the SQL has not added yet must never be pushed — PostgREST rejects unknowns */
+      const strip=(key,cols)=>cols.forEach(c=>{const i=COLS[key].indexOf(c);if(i>=0)COLS[key].splice(i,1);});
+
+      const pCore=(async()=>{
+        const keys=['events','people','substages','tasks'];
+        const res=await Promise.all(keys.map(k=>sb.from(TABLES[k]).select('*').eq('deleted',false).order('id')));
+        const bad=res.find(r=>r.error);
+        if(bad)throw new Error(bad.error.message+' — if the dc_* tables are missing, run dispatch_upgrade.sql in the Supabase SQL editor first.');
+        keys.forEach((k,i)=>{D[k]=res[i].data||[];});
+        /* Projects split is tolerant: until the 2-line SQL adds kind/lanes to dc_events,
+           never push those columns and flag the UI */
+        window._extColsMissing=false;
+        if(D.events.length && !('kind' in D.events[0])){window._extColsMissing=true;strip('events',['kind','lanes']);}
+        /* per-project phases are tolerant the same way (dispatch_projects_phases.sql adds
+           `stages`); without it a project still renders — it just cannot save custom phases */
+        window._phaseColMissing=false;
+        if(D.events.length && !('stages' in D.events[0])){window._phaseColMissing=true;strip('events',['stages']);}
+        /* startDate on people is tolerant the same way (1-line SQL adds it) */
+        if(D.people.length && !('startDate' in D.people[0]))strip('people',['startDate']);
+      })();
+
+      /* claims are tolerant: until dispatch_hr11_claims.sql runs, never push claim/ratify
+         and fall back to the old report form. Explicit probe — the table may legitimately
+         have zero rows. */
+      const pClaim=(async()=>{window._claimReady=true;
+        try{const cp=await sb.from('dc_tcreports').select('claim').limit(1);if(cp.error)throw cp.error;}
+        catch(e){window._claimReady=false;strip('tcreports',['claim','ratify']);}
+      })();
+
       /* finance is tolerant: the app runs fine before dispatch_finance.sql exists */
-      this.data.finance=[];_finReady=false;
-      try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
-        if(fr.error)throw fr.error;this.data.finance=fr.data||[];_finReady=true;
-      }catch(e){console.warn('finance module not ready:',e.message||e);}
-      /* weekly pacing data (dashboard): tolerant + paged (Supabase caps selects at 1000 rows) */
-      this.data.weekly=[];_weeklyReady=false;
-      try{
-        let from=0,page=1000;
-        for(;;){const wr=await sb.from('dc_weekly').select('*').eq('deleted',false).order('id').range(from,from+page-1);
-          if(wr.error)throw wr.error;
-          this.data.weekly.push.apply(this.data.weekly,wr.data||[]);
-          if(!wr.data||wr.data.length<page)break;from+=page;}
-        _weeklyReady=true;
-      }catch(e){this.data.weekly=[];console.warn('weekly module not ready:',e.message||e);}
+      _finReady=false;
+      const pFin=(async()=>{
+        try{const fr=await sb.from('dc_finance').select('*').eq('deleted',false).order('id');
+          if(fr.error)throw fr.error;D.finance=fr.data||[];_finReady=true;
+        }catch(e){console.warn('finance module not ready:',e.message||e);}
+      })();
+
+      /* weekly pacing data (dashboard): tolerant + paged */
+      _weeklyReady=false;
+      const pWeekly=(async()=>{
+        try{D.weekly=await paged('dc_weekly');_weeklyReady=true;}
+        catch(e){D.weekly=[];console.warn('weekly module not ready:',e.message||e);}
+      })();
+
       /* HR module (projects + holidays + timesheets): tolerant too */
-      this.data.projects=[];this.data.holidays=[];this.data.timesheets=[];_hrReady=false;
-      try{
-        /* holidays paged too: ~100+ rows/yr — the 1000-row cap would silently
-           truncate balances in a few seasons (same trap as invoices/SPX) */
-        const pagedHol=(async()=>{const out=[];let from=0,page=1000;
-          for(;;){const r=await sb.from('dc_holidays').select('*').eq('deleted',false).order('id').range(from,from+page-1);
-            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
-            if(!r.data||r.data.length<page)break;from+=page;}return out;})();
-        const [pr,ho,ts]=await Promise.all([
-          sb.from('dc_projects').select('*').eq('deleted',false).order('sort'),
-          pagedHol,
-          sb.from('dc_timesheets').select('*').eq('deleted',false).order('id')]);
-        if(pr.error)throw pr.error;if(ts.error)throw ts.error;
-        this.data.projects=pr.data||[];this.data.holidays=ho||[];this.data.timesheets=ts.data||[];
-        _hrReady=true;
-        /* tolerant like the events kind/lanes split: until dispatch_hol_year.sql adds
-           chargeYear, never push the column (PostgREST rejects unknown columns).
-           The Jan/Feb rule still works — it is derived from the dates. */
-        window._holYearColMissing=false;
-        if(this.data.holidays.length && !('chargeYear' in this.data.holidays[0])){
-          window._holYearColMissing=true;
-          const i2=COLS.holidays.indexOf('chargeYear');if(i2>=0)COLS.holidays.splice(i2,1);
-        }
-        /* event-line cascade is tolerant too: until dispatch_event_lines.sql adds
-           dc_projects."eventId", never push it and skip the auto-project sweep
-           (without the link column the dedupe cannot be trusted). */
-        window._projEvReady=true;
-        if(this.data.projects.length && !('eventId' in this.data.projects[0])){
-          window._projEvReady=false;
-          const i3=COLS.projects.indexOf('eventId');if(i3>=0)COLS.projects.splice(i3,1);
-        }
-      }catch(e){console.warn('HR module not ready:',e.message||e);}
+      _hrReady=false;
+      const pHr=(async()=>{
+        try{
+          /* holidays paged too: ~100+ rows/yr — the 1000-row cap would silently
+             truncate balances in a few seasons (same trap as invoices/SPX) */
+          const [pr,ho,ts]=await Promise.all([
+            sb.from('dc_projects').select('*').eq('deleted',false).order('sort'),
+            paged('dc_holidays'),
+            sb.from('dc_timesheets').select('*').eq('deleted',false).order('id')]);
+          if(pr.error)throw pr.error;if(ts.error)throw ts.error;
+          D.projects=pr.data||[];D.holidays=ho||[];D.timesheets=ts.data||[];
+          _hrReady=true;
+          /* tolerant like the events kind/lanes split: until dispatch_hol_year.sql adds
+             chargeYear, never push the column. The Jan/Feb rule still works — it is
+             derived from the dates. */
+          window._holYearColMissing=false;
+          if(D.holidays.length && !('chargeYear' in D.holidays[0])){window._holYearColMissing=true;strip('holidays',['chargeYear']);}
+          /* event-line cascade is tolerant too: until dispatch_event_lines.sql adds
+             dc_projects."eventId", never push it and skip the auto-project sweep
+             (without the link column the dedupe cannot be trusted). */
+          window._projEvReady=true;
+          if(D.projects.length && !('eventId' in D.projects[0])){window._projEvReady=false;strip('projects',['eventId']);}
+        }catch(e){console.warn('HR module not ready:',e.message||e);}
+      })();
+
       /* time clock (registro horario): append-only + no "deleted" column → own paged load */
-      this.data.timeclock=[];this.data.tcreports=[];_tcReady=false;
-      try{
-        let from=0,page=1000;
-        for(;;){const tr=await sb.from('dc_timeclock').select('*').order('id').range(from,from+page-1);
-          if(tr.error)throw tr.error;
-          this.data.timeclock.push.apply(this.data.timeclock,tr.data||[]);
-          if(!tr.data||tr.data.length<page)break;from+=page;}
-        const rp=await sb.from('dc_tcreports').select('*').eq('deleted',false).order('id');
-        if(rp.error)throw rp.error;this.data.tcreports=rp.data||[];
-        _tcReady=true;
-      }catch(e){console.warn('time clock module not ready:',e.message||e);}
+      _tcReady=false;
+      const pTc=(async()=>{
+        try{
+          const out=[];let from=0,page=1000;
+          for(;;){const tr=await sb.from('dc_timeclock').select('*').order('id').range(from,from+page-1);
+            if(tr.error)throw tr.error;out.push.apply(out,tr.data||[]);
+            if(!tr.data||tr.data.length<page)break;from+=page;}
+          D.timeclock=out;
+          const rp=await sb.from('dc_tcreports').select('*').eq('deleted',false).order('id');
+          if(rp.error)throw rp.error;D.tcreports=rp.data||[];
+          _tcReady=true;
+        }catch(e){console.warn('time clock module not ready:',e.message||e);}
+      })();
+
       /* "at an event" away-days (tolerant — app runs fine before dispatch_hr8_events.sql) */
-      this.data.eventaway=[];_eventReady=false;
-      try{const er=await sb.from('dc_eventaway').select('*').eq('deleted',false).order('id');
-        if(er.error)throw er.error;this.data.eventaway=er.data||[];_eventReady=true;
-      }catch(e){console.warn('event-away module not ready:',e.message||e);}
+      _eventReady=false;
+      const pAway=(async()=>{
+        try{const er=await sb.from('dc_eventaway').select('*').eq('deleted',false).order('id');
+          if(er.error)throw er.error;D.eventaway=er.data||[];_eventReady=true;
+        }catch(e){console.warn('event-away module not ready:',e.message||e);}
+      })();
+
       /* Facturación (invoices + allocations + delegates + código lookup): tolerant —
          the app runs fine before dispatch_facturacion.sql is applied */
-      this.data.invoices=[];this.data.invalloc=[];this.data.delegates=[];this.data.codigos=[];_billReady=false;
-      try{
-        /* paged: Supabase caps selects at 1000 rows — invoices/allocs/delegates grow past
-           that within a couple of seasons and the cap TRUNCATES SILENTLY (audit Critical 4) */
-        const paged=async tbl=>{const out=[];let from=0,page=1000;
-          for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
-            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
-            if(!r.data||r.data.length<page)break;from+=page;}return out;};
-        const [iv,al,dg,cg]=await Promise.all([
-          paged('dc_invoices'),paged('dc_invoice_alloc'),paged('dc_delegates'),paged('dc_codigos')]);
-        this.data.invoices=iv;this.data.invalloc=al;this.data.delegates=dg;this.data.codigos=cg;
-        _billReady=true;
-        /* Invoicing 2.0 line columns are tolerant: until dispatch_invoicing2.sql runs,
-           never push producto/tipo_pase/qty/price on alloc rows (PostgREST rejects
-           unknown columns). Explicit probe — the table may legitimately be empty. */
-        window._inv2Ready=true;
+      _billReady=false;
+      const pBill=(async()=>{
+        try{
+          const [iv,al,dg,cg]=await Promise.all([
+            paged('dc_invoices'),paged('dc_invoice_alloc'),paged('dc_delegates'),paged('dc_codigos')]);
+          D.invoices=iv;D.invalloc=al;D.delegates=dg;D.codigos=cg;
+          _billReady=true;
+        }catch(e){console.warn('facturación module not ready:',e.message||e);}
+      })();
+      /* Invoicing 2.0 line columns are tolerant: until dispatch_invoicing2.sql runs,
+         never push producto/tipo_pase/qty/price on alloc rows. Explicit probe — the
+         table may legitimately be empty. Runs beside the load, not after it. */
+      const pInv2=(async()=>{window._inv2Ready=true;
         try{const p2=await sb.from('dc_invoice_alloc').select('qty').limit(1);if(p2.error)throw p2.error;}
-        catch(e){window._inv2Ready=false;
-          ['producto','tipo_pase','qty','price'].forEach(c=>{const i2=COLS.invalloc.indexOf(c);if(i2>=0)COLS.invalloc.splice(i2,1);});}
-      }catch(e){console.warn('facturación module not ready:',e.message||e);}
-      /* split-payment ledger (tolerant — its OWN try so a missing table never
-         aborts the invoices/allocs load above; run dispatch_invoice_payments.sql) */
-      this.data.payments=[];_payReady=false;
-      try{
-        const out=[];let from=0,page=1000;
-        for(;;){const r=await sb.from('dc_invoice_payments').select('*').eq('deleted',false).order('id').range(from,from+page-1);
-          if(r.error)throw r.error;out.push.apply(out,r.data||[]);
-          if(!r.data||r.data.length<page)break;from+=page;}
-        this.data.payments=out;_payReady=true;
-      }catch(e){console.warn('invoice payments module not ready:',e.message||e);}
+        catch(e){window._inv2Ready=false;strip('invalloc',['producto','tipo_pase','qty','price']);}
+      })();
+
+      /* the products a line can be sold as (dc_productos). Tolerant: without the table
+         the built-in list still works, the "Products" pop-up just says to run the SQL. */
+      _prodReady=false;
+      const pProd=(async()=>{
+        try{const pr=await sb.from('dc_productos').select('*').eq('deleted',false).order('sort');
+          if(pr.error)throw pr.error;D.productos=pr.data||[];_prodReady=true;
+        }catch(e){console.warn('products table not ready:',e.message||e);}
+      })();
+
+      /* split-payment ledger (tolerant — its OWN loader so a missing table never
+         affects the invoices/allocs load; run dispatch_invoice_payments.sql) */
+      _payReady=false;
+      const pPay=(async()=>{
+        try{D.payments=await paged('dc_invoice_payments');_payReady=true;}
+        catch(e){console.warn('invoice payments module not ready:',e.message||e);}
+      })();
+
       /* team request box (tolerant — app runs fine before dispatch_tickets.sql) */
-      this.data.tickets=[];_tickReady=false;
-      try{const tk=await sb.from('dc_tickets').select('*').eq('deleted',false).order('id');
-        if(tk.error)throw tk.error;this.data.tickets=tk.data||[];_tickReady=true;
-      }catch(e){console.warn('requests module not ready:',e.message||e);}
+      _tickReady=false;
+      const pTick=(async()=>{
+        try{const tk=await sb.from('dc_tickets').select('*').eq('deleted',false).order('id');
+          if(tk.error)throw tk.error;D.tickets=tk.data||[];_tickReady=true;
+        }catch(e){console.warn('requests module not ready:',e.message||e);}
+      })();
+
       /* personal to-dos + notifications inbox (tolerant — run dispatch_me_inbox.sql to enable) */
-      this.data.todos=[];_todoReady=false;
-      try{const td=await sb.from('dc_todos').select('*').eq('deleted',false).order('sort');
-        if(td.error)throw td.error;this.data.todos=td.data||[];_todoReady=true;
-        /* colour coding is tolerant: probe the column itself (a person with an empty
-           list has no row to inspect). Until dispatch_todos_color.sql runs, never push
-           `color` — PostgREST rejects unknown columns — and the UI hides the palette. */
-        window._tdColorMissing=false;
-        const probe=await sb.from('dc_todos').select('color').limit(1);
-        if(probe.error){window._tdColorMissing=true;
-          const ic=COLS.todos.indexOf('color');if(ic>=0)COLS.todos.splice(ic,1);}
-      }catch(e){console.warn('to-dos module not ready:',e.message||e);}
-      this.data.inbox=[];_inboxReady=false;
-      try{const ib=await sb.from('dc_inbox').select('*').eq('deleted',false).order('id',{ascending:false}).limit(400);
-        if(ib.error)throw ib.error;this.data.inbox=ib.data||[];_inboxReady=true;
-      }catch(e){console.warn('inbox module not ready:',e.message||e);}
-      /* messages on holiday requests (tolerant — the app runs fine before dispatch_hol_msgs.sql).
-         RLS already hides approver-only messages from the requester, so whatever comes back
-         here is what this user is allowed to see. */
-      this.data.holmsgs=[];_holmsgReady=false;
-      try{const hm=await sb.from('dc_holiday_msgs').select('*').eq('deleted',false).order('id');
-        if(hm.error)throw hm.error;this.data.holmsgs=hm.data||[];_holmsgReady=true;
-      }catch(e){console.warn('holiday messages not ready:',e.message||e);}
-      /* SPX sales module (proposals + lines + targets + company crosswalk): tolerant —
-         the app runs fine before dispatch_spx.sql is applied */
-      this.data.spxProps=[];this.data.spxLines=[];this.data.spxTargets=[];this.data.companyMap=[];_spxReady=false;
-      try{
-        /* paged like facturación — the proposal board already imports ~full seasons */
-        const paged=async tbl=>{const out=[];let from=0,page=1000;
-          for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
-            if(r.error)throw r.error;out.push.apply(out,r.data||[]);
-            if(!r.data||r.data.length<page)break;from+=page;}return out;};
-        const [sp,sl,stg,cm]=await Promise.all([
-          paged('dc_spx_proposals'),paged('dc_spx_lines'),paged('dc_spx_targets'),paged('dc_company_map')]);
-        this.data.spxProps=sp;this.data.spxLines=sl;this.data.spxTargets=stg;this.data.companyMap=cm;
-        _spxReady=true;
-      }catch(e){console.warn('SPX module not ready:',e.message||e);}
+      _todoReady=false;
+      const pTodo=(async()=>{
+        try{const td=await sb.from('dc_todos').select('*').eq('deleted',false).order('sort');
+          if(td.error)throw td.error;D.todos=td.data||[];_todoReady=true;
+          /* colour coding is tolerant: probe the column itself (a person with an empty
+             list has no row to inspect). Until dispatch_todos_color.sql runs, never push
+             `color` and the UI hides the palette. */
+          window._tdColorMissing=false;
+          const probe=await sb.from('dc_todos').select('color').limit(1);
+          if(probe.error){window._tdColorMissing=true;strip('todos',['color']);}
+        }catch(e){console.warn('to-dos module not ready:',e.message||e);}
+      })();
+      _inboxReady=false;
+      const pInbox=(async()=>{
+        try{const ib=await sb.from('dc_inbox').select('*').eq('deleted',false).order('id',{ascending:false}).limit(400);
+          if(ib.error)throw ib.error;D.inbox=ib.data||[];_inboxReady=true;
+        }catch(e){console.warn('inbox module not ready:',e.message||e);}
+      })();
+
+      /* messages ON a holiday request (tolerant — the app runs fine before dispatch_hol_msgs.sql).
+         RLS already hides approver-only messages from the requester. */
+      _holmsgReady=false;
+      const pHolmsg=(async()=>{
+        try{const hm=await sb.from('dc_holiday_msgs').select('*').eq('deleted',false).order('id');
+          if(hm.error)throw hm.error;D.holmsgs=hm.data||[];_holmsgReady=true;
+        }catch(e){console.warn('holiday messages not ready:',e.message||e);}
+      })();
+
+      /* SPX sales module (proposals + lines + targets + company crosswalk): tolerant */
+      _spxReady=false;
+      const pSpx=(async()=>{
+        try{
+          const [sp,sl,stg,cm]=await Promise.all([
+            paged('dc_spx_proposals'),paged('dc_spx_lines'),paged('dc_spx_targets'),paged('dc_company_map')]);
+          D.spxProps=sp;D.spxLines=sl;D.spxTargets=stg;D.companyMap=cm;
+          _spxReady=true;
+        }catch(e){console.warn('SPX module not ready:',e.message||e);}
+      })();
       /* SPX billing fragments (tolerant + separate: a contract with no fragments simply
          bills in one invoice, exactly as before dispatch_spx_fragments.sql is applied) */
-      this.data.spxFrags=[];_spxFragReady=false;
-      try{const fr=await sb.from('dc_spx_fragments').select('*').eq('deleted',false).order('sort');
-        if(fr.error)throw fr.error;this.data.spxFrags=fr.data||[];_spxFragReady=true;
-      }catch(e){console.warn('SPX billing fragments not ready:',e.message||e);}
-      /* SPX event registry (tolerant + separate: the board works before it exists, falling back to proposal-derived events) */
-      this.data.spxEventReg=[];_spxEvReady=false;
-      try{const er=await sb.from('dc_spx_events').select('*').eq('deleted',false).order('sort');
-        if(er.error)throw er.error;this.data.spxEventReg=er.data||[];_spxEvReady=true;
-      }catch(e){console.warn('SPX event registry not ready:',e.message||e);}
-      if(!this.data.people.length){
+      _spxFragReady=false;
+      const pFrag=(async()=>{
+        try{const fr=await sb.from('dc_spx_fragments').select('*').eq('deleted',false).order('sort');
+          if(fr.error)throw fr.error;D.spxFrags=fr.data||[];_spxFragReady=true;
+        }catch(e){console.warn('SPX billing fragments not ready:',e.message||e);}
+      })();
+      /* SPX event registry (tolerant + separate: the board works before it exists, falling
+         back to proposal-derived events) */
+      _spxEvReady=false;
+      const pReg=(async()=>{
+        try{const er=await sb.from('dc_spx_events').select('*').eq('deleted',false).order('sort');
+          if(er.error)throw er.error;D.spxEventReg=er.data||[];_spxEvReady=true;
+        }catch(e){console.warn('SPX event registry not ready:',e.message||e);}
+      })();
+
+      await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg]);
+      rebuildProductos();
+      if(!D.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
       }
       snapshot();
-      subscribeRealtime();
+      /* the websocket + ~25 channel subscriptions used to be set up before the page drew.
+         A macrotask puts them AFTER the first render, where the user cannot feel them. */
+      setTimeout(()=>{try{subscribeRealtime();}catch(e){console.warn('realtime:',e.message||e);}},0);
       return this.data;
     }
     try{this.data=JSON.parse(localStorage.getItem('dispatchStore'));}catch(e){this.data=null;}
     if(!this.data||this.data.v!==STORE_VERSION){this.data=buildSeed();localStorage.setItem('dispatchStore',JSON.stringify(this.data));}
     if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
+    if(!this.data.productos)this.data.productos=[]; // …and predate the custom-product list
+    rebuildProductos();
     return this.data;
   },
   save(){if(USE_SUPABASE){clearTimeout(_saveTimer);_saveTimer=setTimeout(()=>{_saveTimer=null;this.syncNow();},700);}else localStorage.setItem('dispatchStore',JSON.stringify(this.data));},
@@ -1808,6 +1851,7 @@ const DB={
         if(k==='todos'&&!_todoReady)continue; // to-dos table not created yet
         if(k==='inbox'&&!_inboxReady)continue; // inbox table not created yet
         if(k==='holmsgs'&&!_holmsgReady)continue; // holiday messages table not created yet
+        if(k==='productos'&&!_prodReady)continue; // custom-products table not created yet
         if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)||(k==='spxFrags'&&!_spxFragReady)))continue; // SPX tables not created yet
         const tbl=TABLES[k],seen={},inserts=[],updates=[],dels=[];
         (this.data[k]||[]).forEach(r=>{
@@ -1916,6 +1960,9 @@ const DB={
   get delegates(){return this.data.delegates||[];},
   get codigos(){return this.data.codigos||[];},
   billReady(){return !USE_SUPABASE||_billReady;},
+  /* ---- products accounting maintains itself (built-ins live in the code) ---- */
+  get productos(){return this.data.productos||[];},
+  prodReady(){return !USE_SUPABASE||_prodReady;},
   /* ---- split-payment ledger: partial payments against an invoice ---- */
   get payments(){return this.data.payments||[];},
   payReady(){return !USE_SUPABASE||_payReady;},
@@ -2073,8 +2120,34 @@ function delegateState(d){
     if(inv&&inv.status!=='pagado')return {key:'unpaid',bg:'#F8D7D7',label:'invoice not paid yet'};}
   return {key:'ok',bg:'#fff',label:''};
 }
-const PRODUCTOS=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones','refacturacion'];
-const PRODUCTO_LABEL={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings',refacturacion:'Refacturación'};
+/* ---- the products an invoice line can be sold as ----
+   The ten BUILT-IN ones carry behaviour in the code (tickets counts passes, abono is a
+   credit note, sponsorship opens a delegate…), so they are never editable or removable.
+   Accounting adds the rest itself in the Products pop-up on Facturación (dc_productos) —
+   "Pase Online" for the Talks was the first. PRODUCTOS / PRODUCTO_LABEL keep exactly the
+   shape every page already reads; rebuildProductos() re-fills them after each load. */
+const PRODUCTOS_BUILTIN=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones','refacturacion'];
+const PRODUCTO_LABEL_BUILTIN={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings',refacturacion:'Refacturación'};
+let PRODUCTOS=PRODUCTOS_BUILTIN.slice();
+let PRODUCTO_LABEL=Object.assign({},PRODUCTO_LABEL_BUILTIN);
+let TICKET_PRODS=['tickets'];
+function isBuiltinProd(k){return PRODUCTOS_BUILTIN.indexOf(k)>=0;}
+/* "does this product behave like Tickets?" — shows the pass-type column, counts passes,
+   opens a delegate row and lands as ticket money on the SPX board. A custom product ticked
+   "counts passes" (Pase Online) answers yes, which is why the code asks this instead of
+   comparing producto==='tickets'. */
+function isTicketProd(k){return TICKET_PRODS.indexOf(k)>=0;}
+function rebuildProductos(){
+  PRODUCTOS=PRODUCTOS_BUILTIN.slice();
+  PRODUCTO_LABEL=Object.assign({},PRODUCTO_LABEL_BUILTIN);
+  TICKET_PRODS=['tickets'];
+  ((DB.data&&DB.data.productos)||[]).slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0)).forEach(p=>{
+    const k=(''+(p.key||'')).trim();if(!k||isBuiltinProd(k))return;
+    PRODUCTO_LABEL[k]=p.label||k;                 // a retired product keeps its label so old invoices still read
+    if(p.archived!==true)PRODUCTOS.push(k);       // …but drops out of the pickers for new ones
+    if(p.pases===true)TICKET_PRODS.push(k);
+  });
+}
 const TIPO_PASES={single:1,double:2,triple:3,quad:4};
 const INV_STATUS={pagado:'Paid',no_pagado:'Unpaid',cancelado:'Cancelled',abono:'Credit note'};
 const IVA_MOTIVOS=['exempt','not subject','reverse charge (ISP)','export'];
@@ -2215,7 +2288,9 @@ async function boot(renderFn){
   try{await DB.load();}catch(e){document.body.innerHTML='<div style="font-family:Segoe UI,sans-serif;padding:40px;color:#A32D2D;max-width:560px">Could not load data: '+(e.message||e)
     +'<br><br><button onclick="location.reload()" style="font:inherit;padding:8px 16px;background:#FF4A00;color:#fff;border:none;border-radius:8px;cursor:pointer">Try again</button></div>';return;}
   if(USE_SUPABASE&&sb){
-    try{const {data}=await sb.auth.getUser();const em=data&&data.user&&data.user.email;DB.currentUser=personByEmail(em);
+    /* getSession() reads the token already in this browser; getUser() was a second network
+       round trip to /auth/v1/user on every single page load, for an email we hold locally. */
+    try{const {data}=await sb.auth.getSession();const em=data&&data.session&&data.session.user&&data.session.user.email;DB.currentUser=personByEmail(em);
       const w=document.getElementById('whoami');if(w&&em)w.textContent=em+(DB.currentUser?'':' (not in roster)')+' · ';
       if(em&&!DB.currentUser)rosterBanner(em);
     }catch(e){}

@@ -37,6 +37,9 @@
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   td,th{text-align:left;padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap}
   th{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px}
+  th.sortable{cursor:pointer;user-select:none} th.sortable:hover{background:#e2dfd6;color:var(--charcoal)}
+  th.sorton{background:#ded8c8;color:var(--charcoal)}
+  .sarr{font-size:9px;margin-left:2px} .sarr-dim{opacity:.32;font-weight:400}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   tr.abono td{background:#EFE3FB}   /* invoice-level colour: Abono = purple */
   tr.cancelado td{background:#F8D7D7} /* Cancelado = red */
@@ -87,7 +90,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=74"></script>
+<script src="store.js?v=75"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -247,7 +250,7 @@ function render(){
       '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected <span style="font-weight:400;opacity:.75">— cash in '+yearLab+'</span></div></div>'+
       '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding <span style="font-weight:400;opacity:.75">— invoices of '+yearLab+'</span></div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
+    '<div class="panel"><h3>Invoices <button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="cfgProd" title="The products a line can be sold as — add your own (Pase Online…) without asking anyone">🏷 Products</button><button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button> <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button></h3>'+
     '<div class="ytabs">'+yearTabsHtml()+'</div>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
@@ -259,13 +262,14 @@ function render(){
       '<span class="hint" style="margin-left:auto"><span class="allocchip" style="background:#EFE3FB">credit note</span><span class="allocchip" style="background:#F8D7D7">cancelled</span></span>'+
     '</div>'+
     '<div class="tblwrap"><table id="itbl"></table></div>'+
-    '<p class="hint">Sorted by date, then invoice nº. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
+    '<p class="hint">Sorted by date, then invoice nº — <b>click any column header</b> to sort by it, click again to reverse. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
     '';
   renderTable(rows);
   document.getElementById('addInv').onclick=()=>openModal(null);
   document.getElementById('addCredit').onclick=openCreditPicker;
   document.getElementById('histLoad').onclick=openImportModal;
   document.getElementById('cfgCod').onclick=()=>openCodigosModal();
+  document.getElementById('cfgProd').onclick=()=>openProductosModal();
   document.getElementById('xls').onclick=exportExcel;
   const set=(id,k)=>{const el=document.getElementById(id);el.onchange=()=>{flt[k]=el.value;render();};};
   set('f_item','item');set('f_prod','prod');set('f_st','status');set('f_from','from');set('f_to','to');
@@ -293,11 +297,67 @@ function prodCell(i){
   if(!out.length&&i.producto)out.push(PRODUCTO_LABEL[i.producto]||i.producto);
   return out.join(' + ');
 }
+/* ---------- Excel-style column sort (Jesús, 28 jul: "¿se puede poner el ordenar columnas
+   como lo tiene SPX en el de Invoices? A veces me es útil"). Same behaviour as the SPX
+   board: click to sort, click again to reverse, blanks always sink to the bottom. The
+   default (no column picked) stays date → invoice nº. ---------- */
+let SORT={col:null,dir:1};
+function isBlankV(v){return v==null||v===''||(typeof v==='number'&&isNaN(v));}
+function cmpV(a,b,type,dir){
+  const ab=isBlankV(a),bb=isBlankV(b);
+  if(ab&&bb)return 0; if(ab)return 1; if(bb)return -1;
+  let r;
+  if(type==='num')r=(+a)-(+b);
+  else if(type==='date')r=(''+a).localeCompare(''+b);            // ISO YYYY-MM-DD sorts chronologically as text
+  else r=(''+a).localeCompare(''+b,undefined,{sensitivity:'base',numeric:true});
+  return r*dir;
+}
+/* the board's columns, in the order they are rendered below — label, type and the value
+   the sort reads. Change one here and the header follows. */
+function contractOwnerVal(i){
+  const p=i.spxProposalId?(DB.spxProps||[]).find(x=>x.id==i.spxProposalId):null;
+  return p?(p.responsableName||p.responsable||''):'';
+}
+function allocSortVal(i){
+  const a=DB.allocsFor(i.id)[0];if(!a)return '';
+  const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);
+  return c?(c.item||c.codigo||''):'';
+}
+const INV_COLS=[
+  {k:'num',   label:'Invoice nº',            get:i=>i.numero_factura},
+  {k:'fecha', label:'Date',      type:'date',get:i=>i.fecha},
+  {k:'venc',  label:'Due date',  type:'date',get:i=>i.vencimiento},
+  {k:'rs',    label:'Company',               get:i=>i.razon_social},
+  {k:'prod',  label:'Product',               get:i=>prodCell(i)},
+  {k:'pases', label:'Passes',    type:'num', cls:'num', get:i=>invPasses(i)},
+  {k:'base',  label:'Subtotal €',type:'num', cls:'num', get:i=>i.importe_base},
+  {k:'usd',   label:'Subtotal US$',type:'num',cls:'num',get:i=>i.en_usd?i.importe_usd:null},
+  {k:'iva',   label:'VAT',       type:'num', cls:'num', get:i=>i.iva_importe},
+  {k:'total', label:'Total',     type:'num', cls:'num', get:i=>i.total_factura},
+  {k:'st',    label:'Status',                get:i=>INV_STATUS[i.status]||i.status},
+  {k:'ctr',   label:'Contract',              get:i=>contractOwnerVal(i)},
+  {k:'alloc', label:'Analítica (item · código)', get:i=>allocSortVal(i)},
+  {k:'com',   label:'Comments',              get:i=>i.comentarios},
+];
+function applyInvSort(rows){
+  if(!SORT.col)return rows;                                       // no column picked → the caller's default order
+  const col=INV_COLS.find(c=>c.k===SORT.col); if(!col)return rows;
+  return rows.slice().sort((a,b)=>cmpV(col.get(a),col.get(b),col.type||'text',SORT.dir));
+}
+function invThCells(){
+  return INV_COLS.map(c=>{
+    const active=SORT.col===c.k;
+    const arr=active?(SORT.dir>0?'<span class="sarr">▲</span>':'<span class="sarr">▼</span>'):'<span class="sarr sarr-dim">↕</span>';
+    return '<th class="sortable'+(c.cls?' '+c.cls:'')+(active?' sorton':'')+'" data-sort="'+c.k+'" title="Sort by '+esc(c.label)+'">'+esc(c.label)+' '+arr+'</th>';
+  }).join('')+'<th style="width:50px"></th>';
+}
+function setSort(key){if(SORT.col===key)SORT.dir=-SORT.dir;else{SORT.col=key;SORT.dir=1;}renderTable(filtered());}
 function renderTable(rows){
   /* "Entered by" left the board (Jesús 28 Jul): it pushed the ✎ off-screen, and getting to
      it meant scrolling right at the very bottom of the page and back up. It stays on the
      invoice itself and in the Excel export. "Contract salesperson" → "Contract" for width. */
-  let h='<tr><th>Invoice nº</th><th>Date</th><th>Due date</th><th>Company</th><th>Product</th><th class="num">Passes</th><th class="num">Subtotal €</th><th class="num">Subtotal US$</th><th class="num">VAT</th><th class="num">Total</th><th>Status</th><th>Contract</th><th>Analítica (item · código)</th><th>Comments</th><th style="width:50px"></th></tr>';
+  rows=applyInvSort(rows);
+  let h='<tr>'+invThCells()+'</tr>';
   if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':' yet — create the first one with “+ New invoice”.')+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
@@ -327,6 +387,7 @@ function renderTable(rows){
       '<td><button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button></td></tr>';
   });
   document.getElementById('itbl').innerHTML=h;
+  document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>setSort(th.dataset.sort));
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(DB.invoice(b.dataset.edit)));
   document.querySelectorAll('[data-ctr]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openModal(DB.invoice(b.dataset.ctr));};});
   document.querySelectorAll('[data-st]').forEach(s=>s.onchange=()=>{
@@ -440,6 +501,105 @@ function wireCodigos(){
   if(cc)cc.onclick=()=>{closeModal();render();};
 }
 
+/* ---------- products (the "Producto" column of a line) ---------- */
+/* Belén, 29 jul: "hay que añadir Pase Online para los Talks… o un botón para no estar
+   pidiendo productos". So accounting adds its own here instead of asking for a deploy.
+   The ten built-in products stay in the code because they carry behaviour (tickets counts
+   passes, abono is a credit note, sponsorship opens a delegate seat) — they are listed
+   read-only for context. A custom product ticked "counts passes" behaves exactly like
+   Tickets: pass-type column, passes on the board, delegate seats, ticket money on SPX. */
+function prodSlug(label){
+  const s=(''+(label||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  return s||'producto';
+}
+function prodKeyFree(base,id){
+  let k=base,n=2;
+  while(isBuiltinProd(k)||DB.productos.some(p=>p.id!=id&&p.key===k)){k=base+'_'+n;n++;}
+  return k;
+}
+function prodUsage(key){
+  return DB.invoiceAllocs.filter(a=>a.producto===key).length+DB.invoices.filter(i=>i.producto===key).length;
+}
+function productosBodyHtml(msg){
+  const mine=DB.productos.slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0));
+  let h='<h3>Products</h3>'+
+    '<p class="hint" style="margin:0 0 10px">What a line can be sold as. The list at the top is built into the Dispatch and cannot change — those products carry behaviour. '+
+    'Add your own below: tick <b>Counts passes</b> when it is a seat someone attends with (that gives it the pass-type column, the Passes total and a delegate seat, exactly like Tickets). '+
+    'Untick <b>Live</b> to retire one — it drops out of new invoices while old ones still read correctly.</p>'+
+    (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
+    (DB.prodReady()?'':'<div class="warn" style="margin:0 0 10px">The products table is not in the database yet — nothing added here can be saved.</div>')+
+    '<div style="max-height:56vh;overflow:auto">'+
+    '<table><tr><th>Product</th><th style="width:110px;text-align:center" title="Behaves like Tickets: pass type × qty, Passes column, delegate seat, ticket money on the SPX board">Counts passes</th><th style="width:56px;text-align:center">Live</th><th style="width:70px" class="num">In use</th><th style="width:24px"></th></tr>';
+  PRODUCTOS_BUILTIN.forEach(k=>{
+    h+='<tr><td>'+esc(PRODUCTO_LABEL_BUILTIN[k])+' <span class="hint">· built in</span></td>'+
+      '<td style="text-align:center">'+(k==='tickets'?'✓':'<span class="hint">—</span>')+'</td>'+
+      '<td style="text-align:center"><span class="hint">always</span></td>'+
+      '<td class="num">'+(prodUsage(k)||'<span class="hint">—</span>')+'</td><td></td></tr>';
+  });
+  if(!mine.length)h+='<tr><td colspan="5" class="hint">No products of your own yet — add one below.</td></tr>';
+  mine.forEach(p=>{
+    h+='<tr'+(p.archived?' style="opacity:.55"':'')+'><td><input data-pf="label" data-id="'+p.id+'" value="'+esc(p.label||'')+'" style="width:220px" placeholder="e.g. Pase Online">'+
+      (p.key?' <span class="hint" title="Internal name, fixed once created so old invoices keep resolving">'+esc(p.key)+'</span>':'')+'</td>'+
+      '<td style="text-align:center"><input type="checkbox" data-pf="pases" data-id="'+p.id+'"'+(p.pases?' checked':'')+'></td>'+
+      '<td style="text-align:center"><input type="checkbox" data-pf="live" data-id="'+p.id+'"'+(p.archived?'':' checked')+'></td>'+
+      '<td class="num">'+(prodUsage(p.key)||'<span class="hint">—</span>')+'</td>'+
+      '<td><button class="del" data-pdel="'+p.id+'">×</button></td></tr>';
+  });
+  h+='</table></div><div class="mrow"><span class="amsg" id="prod_msg"></span><button class="btn sm" id="addProd">+ Add product</button><button class="btn primary" id="prod_close">Done</button></div>';
+  return h;
+}
+function openProductosModal(msg){
+  document.getElementById('modalbody').innerHTML=productosBodyHtml(msg);
+  document.getElementById('modal').classList.add('on');
+  wireProductos();
+}
+function wireProductos(){
+  const say=t=>{const m=document.getElementById('prod_msg');if(m){m.style.color='var(--red)';m.textContent=t||'';}};
+  document.querySelectorAll('[data-pf]').forEach(el=>el.onchange=()=>{
+    const p=DB.productos.find(x=>x.id==el.dataset.id);if(!p)return;
+    const f=el.dataset.pf;
+    if(f==='label'){
+      const v=el.value.trim();
+      if(!v){say('Give the product a name.');el.value=p.label||'';return;}
+      if(PRODUCTOS_BUILTIN.some(k=>PRODUCTO_LABEL_BUILTIN[k].toLowerCase()===v.toLowerCase())||
+         DB.productos.some(x=>x.id!=p.id&&(''+(x.label||'')).toLowerCase()===v.toLowerCase())){
+        say('There is already a product called "'+v+'".');el.value=p.label||'';return;}
+      p.label=v;
+      /* the key is minted once, from the first name given, and then never moves — invoice
+         lines store the key, so renaming the product must not orphan them */
+      if(!p.key)p.key=prodKeyFree(prodSlug(v),p.id);
+    }
+    else if(f==='pases')p.pases=el.checked;
+    else if(f==='live')p.archived=!el.checked;
+    rebuildProductos();DB.save();openProductosModal();
+  });
+  document.querySelectorAll('[data-pdel]').forEach(b=>b.onclick=()=>{
+    const p=DB.productos.find(x=>x.id==b.dataset.pdel);if(!p)return;
+    const used=prodUsage(p.key);
+    if(used){say('"'+(p.label||p.key)+'" is on '+used+' invoice line(s) — untick Live to retire it instead of deleting.');return;}
+    if(!confirm('Remove the product "'+(p.label||p.key)+'"?'))return;
+    DB.data.productos=DB.productos.filter(x=>x.id!=p.id);
+    rebuildProductos();DB.save();openProductosModal();
+  });
+  const ap=document.getElementById('addProd');
+  if(ap)ap.onclick=()=>{
+    if(!DB.prodReady()){say('The products table is not in the database yet.');return;}
+    /* asked for up front: the key is minted from the name, and a nameless row would
+       collide with the next nameless row on the unique index */
+    const name=(prompt('Name of the new product — e.g. Pase Online')||'').trim();
+    if(!name)return;
+    if(PRODUCTOS_BUILTIN.some(k=>PRODUCTO_LABEL_BUILTIN[k].toLowerCase()===name.toLowerCase())||
+       DB.productos.some(x=>(''+(x.label||'')).toLowerCase()===name.toLowerCase())){
+      say('There is already a product called "'+name+'".');return;}
+    const sort=DB.productos.reduce((m,p)=>Math.max(m,+p.sort||0),0)+10;
+    DB.productos.push({id:DB.newId(),key:prodKeyFree(prodSlug(name),null),label:name,pases:false,sort:sort,archived:false});
+    rebuildProductos();DB.save();openProductosModal();
+  };
+  const pc=document.getElementById('prod_close');
+  if(pc)pc.onclick=()=>{closeModal();render();};
+}
+
 /* ---------- add / edit modal ---------- */
 /* contracts to link an invoice to = live WON proposals (the one already
    linked stays listed even if its status later changes, so edits never wipe it) */
@@ -473,8 +633,7 @@ function openFragEditor(propId,backTo){
   if(!p){alert('Pick the contract first.');return;}
   if(!DB.spxFragsReady()){alert('Contract splitting needs dispatch_spx_fragments.sql to be run in Supabase first.');return;}
   const draw=msg=>{
-    const fr=DB.spxFragsFor(propId),cVal=+p.valueEur||0;
-    const sum=fr.reduce((s,f)=>s+(+f.amount||0),0),diff=num2(cVal-sum);
+    const fr=DB.spxFragsFor(propId),cVal=+p.valueEur||0;   // running totals live in foot()
     let h='<h3>✂ Split contract — '+esc(p.company||'?')+'</h3>'+
       '<p class="hint" style="margin:0 0 10px">Contract value <b>'+eurF(cVal)+'</b>. Break it into the invoices it will really be billed in '+
       '(Verdian: 6.000 € now, the rest in October). Each invoice then links to its own slice, and the SPX board shows how much of the contract is actually invoiced and collected.</p>'+
@@ -486,22 +645,35 @@ function openFragEditor(propId,backTo){
       '<td><input type="date" data-ff="expected" data-id="'+f.id+'" value="'+(f.expected||'')+'" style="width:100%"></td>'+
       '<td>'+(Math.abs(inv)>0.005?'<b style="color:var(--green)">'+eurF(inv)+'</b>':'<span class="hint">—</span>')+'</td>'+
       '<td><button class="del" data-fdel="'+f.id+'">×</button></td></tr>';});
-    h+='</table>'+
-      '<p class="hint" style="margin:8px 0 0">Fragments total <b>'+eurF(sum)+'</b> of '+eurF(cVal)+
-        (Math.abs(diff)>0.01?' — <b style="color:var(--amber)">'+eurF(Math.abs(diff))+(diff>0?' still unallocated':' over the contract value')+'</b>':' — <b style="color:var(--green)">matches ✓</b>')+'</p>'+
-      '<div class="mrow"><span class="amsg" id="fr_msg"></span><button class="btn sm" id="fr_add">+ Add fragment</button>'+
-        (Math.abs(diff)>0.01&&fr.length?'<button class="btn sm" id="fr_rest">+ Rest ('+eurF(diff)+')</button>':'')+
-        '<button class="btn primary" id="fr_done">Done</button></div>';
+    h+='</table><div id="fr_foot"></div>';
     document.getElementById('modalbody').innerHTML=h;
     document.getElementById('modal').classList.add('on');
+    foot();
+    /* Jesús, 28 jul: "para meter la fecha a mano, cuando escribes un número rápidamente se
+       deselecciona". A native date input fires `change` the moment the three segments make a
+       valid date — i.e. WHILE he is still typing — and the old handler redrew the whole table,
+       destroying the input under his cursor. Only the totals below actually depend on a
+       change, so only the totals are redrawn now. */
     document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
       const f=DB.spxFragById(el.dataset.id);if(!f)return;
       f[el.dataset.ff]=el.dataset.ff==='amount'?num2(el.value):el.value;
-      DB.save();draw('');});
+      DB.save();foot();});
     document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=()=>{
       const used=fragNet(b.dataset.fdel,null);
       if(Math.abs(used)>0.005){draw('That fragment already carries '+eurF(used)+' of invoices — unlink them first.');return;}
       DB.data.spxFrags=DB.spxFrags.filter(x=>x.id!=b.dataset.fdel);DB.save();draw('');});
+  };
+  /* the only part of the editor that changes as you type: the running total and the
+     buttons that depend on it. Redrawn on its own so the inputs above keep their focus. */
+  const foot=()=>{
+    const box=document.getElementById('fr_foot');if(!box)return;
+    const fr=DB.spxFragsFor(propId),cVal=+p.valueEur||0;
+    const sum=fr.reduce((s,f)=>s+(+f.amount||0),0),diff=num2(cVal-sum);
+    box.innerHTML='<p class="hint" style="margin:8px 0 0">Fragments total <b>'+eurF(sum)+'</b> of '+eurF(cVal)+
+        (Math.abs(diff)>0.01?' — <b style="color:var(--amber)">'+eurF(Math.abs(diff))+(diff>0?' still unallocated':' over the contract value')+'</b>':' — <b style="color:var(--green)">matches ✓</b>')+'</p>'+
+      '<div class="mrow"><span class="amsg" id="fr_msg"></span><button class="btn sm" id="fr_add">+ Add fragment</button>'+
+        (Math.abs(diff)>0.01&&fr.length?'<button class="btn sm" id="fr_rest">+ Rest ('+eurF(diff)+')</button>':'')+
+        '<button class="btn primary" id="fr_done">Done</button></div>';
     const add=amt=>{const n=DB.spxFragsFor(propId).length;
       DB.spxFrags.push({id:DB.newId(),proposalId:propId,label:(n===0?'1st invoice':n===1?'2nd invoice':(n+1)+'th invoice'),
         amount:num2(amt),expected:null,notes:null,sort:n});
@@ -519,7 +691,7 @@ function rowsFromInvoice(inv){
     if(!cid&&a.eventId!=null&&a.eventId!==''){const m=DB.codigoForEvent(a.eventId);if(m){cid=m.id;cod=cod||m.codigo;}}
     const qty=(a.qty!=null&&a.qty!=='')?+a.qty:1;
     const price=(a.price!=null&&a.price!=='')?+a.price:num2((+a.amount||0)/(qty||1));
-    return {id:a.id,producto:lineProd(a,inv),tipo_pase:a.tipo_pase||(lineProd(a,inv)==='tickets'?(inv.tipo_pase||''):''),
+    return {id:a.id,producto:lineProd(a,inv),tipo_pase:a.tipo_pase||(isTicketProd(lineProd(a,inv))?(inv.tipo_pase||''):''),
       qty:qty,price:price,codigoId:cid||'',codigo:cod||'',eventId:a.eventId,passes:a.passes!=null?a.passes:''};});
 }
 function blankRow(){return {id:null,producto:'',tipo_pase:'',qty:1,price:'',codigoId:'',codigo:'',eventId:'',passes:''};}
@@ -577,8 +749,11 @@ function openModal(inv,preset){
         '<div class="totline usdf" style="display:none;border-top:1px dashed var(--line);margin-top:6px;padding-top:8px"><span>EUR for accounting <span class="hint">(manual)</span></span><input id="m_eur" type="number" step="any" value="'+(i.en_usd&&i.importe_base!=null?i.importe_base:'')+'" style="width:110px;text-align:right"></div>'+
       '</div>'+
     '</div>'+
-    '<div class="sect" id="paysect" style="margin-top:12px">Cobros / Payments <span class="hint" style="text-transform:none;font-weight:400">— record each partial payment (deposit now, balance later…); the invoice turns Paid on its own when the outstanding balance reaches zero</span></div>'+
-    '<div id="paybox"></div>'+
+    /* Cobros / Payments (the per-invoice instalment ledger) is OFF the form: Jesús, 28 jul,
+       "esto de aquí lo eliminamos ya que no se usará, lo que necesitábamos era el Split" —
+       instalments are agreed on the CONTRACT and billed as separate invoices (✂ Split),
+       not collected against one invoice. Nothing was ever recorded in it (0 rows), so the
+       code and the table stay untouched behind it: put the two lines back and it returns. */
     '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
   document.getElementById('modal').classList.add('on');
   wireModal(i);
@@ -595,7 +770,7 @@ function renderLines(){
   allocRows.forEach((a,ix)=>{
     const warn=a.codigoId&&!a.codigo;
     h+='<tr><td><select data-lf="producto" data-ix="'+ix+'">'+prodOpts(a.producto)+'</select></td>'+
-    '<td>'+(a.producto==='tickets'?'<select data-lf="tipo_pase" data-ix="'+ix+'">'+paseOpts(a.tipo_pase)+'</select>':'<span class="hint" style="display:block;text-align:center">—</span>')+'</td>'+
+    '<td>'+(isTicketProd(a.producto)?'<select data-lf="tipo_pase" data-ix="'+ix+'">'+paseOpts(a.tipo_pase)+'</select>':'<span class="hint" style="display:block;text-align:center">—</span>')+'</td>'+
     '<td><input type="number" step="any" min="0" data-lf="qty" data-ix="'+ix+'" value="'+(a.qty!=null?a.qty:'')+'" style="text-align:right"></td>'+
     '<td><input type="number" step="any" data-lf="price" data-ix="'+ix+'" value="'+(a.price!==''&&a.price!=null?a.price:'')+'" style="text-align:right"></td>'+
     '<td><input class="auto" readonly tabindex="-1" value="'+lineAmount(a).toFixed(2)+'" style="text-align:right" title="Qty × Price — does itself"></td>'+
@@ -613,11 +788,13 @@ function renderLines(){
   document.querySelectorAll('[data-lf]').forEach(el=>el.onchange=()=>{
     const r=allocRows[+el.dataset.ix],f=el.dataset.lf;
     if(f==='codigoId'){const c=DB.codigoById(+el.value);r.codigoId=el.value?+el.value:'';r.codigo=c?(c.codigo||''):'';r.eventId=(c&&c.eventId!=null)?c.eventId:'';}
-    else if(f==='producto'){r.producto=el.value;if(el.value!=='tickets')r.tipo_pase='';}
+    /* switching to a product that is not a seat drops the pass type AND the passes it had
+       computed — a Webinar line was keeping the "6" left behind by the ticket line before it */
+    else if(f==='producto'){r.producto=el.value;if(!isTicketProd(el.value)){r.tipo_pase='';r.passes='';}}
     else r[f]=el.value;
     /* A3 fix: passes ALWAYS recalc when pass type or qty changes on a tickets line —
        the old form froze the first number for good */
-    if(r.producto==='tickets'&&(f==='tipo_pase'||f==='qty'||f==='producto')&&r.tipo_pase)
+    if(isTicketProd(r.producto)&&(f==='tipo_pase'||f==='qty'||f==='producto')&&r.tipo_pase)
       r.passes=(TIPO_PASES[r.tipo_pase]||0)*(+r.qty||0);
     renderLines();refreshModal();});
   document.querySelectorAll('[data-adel]').forEach(b=>b.onclick=()=>{allocRows.splice(+b.dataset.adel,1);if(!allocRows.length)allocRows=[blankRow()];renderLines();refreshModal();});
@@ -897,7 +1074,7 @@ async function saveInvoice(){
     const evId=(c.eventId!=null&&c.eventId!=='')?+c.eventId:null; // RENMAD item → feeds the € Dashboard; Webinars/ATA/etc → null
     const codStr=c.codigo||a.codigo||'';
     const vals={eventId:evId,amount:lineAmount(a)||(+a.amount||0),passes:+a.passes||0,codigo:codStr,codigoId:+a.codigoId,
-      producto:a.producto||null,tipo_pase:a.producto==='tickets'?(a.tipo_pase||null):null,
+      producto:a.producto||null,tipo_pase:isTicketProd(a.producto)?(a.tipo_pase||null):null,
       qty:a.qty===''||a.qty==null?null:+a.qty,price:a.price===''||a.price==null?null:+a.price};
     if(a.id){const ex=DB.invoiceAllocs.find(x=>x.id==a.id);if(ex){Object.assign(ex,vals);keep[ex.id]=1;return;}}
     const na=Object.assign({id:DB.newId(),invoice_id:row.id},vals);
@@ -1002,8 +1179,8 @@ function openCreditPicker(){
    (never duplicates on re-save; extra rows are left alone — remove them on the event page). */
 function syncDelegates(inv){
   if(inv.status==='cancelado'||inv.status==='abono')return;
-  if(!(inv.producto==='tickets'||inv.producto==='sponsorship'))return;
-  const src=inv.producto==='tickets'?'ticket':'sponsor';
+  if(!(isTicketProd(inv.producto)||inv.producto==='sponsorship'))return;
+  const src=isTicketProd(inv.producto)?'ticket':'sponsor';
   /* passes are summed PER EVENT first: two analítica lines on the same event (e.g. stand +
      extra passes) used to top up to the max of the two instead of the total. */
   const wantByEvent={};
@@ -1190,7 +1367,7 @@ function buildImportPreview(raw){
       const c=DB.codigos.find(x=>(''+(x.codigo||'')).trim()===codStr)||DB.codigos.find(x=>impNorm(x.item)===impNorm(r.cod));
       if(!c)errs.push('line '+(ix+1)+': código "'+codStr+'" not in Items & codes');
       let tp='',passes=0;
-      if(prod==='tickets'){tp=impNorm(r.tp);if(tp&&!TIPO_PASES[tp]){errs.push('line '+(ix+1)+': tipo pase "'+r.tp+'"?');tp='';}passes=(TIPO_PASES[tp]||0)*(qty||0);}
+      if(isTicketProd(prod)){tp=impNorm(r.tp);if(tp&&!TIPO_PASES[tp]){errs.push('line '+(ix+1)+': tipo pase "'+r.tp+'"?');tp='';}passes=(TIPO_PASES[tp]||0)*(qty||0);}
       lines.push({producto:prod,tipo_pase:tp||null,qty,price:num2(price),amount:num2(qty*price),passes,codigoId:c?c.id:null,codigo:c?(c.codigo||''):codStr,eventId:c&&c.eventId!=null&&c.eventId!==''?+c.eventId:null});
     });
     if(!lines.length&&!errs.length)errs.push('no readable lines');
@@ -1232,7 +1409,7 @@ async function commitImport(ready){
       comentarios:g.com,abono_de:null,entered_by:actorName()+' · history load'};
     DB.invoices.push(row);
     g.lines.forEach(l=>DB.invoiceAllocs.push({id:DB.newId(),invoice_id:row.id,eventId:l.eventId,amount:l.amount,passes:l.passes,
-      codigo:l.codigo,codigoId:l.codigoId,producto:l.producto,tipo_pase:l.producto==='tickets'?l.tipo_pase:null,qty:l.qty,price:l.price}));
+      codigo:l.codigo,codigoId:l.codigoId,producto:l.producto,tipo_pase:isTicketProd(l.producto)?l.tipo_pase:null,qty:l.qty,price:l.price}));
     syncDelegates(row);
   });
   const ok=await DB.saveNow();

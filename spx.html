@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=74"></script>
+<script src="store.js?v=75"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -1015,7 +1015,9 @@ function invoicedSponsorship(finId){
 function invoicedPases(finId){
   let total=0,paid=0;
   DB.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=DB.invoice(a.invoice_id);
-    if(!inv||inv.status==='cancelado')return;if(inv.producto!=='tickets')return;
+    /* isTicketProd, not ==='tickets': a product accounting added itself and ticked
+       "counts passes" (Pase Online, for the Talks) is ticket money too. */
+    if(!inv||inv.status==='cancelado')return;if(!isTicketProd(inv.producto))return;
     const eu=DB.allocEur(a);total+=eu;if(inv.status==='pagado'||inv.fecha_cobro)paid+=eu;});
   return {total,paid};
 }
