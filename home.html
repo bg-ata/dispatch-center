@@ -123,11 +123,17 @@
   .panel.mefold>h3 .psum{float:right;color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums;margin-left:10px}
   .panel.mefold>h3 .psum.hot{color:var(--orange);font-weight:700}
   .panel.mefold.closed{padding-bottom:10px}
-  .panel.mefold.closed>*:not(h3){display:none}
+  .panel.mefold.closed>*:not(h3){display:none !important} /* !important: several panel bodies carry inline display:flex */
   .panel.mefold.closed>h3{margin-bottom:0}
   /* phones */
   @media(max-width:680px){
     h1{font-size:19px}
+    /* one line of sight (29 Jul): the intro sentence and role pills don't earn phone space */
+    .sub{display:none}
+    h1 .rolepill{display:none}
+    .panel{margin-bottom:8px}
+    .panel.mefold.closed{padding-top:12px;padding-bottom:8px}
+    .qbar{margin-bottom:10px}
     .btn{padding:10px 14px}
     .btn.clockbig{width:100%;padding:26px 12px;font-size:28px;border-radius:14px}
     #clockPanel{padding:18px 16px}
@@ -217,7 +223,7 @@ function panelSummary(id){
 function wirePanelFolds(){
   /* first visit: desktop opens the clock (the everyday action), phones open nothing —
      the full menu of headers IS the point. After that, each person's choices stick. */
-  const phone=window.matchMedia&&window.matchMedia('(max-width:680px)').matches;
+  const phone=innerWidth>0&&innerWidth<=680; /* explicit: a 0-width probe (headless pane) must not read as phone */
   const st=pfoldState()||(phone?{}:{clockPanel:true});
   document.querySelectorAll('.panel.mefold').forEach(p=>{
     const h=p.querySelector('h3');
