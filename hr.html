@@ -85,14 +85,19 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>🌴 HR</h1>
-  <p class="sub">Managing the team's time — holiday balances &amp; leave, weekly hour allocation and the legal time clock. Working days follow the official Madrid labour calendar — Mon–Thu 8 h + Fri 5.5 h, and 7 h days in July &amp; August.</p>
+  <h1>🌴 HR admin</h1>
+  <!-- HR lives inside 👥 Team now (29 Jul UX round) — same level-1 pills as Money↔Invoicing -->
+  <div style="display:inline-flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px;margin:0 0 10px">
+    <a href="people.html" style="background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:14px;padding:7px 17px;border-radius:8px;text-decoration:none;display:inline-block">👥 Team</a>
+    <button type="button" style="background:var(--orange);border:none;color:#fff;font:inherit;font-weight:600;font-size:14px;padding:7px 17px;border-radius:8px">🌴 HR admin</button>
+  </div>
+  <p class="sub">Managing the team's time — holiday balances &amp; leave, weekly hour allocation and the legal time clock. Working days follow the official Madrid labour calendar — Mon–Thu 8 h + Fri 5.5 h, and 7 h days in July &amp; August. People fill their own hours and request time off in 🙋 Me.</p>
   <div id="banner"></div>
   <div class="tabs" id="tabs" style="width:max-content;max-width:100%;margin:10px 0 14px"></div>
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=75"></script>
+<script src="store.js?v=76"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.

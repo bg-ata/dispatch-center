@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=75"></script>
+<script src="store.js?v=76"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -932,7 +932,9 @@ function tdReorder(srcId,tgtId){
 function renderHolPanel(){
   const me=DB.currentUser,box=document.getElementById('holPanel');if(!box)return;
   const yr=new Date().getFullYear();
-  let h='<h3>🌴 My holidays'+visBadge('you + approvers')+'</h3>';
+  let h='<h3>🌴 My holidays'+visBadge('you + approvers')+'</h3>'+
+    /* signpost (29 Jul UX round): the same concept has three views — say where the others live */
+    '<p class="hint" style="margin:0 0 8px">Yours here · the whole team’s calendar in <a href="people.html" style="color:var(--orange)">👥 Team</a>'+(DB.canSeeHR&&DB.canSeeHR()?' · approvals in <a href="hr.html" style="color:var(--orange)">Team → HR admin</a>':'')+'.</p>';
   if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
   /* the year we are SPENDING right now: in Jan/Feb that is still last year's allowance */
   const ay=holYearOfDate(toISO(new Date()));

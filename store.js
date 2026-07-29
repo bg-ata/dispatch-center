@@ -1279,7 +1279,9 @@ function decorateNav(){
     if(DB.isHRAdmin())n+=openReports().length;
   }
   const pill='<span title="Things need your attention: approvals, missing hours/punches or correction reports" style="background:#D32230;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+n+'</span>';
-  ['nav-hr','nav-home'].forEach(id=>{const el=document.getElementById(id);if(el&&n>0)el.innerHTML+=' '+pill;});
+  /* HR moved in with Team (29 Jul UX round) — approvers see the count on 👥 Team now */
+  const badgeIds=DB.canSeeHR&&DB.canSeeHR()?['nav-team','nav-home']:['nav-home'];
+  badgeIds.forEach(id=>{const el=document.getElementById(id);if(el&&n>0)el.innerHTML+=' '+pill;});
   /* admins: new (untriaged) team requests — the Requests box lives under Tools now */
   if(DB.isAdmin()&&DB.tickReady()){
     const nt=DB.tickets.filter(t=>t.status==='new').length;
@@ -1292,6 +1294,51 @@ function decorateNav(){
     const el=document.getElementById('nav-inbox');
     if(el&&nu>0)el.innerHTML+=' <span title="Unread notifications" style="background:#FF4A00;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+nu+'</span>';
   }
+}
+
+/* ---- SPX status rollup for the Money page (29 Jul: "Money absorbing (or replicating)
+   the Status quo tab of SPX"). One row per registry event with the board buckets and
+   targets. ⚠ KEEP IN SYNC with spx.html: lineRegEvent/spxBucket/eventTargets are the
+   canonical versions there — if bucket, alias or target rules change on the board,
+   change them here too (flagged for extraction into a single shared home later). */
+function spxStatusAll(){
+  if(!DB.spxReady||!DB.spxReady())return [];
+  const live=(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded);
+  const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
+  const regs=(DB.spxEventReg||[]).filter(e=>!e.deleted);
+  if(!regs.length)return [];
+  const findReg=l=>{
+    const lk=nk(l.eventKey);
+    let e=lk?regs.find(x=>nk(x.eventKey)===lk):null;
+    if(!e&&l.eventId!=null)e=regs.find(x=>x.financeId!=null&&x.financeId==l.eventId);
+    if(!e&&lk)e=regs.find(x=>((x.convByStatus&&x.convByStatus.aliases)||[]).some(a=>nk(a)===lk));
+    return e||null;
+  };
+  const bucket=p=>p.stage==='Silent'?'Silent':p.salesStatus;
+  const rows={};
+  regs.forEach(e=>{rows[e.eventKey]={key:e.eventKey,name:e.name,active:e.active!==false,financeId:e.financeId,
+    sort:+e.sort||0,won:0,wonN:0,sent:0,sentN:0,silent:0,lost:0,reg:e};});
+  live.forEach(p=>{
+    const b=bucket(p),touched={};
+    (DB.spxLinesFor(p.id)||[]).forEach(l=>{
+      const e=findReg(l);if(!e)return;
+      const r=rows[e.eventKey],v=+l.valueEur||0;
+      if(b==='Confirmed')r.won+=v;else if(b==='Sent')r.sent+=v;else if(b==='Silent')r.silent+=v;else if(b==='Lost')r.lost+=v;
+      touched[e.eventKey]=b;
+    });
+    Object.keys(touched).forEach(k=>{if(touched[k]==='Confirmed')rows[k].wonN++;else if(touched[k]==='Sent')rows[k].sentN++;});
+  });
+  Object.values(rows).forEach(r=>{
+    const fin=(r.financeId!=null&&DB.finance)?DB.finance.find(f=>f.id==r.financeId):null;
+    let w=(r.reg.convByStatus&&r.reg.convByStatus.specsPct!=null)?+r.reg.convByStatus.specsPct:null;
+    if(w!=null){if(w>1)w=w/100;w=Math.max(0,Math.min(1,w));}
+    if(fin&&fin.target!=null&&w!=null){r.totTarget=+fin.target||0;r.totStretch=+fin.stretch||0;r.spTarget=r.totTarget*w;}
+    else{const g=r.reg;r.spTarget=+g.sponsorshipTarget||0;
+      r.totTarget=(+g.sponsorshipTarget||0)+(+g.pasesTarget||0);
+      r.totStretch=(+g.sponsorshipStretch||0)+(+g.pasesStretch||0);}
+    delete r.reg;
+  });
+  return Object.values(rows).sort((a,b)=>a.sort-b.sort);
 }
 
 /* ================= notifications inbox (🔔) ================= */
@@ -2595,7 +2642,7 @@ async function boot(renderFn){
   ensureSubDefaults();
   try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted))DB.save();}catch(e){} // event → item/project cascade (writes only for Belén/Jesús-level logins)
   try{const nc=document.getElementById('nav-crm');if(nc&&isBelenP(DB.currentUser))nc.style.display='';}catch(e){} // CRM tab: Belén only (invoicing now opens from inside Money)
-  try{const nh=document.getElementById('nav-hr');if(nh&&DB.canSeeHR())nh.style.display='';}catch(e){} // HR tab: Belén + HR + Jesús (allocations) — everyone else's personal stuff lives in Me
+  /* HR is no longer its own nav tab — it lives inside 👥 Team (gated there by DB.canSeeHR) */
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
   try{injectTicketFab();}catch(e){} // the "💡 Request" button on every page
@@ -2677,11 +2724,10 @@ function navBar(active){
          '<div class="navlinks" onclick="document.getElementById(\'dcNav\').classList.remove(\'open\')">'+
          '<a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'" title="Your day: clock, hours, to-dos, holidays — everything personal">🙋 Me</a>'+
          '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
-         '<a href="people.html" style="white-space:nowrap" class="'+(active==='people'?'on':'')+'" title="The roster + the team holiday calendar">👥 Team</a>'+
+         '<a href="people.html" id="nav-team" style="white-space:nowrap" class="'+(active==='people'||active==='hr'?'on':'')+'" title="The roster + the team holiday calendar — HR admin lives here too">👥 Team</a>'+
          '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'||active==='fact'?'on':'')+'" title="Everything money — Invoicing and Reporting">💶 Money</a>'+
          '<a href="spx.html" id="nav-spx" style="white-space:nowrap" class="'+(active==='spx'?'on':'')+'" title="Sponsorship sales — proposals, health-check, reporting">💼 SPX</a>'+
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
-         '<a href="hr.html" id="nav-hr" style="white-space:nowrap;display:none" class="'+(active==='hr'?'on':'')+'" title="Managing the team’s time — Belén &amp; HR (Jesús: allocations)">🌴 HR</a>'+
          '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
          '<a href="crm.html" id="nav-crm" style="white-space:nowrap;display:none" class="'+(active==='crm'?'on':'')+'" title="Leads CRM — private, only Belén sees this tab">📇 CRM</a>'+
          '<a href="inbox.html" id="nav-inbox" style="white-space:nowrap" class="'+(active==='inbox'?'on':'')+'" title="Notifications — answers to your requests, team notices, time-off decisions">🔔</a>'+

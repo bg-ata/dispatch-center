@@ -21,6 +21,10 @@
   .btn.primary{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
   .btn:hover{filter:brightness(.97)}
   .toolbar{display:flex;gap:8px;margin-bottom:12px}
+  /* level-1 pills: Team / HR admin (same look as Money's Reporting/Invoicing) */
+  .tabs1{display:inline-flex !important;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px;margin:0 0 12px}
+  .tabs1 button,.tabs1 a{background:none;border:none;color:var(--muted);font:inherit;font-weight:600;font-size:14px;padding:7px 17px;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-block}
+  .tabs1 .on{background:var(--orange);color:#fff}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 4px;overflow-x:auto}
   .app{max-width:1120px}
   table{width:100%;border-collapse:collapse;font-size:13px}
@@ -69,6 +73,9 @@
 <div class="app">
   <div id="nav"></div>
   <h1>👥 Team</h1>
+  <!-- level-1 pills: Team (this page) vs HR admin — same pattern as Money↔Invoicing.
+       HR moved in here 29 Jul (UX round): people-stuff lives in ONE district. -->
+  <div class="tabs1" id="tabs1" style="display:flex;gap:6px;margin:0 0 12px"></div>
   <div class="toolbar">
     <button class="btn primary" id="addBtn">+ Add person</button>
     <button class="btn" id="xlsBtn">⬇ Download Excel</button>
@@ -100,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=75"></script>
+<script src="store.js?v=76"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -303,7 +310,8 @@ function renderCal(){
   const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
   document.getElementById('calHint').textContent=
     'Everyone can see who’s on holiday or in the office. Green = approved holidays, striped = pending, blue = office days.'+
-    ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'');
+    ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'')+
+    ' Your own requests live in 🙋 Me.';
   const nDays=new Date(y,m+1,0).getDate();
   let h='<table><tr><th></th>';
   const WD=['D','L','M','X','J','V','S'];
@@ -335,7 +343,15 @@ function renderCal(){
 }
 document.getElementById('c_prev').onclick=()=>{calM.setMonth(calM.getMonth()-1);renderCal();};
 document.getElementById('c_next').onclick=()=>{calM.setMonth(calM.getMonth()+1);renderCal();};
-boot(()=>{if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}render();renderCal();});
+boot(()=>{
+  if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}
+  /* level-1 pills: HR admin shows only for the people who can act there (Belén + HR + Jesús) */
+  const t1=document.getElementById('tabs1');
+  if(DB.canSeeHR&&DB.canSeeHR())t1.innerHTML='<button type="button" class="on">👥 Team</button>'+
+    '<a href="hr.html" title="Approvals, holidays admin, allocations, time clock — the admin side of the team">🌴 HR admin</a>';
+  else t1.style.display='none';
+  render();renderCal();
+});
 window.addEventListener('dc-remote',()=>{render();renderCal();});
 </script>
 </body>

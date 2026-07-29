@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=75"></script>
+<script src="store.js?v=76"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -425,8 +425,10 @@ function renderTeam(){
   const t=document.getElementById('team');
   const mg=canEditPlan(); // members see the team read-only (but a project is theirs to run)
   t.innerHTML=ev.team.map(m=>{const p=DB.person(m.personId);if(!p)return'';
-    return mg?('<span class="member"><b>'+esc(p.name)+'</b><select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>')
-             :('<span class="member"><b>'+esc(p.name)+'</b><span class="hint">'+esc(m.role)+'</span></span>');}).join('')||'<span class="empty">No one attached yet.</span>';
+    /* names link to the person's page (29 Jul UX round — it was only reachable from the roster) */
+    const nm='<a href="person.html?id='+p.id+'" style="color:inherit;text-decoration:none" title="Open '+esc((p.name||'').split(' ')[0])+'’s page — their events & tasks"><b>'+esc(p.name)+'</b></a>';
+    return mg?('<span class="member">'+nm+'<select data-role="'+m.personId+'">'+ROLES.map(r=>'<option '+(r===m.role?'selected':'')+'>'+r+'</option>').join('')+'</select><button class="x" data-rm="'+m.personId+'">×</button></span>')
+             :('<span class="member">'+nm+'<span class="hint">'+esc(m.role)+'</span></span>');}).join('')||'<span class="empty">No one attached yet.</span>';
   const am=document.querySelector('.addmem');if(am&&!mg){am.style.display='none';}
   if(mg){const inTeam=ev.team.map(m=>m.personId);
     document.getElementById('newp').innerHTML=DB.people.filter(p=>!inTeam.includes(p.id)).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('')||'<option value="">(all attached)</option>';}
@@ -592,7 +594,7 @@ function renderTasks(){
   if(!tks.length)h+='<tr><td colspan="5" class="empty">No tasks yet'+(mg?' — add one.':'.')+'</td></tr>';
   tks.forEach(t=>{const canS=DB.canEditStatus(t);h+='<tr>'+
     '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+esc(t.title||'')+'">':esc(t.title||''))+'</td>'+
-    '<td>'+(mg?'<select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select>':esc(DB.personName(t.assignee)))+'</td>'+
+    '<td>'+(mg?'<select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select>':(t.assignee?'<a href="person.html?id='+t.assignee+'" style="color:inherit">'+esc(DB.personName(t.assignee))+'</a>':''))+'</td>'+
     '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline?deIso(t.deadline):'—'))+'</td>'+
     '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>'):('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
     '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';});
