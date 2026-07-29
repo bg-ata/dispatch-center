@@ -107,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=80"></script>
+<script src="store.js?v=81"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -186,14 +186,30 @@ function renderPerms(){
       tick(p,'hr','HR')+tick(p,'finance','Finance')+tick(p,'billing','Invoicing')+tick(p,'salesLead','Sales lead')+
       '<td class="num">'+c.see+'</td><td class="num"><b>'+c.edit+'</b></td></tr>';
     if(_permOpen==p.id){
+      /* EDITABLE per cell (Belén, 29 Jul evening: "each team is responsible for different
+         things" — the coarse ticks were not enough). Tick/untick any 👁/✏; a cell that
+         differs from the person's derived default is stored as an override on
+         dc_people.perms and shown orange with a ⟲ to go back to the default. */
+      const canOvr=window._permsColReady!==false;
       h+='<tr><td colspan="8" style="background:#faf9f6">'+
-        '<div style="font-size:12px;color:var(--muted);margin-bottom:5px">What <b>'+esc(p.name)+'</b> can do today — 👁 open it, ✏ change it:</div>'+
-        '<table style="font-size:12px;width:100%"><tr><th style="width:110px">Where</th><th>What</th><th style="width:52px;text-align:center">👁</th><th style="width:52px;text-align:center">✏</th><th style="width:44%">Who it is for</th></tr>'+
+        '<div style="font-size:12px;color:var(--muted);margin-bottom:5px">What <b>'+esc(p.name)+'</b> can do — 👁 open it, ✏ change it. '+
+          (canOvr?'Tick or untick any cell: <span style="color:#C77800;font-weight:700">orange</span> = set by hand for this person (⟲ returns to the default their tier/ticks give them).'
+                 :'<span style="color:#A32D2D">Per-cell overrides need one database step (perms column) — run it and reload.</span>')+'</div>'+
+        '<table style="font-size:12px;width:100%"><tr><th style="width:110px">Where</th><th>What</th><th style="width:64px;text-align:center">👁</th><th style="width:64px;text-align:center">✏</th><th style="width:40%">Who it is for</th></tr>'+
         permsOf(p).map(x=>{
-          const yn=v=>v?'<span style="color:var(--green);font-weight:700">✔</span>':'<span style="color:#c9c6bf">—</span>';
-          return '<tr style="opacity:'+(x.canSee?1:.5)+'"><td>'+esc(x.perm.area)+'</td>'+
-            '<td>'+esc(x.perm.label)+'</td>'+
-            '<td style="text-align:center">'+yn(x.canSee)+'</td><td style="text-align:center">'+yn(x.canEdit)+'</td>'+
+          const k=x.perm.key,lk=!!x.perm.lock,noEdit=x.perm.edit===NOBODY;
+          const cell=(which,val)=>{
+            const ovr=x.ovr&&x.ovr[which]!=null;
+            if(lk||!canOvr||(which==='edit'&&noEdit))
+              return '<td style="text-align:center">'+(val?'<span style="color:var(--green);font-weight:700">✔</span>':'<span style="color:#c9c6bf">—</span>')+'</td>';
+            return '<td style="text-align:center;white-space:nowrap'+(ovr?';background:#FFF3E8':'')+'">'+
+              '<input type="checkbox" data-po="'+p.id+'" data-pk="'+k+'" data-pw="'+which+'"'+(val?' checked':'')+
+                (ovr?' title="Set by hand — the default for them is the opposite"':'')+'>'+
+              (ovr?'<a href="#" data-pr="'+p.id+'" data-pk="'+k+'" data-pw="'+which+'" title="Back to the default from their tier/ticks" style="text-decoration:none;margin-left:3px">⟲</a>':'')+
+              '</td>';
+          };
+          return '<tr style="opacity:'+(x.canSee?1:.6)+'"><td>'+esc(x.perm.area)+'</td>'+
+            '<td>'+esc(x.perm.label)+'</td>'+cell('see',x.canSee)+cell('edit',x.canEdit)+
             '<td style="white-space:normal;color:var(--muted)">👁 '+esc(x.perm.seeTxt)+'<br>✏ '+esc(x.perm.editTxt)+'</td></tr>';
         }).join('')+'</table></td></tr>';
     }
@@ -226,6 +242,24 @@ function renderPerms(){
   box.querySelectorAll('[data-pf]').forEach(c=>c.onchange=()=>{
     const p=DB.person(+c.dataset.id);if(!p)return;
     p[c.dataset.pf]=c.checked;DB.save();renderPerms();
+  });
+  /* per-cell overrides: store only where the choice DIFFERS from the derived default —
+     matching the default again deletes the override, so perms stays a short list of
+     real exceptions, and tier/tick changes keep working for everything untouched */
+  box.querySelectorAll('[data-po]').forEach(c=>c.onchange=()=>{
+    const p=DB.person(+c.dataset.po);if(!p)return;
+    const k=c.dataset.pk,w=c.dataset.pw,def=permByKey(k);if(!def)return;
+    const derived=w==='see'?!!def.see(p):!!def.edit(p);
+    p.perms=(p.perms&&typeof p.perms==='object')?p.perms:{};
+    if(c.checked===derived){ if(p.perms[k]){delete p.perms[k][w];if(!Object.keys(p.perms[k]).length)delete p.perms[k];} }
+    else{ p.perms[k]=p.perms[k]||{};p.perms[k][w]=c.checked; }
+    DB.save();renderPerms();
+  });
+  box.querySelectorAll('[data-pr]').forEach(a=>a.onclick=e=>{e.preventDefault();
+    const p=DB.person(+a.dataset.pr);if(!p||!p.perms)return;
+    const k=a.dataset.pk,w=a.dataset.pw;
+    if(p.perms[k]){delete p.perms[k][w];if(!Object.keys(p.perms[k]).length)delete p.perms[k];}
+    DB.save();renderPerms();
   });
 }
 const modal=document.getElementById('modal');
@@ -344,7 +378,7 @@ function renderCal(){
 document.getElementById('c_prev').onclick=()=>{calM.setMonth(calM.getMonth()-1);renderCal();};
 document.getElementById('c_next').onclick=()=>{calM.setMonth(calM.getMonth()+1);renderCal();};
 boot(()=>{
-  if(!DB.isAdmin()){document.getElementById('addBtn').style.display='none';}
+  if(!DB.can('team.roster','edit')){document.getElementById('addBtn').style.display='none';}
   /* level-1 pills: HR admin shows only for the people who can act there (Belén + HR + Jesús) */
   const t1=document.getElementById('tabs1');
   if(DB.canSeeHR&&DB.canSeeHR())t1.innerHTML='<button type="button" class="on">👥 Team</button>'+

@@ -1372,7 +1372,9 @@ function notifySend(to,kind,text,link){
    Visible to the person, to admins and to HR (RLS says the same thing on the server). */
 function canSeePersonThread(personId){
   const me=DB.currentUser;if(!me)return false;
-  return me.id==personId||me.access==='admin'||!!me.hr;
+  if(me.id==personId)return true;                      // your own thread, always
+  const o=permOverride(me,'people.msgs');if(o&&o.see!=null)return !!o.see;
+  return me.access==='admin'||!!me.hr;
 }
 function personThreadHtml(personId,opts){
   opts=opts||{};
@@ -1723,7 +1725,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql)
-  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace'], // startDate + workPlace tolerant (SQL adds them)
+  people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace','perms'], // startDate/workPlace/perms tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
@@ -1901,6 +1903,9 @@ const DB={
         /* …and so is the declared working place */
         window._tzReady=true;
         if(D.people.length && !('workPlace' in D.people[0])){window._tzReady=false;strip('people',['workPlace']);}
+        /* per-cell permission overrides (perms jsonb) — tolerant until the 1-line SQL runs */
+        window._permsColReady=true;
+        if(D.people.length && !('perms' in D.people[0])){window._permsColReady=false;strip('people',['perms']);}
       })();
 
       /* claims are tolerant: until dispatch_hr11_claims.sql runs, never push claim/ratify
@@ -2261,7 +2266,10 @@ const DB={
   financeFor(eventId){return (this.data.finance||[]).find(f=>f.eventId==eventId);},
   /* finance figures: whole roster reads; ONLY people with the finance tick write
      (Belén + Jesús). Admin tier alone no longer grants it — Carlos = events only. */
-  canFinance(){return !!(this.currentUser&&this.currentUser.finance);},
+  /* per-cell overrides (dc_people.perms) are consulted FIRST in every flag gate below —
+     the generic entry point for pages is DB.can(key,'see'|'edit') */
+  can(key,which){return which==='edit'?permEdit(this.currentUser,key):permSee(this.currentUser,key);},
+  canFinance(){return this.can('money.figures','edit');},
   financeReady(){return !USE_SUPABASE||_finReady;},
   get weekly(){return this.data.weekly||[];},
   weeklyReady(){return !USE_SUPABASE||_weeklyReady;},
@@ -2305,7 +2313,7 @@ const DB={
   /* billing editor = the external invoicing freelancer (billing tick, provisioned by Belén)
      or an admin. Mirrors dc_can_bill() in SQL. Separate from the finance flag — Jesús
      keeps editing the € figures exactly as today. */
-  canBill(){return !!(this.currentUser&&(this.currentUser.billing||this.currentUser.access==='admin'));},
+  canBill(){return this.can('invoicing.book','edit');},
   /* ---- team request box (tickets about the Dispatch Center itself) ---- */
   get tickets(){return this.data.tickets||[];},
   tickReady(){return !USE_SUPABASE||_tickReady;},
@@ -2318,7 +2326,7 @@ const DB={
   holmsgReady(){return !USE_SUPABASE||_holmsgReady;},
   /* who may open the 🌴 HR page at all: Belén + the HR tick + finance (Jesús — he only
      gets the Allocation-admin sections there; the page itself sub-gates the rest) */
-  canSeeHR(){return !!(this.currentUser&&(this.isHRAdmin()||this.isHR()||this.canFinance()));},
+  canSeeHR(){return this.can('hr.area','see');},
   /* ---- SPX sales module (sponsorship proposals + health-check + reporting) ----
      Board reads: whole roster. Writes gated to mirror the RLS in dispatch_spx.sql. */
   get spxProps(){return this.data.spxProps||[];},
@@ -2335,7 +2343,11 @@ const DB={
   spxFragById(id){return this.spxFrags.find(f=>f.id==id)||null;},
   spxTargetFor(finId){return this.spxTargets.find(t=>t.eventId==finId)||null;},
   /* sales lead (Cintia) or admin (Belén): edits ANY proposal + targets + crosswalk. Mirrors dc_can_sales_lead(). */
-  canSalesLead(){return !!(this.currentUser&&(this.currentUser.salesLead||this.currentUser.access==='admin'));},
+  /* "sales lead" = edits ANYONE's proposals (stronger than the Sales-role own-edit).
+     A stored spx.board override decides BOTH ways: edit:true grants the full power,
+     edit:false makes the board read-only for that person. No override -> the old rule. */
+  canSalesLead(){const o=permOverride(this.currentUser,'spx.board');if(o&&o.edit!=null)return !!o.edit;
+    return !!(this.currentUser&&(this.currentUser.salesLead||this.currentUser.access==='admin'));},
   /* who may CREATE proposals — Sales/Lead roles, admins, the sales lead. Mirrors dc_is_sales(). */
   isSales(){const u=this.currentUser;return !!(u&&(u.role==='Sales'||u.role==='Lead'||u.access==='admin'||u.salesLead));},
   /* may this user edit THIS proposal? own (by responsable email) OR sales lead/admin. Mirrors the RLS UPDATE policy. */
@@ -2364,7 +2376,9 @@ const DB={
      dc_finance.invoiced (fallback for past events / before back-fill) */
   finInvoiced(f){if(!f)return null;const t=this.billReady()?this.invoicedTotal(f.id):null;return t==null?f.invoiced:t;},
   /* HR admin = Belén + the HR tick (Jesús). Deliberately NOT every events admin. */
-  isHRAdmin(){const u=this.currentUser;return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
+  isHRAdmin(){const u=this.currentUser;
+    const o=permOverride(u,'hr.pending');if(o&&o.edit!=null)return !!o.edit;   // per-cell override decides both ways
+    return !!(u&&(u.hr||(u.email||'').toLowerCase()==='belen.gallego@ata.email'));},
   isAdmin(){return !!(this.currentUser&&this.currentUser.access==='admin');},
   canManage(){return !!(this.currentUser&&(this.currentUser.access==='admin'||this.currentUser.access==='manager'));},
   /* who may CREATE / retire the hour-allocation project numbers: Belén, Carlos and
@@ -2447,62 +2461,74 @@ const DB={
    access to the invoicing, but only Jesús and accounts can edit… but also there are things
    that are not for everybody's eyes". So each row answers both, per person. */
 const EVERYONE=p=>true, NOBODY=p=>false;
+/* Every entry carries a stable `key` — dc_people.perms (jsonb, Belén-only writable, like
+   the four ticks) stores PER-CELL OVERRIDES on top of the derived defaults:
+     perms = { "invoicing.book": {see:true, edit:true}, "money.insights": {see:false} }
+   Belén, 29 Jul evening: "I can either give access to all clicked to see or to edit, but
+   cannot choose each individual setting — each team is responsible for different things."
+   The tier + four ticks stay the BASELINE; an override changes exactly one cell for one
+   person. `lock:true` = not overridable (this panel itself: RLS would refuse anyway). */
 const PERMS=[
-  {area:'📅 Projects', label:'The event board — events, lanes, tasks',
+  {key:'proj.board', area:'📅 Projects', label:'The event board — events, lanes, tasks', lock:true,
    see:EVERYONE, edit:EVERYONE,
    seeTxt:'Every event, every lane, every task', editTxt:'Their own tasks'},
-  {area:'📅 Projects', label:'Anyone’s task status & the plan itself',
+  {key:'proj.plan', area:'📅 Projects', label:'Anyone’s task status & the plan itself',
    see:EVERYONE, edit:p=>p.access==='admin'||p.access==='manager',
    seeTxt:'Everyone sees the plan', editTxt:'Managers & admins (plus anyone on a non-RENMAD project)'},
-  {area:'👥 Team', label:'The roster — people, roles, emails',
+  {key:'team.roster', area:'👥 Team', label:'The roster — people, roles, emails',
    see:EVERYONE, edit:p=>p.access==='admin',
    seeTxt:'The whole team list', editTxt:'Admins: add, edit, remove, set the tier'},
-  {area:'👥 Team', label:'This permission list & the four ticks',
+  {key:'team.perms', area:'👥 Team', label:'This permission list & the four ticks', lock:true,
    see:p=>isBelenP(p), edit:p=>isBelenP(p),
    seeTxt:'Belén only', editTxt:'Belén only — the database refuses everyone else'},
-  {area:'💶 Money', label:'Event money figures (targets, invoiced, margin)',
+  {key:'money.figures', area:'💶 Money', label:'Event money figures (targets, invoiced, margin)',
    see:EVERYONE, edit:p=>!!p.finance,
    seeTxt:'Whole roster', editTxt:'The finance tick only'},
-  {area:'💶 Money', label:'Insights & the analysis strips',
+  {key:'money.insights', area:'💶 Money', label:'Insights & the analysis strips',
    see:p=>p.access==='admin'||p.access==='manager', edit:NOBODY,
    seeTxt:'Managers & admins — members see the raw figures without the conclusions', editTxt:'Computed, nobody edits it'},
-  {area:'🧾 Invoicing', label:'The invoice book (invoices, credit notes, items, products)',
+  {key:'invoicing.book', area:'🧾 Invoicing', label:'The invoice book (invoices, credit notes, items, products)',
    see:EVERYONE, edit:p=>!!p.billing||p.access==='admin',
    seeTxt:'Whole roster — read, search, download', editTxt:'Accounting (invoicing tick) and admins'},
-  {area:'💼 SPX', label:'The sales board & proposals',
+  {key:'spx.board', area:'💼 SPX', label:'The sales board & proposals',
    see:EVERYONE, edit:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead',
    seeTxt:'Whole roster', editTxt:'Sales roles, the sales-lead tick and admins'},
-  {area:'🌴 HR', label:'The HR area (team holidays, allocation, the clock)',
+  {key:'hr.area', area:'🌴 HR', label:'The HR area (team holidays, allocation, the clock)',
    see:p=>!!p.hr||isBelenP(p)||!!p.finance, edit:p=>!!p.hr||isBelenP(p),
    seeTxt:'Belén, HR and the finance tick (for allocation)', editTxt:'Belén and HR'},
-  {area:'🌴 HR', label:'⏳ Pending — decide clock corrections',
+  {key:'hr.pending', area:'🌴 HR', label:'⏳ Pending — decide clock corrections',
    see:p=>!!p.hr||isBelenP(p), edit:p=>!!p.hr||isBelenP(p),
    seeTxt:'Everyone’s requests and their punches', editTxt:'Approve, deny, send back, amend the legal record'},
-  {area:'🌴 HR', label:'Hour allocation across projects',
+  {key:'hr.alloc', area:'🌴 HR', label:'Hour allocation across projects',
    see:p=>p.access==='admin'||!!p.finance||!!p.hr, edit:p=>p.access==='admin'||!!p.finance,
    seeTxt:'Everyone’s weeks', editTxt:'Admins and the finance tick'},
-  {area:'🌴 HR', label:'Approve time off',
+  {key:'hr.timeoff', area:'🌴 HR', label:'Approve time off', lock:true,
    see:p=>p.access==='manager'||p.access==='admin'||!!p.hr, edit:p=>p.access==='manager'||p.access==='admin'||!!p.hr,
-   seeTxt:'The requests where it is their turn', editTxt:'Their step of the chain (manager → Belén → HR)'},
-  {area:'🌴 HR', label:'Someone else’s clock & hours in detail',
+   seeTxt:'The requests where it is their turn — follows the approval chain, not a tick', editTxt:'Their step of the chain (manager → Belén → HR)'},
+  {key:'hr.detail', area:'🌴 HR', label:'Someone else’s clock & hours in detail', lock:true,
    see:p=>!!p.hr||isBelenP(p), edit:p=>!!p.hr||isBelenP(p),
-   seeTxt:'Belén and HR — everyone else sees only their own', editTxt:'Amendments, always logged'},
-  {area:'📇 CRM', label:'The leads CRM',
+   seeTxt:'Belén and HR — everyone else sees only their own (legal record, tied to the HR tick)', editTxt:'Amendments, always logged'},
+  {key:'crm.leads', area:'📇 CRM', label:'The leads CRM',
    see:p=>isBelenP(p), edit:p=>isBelenP(p),
    seeTxt:'Belén only', editTxt:'Belén only'},
-  {area:'💬 People', label:'A person’s message thread',
+  {key:'people.msgs', area:'💬 People', label:'A person’s message thread',
    see:p=>p.access==='admin'||!!p.hr, edit:p=>p.access==='admin'||!!p.hr,
    seeTxt:'Their own always; admins and HR see everyone’s', editTxt:'Write in the ones they can see'},
-  {area:'💡 Requests', label:'The requests box',
+  {key:'req.triage', area:'💡 Requests', label:'The requests box',
    see:EVERYONE, edit:p=>p.access==='admin',
    seeTxt:'Everyone opens and follows requests', editTxt:'Admins triage: status, priority, replies'},
 ];
-/* what does THIS person hold? -> [{perm, canSee, canEdit}] */
-function permsOf(p){return PERMS.map(x=>({perm:x,canSee:!!x.see(p),canEdit:!!x.edit(p)}));}
+/* effective permission = per-cell override when one is stored, else the derived default */
+function permOverride(p,key){const o=(p&&p.perms&&typeof p.perms==='object')?p.perms[key]:null;return o&&typeof o==='object'?o:null;}
+function permByKey(key){return PERMS.find(e=>e.key===key)||null;}
+function permSee(p,key){if(!p)return false;const o=permOverride(p,key);if(o&&o.see!=null)return !!o.see;const x=permByKey(key);return x?!!x.see(p):false;}
+function permEdit(p,key){if(!p)return false;const o=permOverride(p,key);if(o&&o.edit!=null)return !!o.edit;const x=permByKey(key);return x?!!x.edit(p):false;}
+/* what does THIS person hold? -> [{perm, canSee, canEdit, ovr}] (ovr = the stored override, if any) */
+function permsOf(p){return PERMS.map(x=>({perm:x,canSee:permSee(p,x.key),canEdit:permEdit(p,x.key),ovr:permOverride(p,x.key)}));}
 function permCount(p){const r=permsOf(p);return {see:r.filter(x=>x.canSee).length,edit:r.filter(x=>x.canEdit).length};}
 /* and the other way round: who can see / edit THIS permission (the audit view) */
 function whoHas(perm,which){
-  return DB.people.filter(p=>!isTeamAccount(p)&&perm[which](p)).map(p=>p.name);
+  return DB.people.filter(p=>!isTeamAccount(p)&&(which==='see'?permSee(p,perm.key):permEdit(p,perm.key))).map(p=>p.name);
 }
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 /* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,
@@ -2692,7 +2718,7 @@ async function boot(renderFn){
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
   try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted))DB.save();}catch(e){} // event → item/project cascade (writes only for Belén/Jesús-level logins)
-  try{const nc=document.getElementById('nav-crm');if(nc&&isBelenP(DB.currentUser))nc.style.display='';}catch(e){} // CRM tab: Belén only (invoicing now opens from inside Money)
+  try{const nc=document.getElementById('nav-crm');if(nc&&DB.can('crm.leads','see'))nc.style.display='';}catch(e){} // CRM tab: Belén (grantable per-cell in the 🔐 panel)
   /* HR is no longer its own nav tab — it lives inside 👥 Team (gated there by DB.canSeeHR) */
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)

@@ -161,7 +161,7 @@
 <div id="ov"></div>
 <div class="panel" id="panel"></div>
 
-<script src="store.js?v=80"></script>
+<script src="store.js?v=81"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('crm');
 
@@ -1315,7 +1315,7 @@ function projMakeDeal(){
 /* ---------- boot: dispatch login first, then the Belén gate, then the CRM ---------- */
 boot(async ()=>{
   const me=DB.currentUser;
-  if(USE_SUPABASE && !isBelenP(me)){
+  if(USE_SUPABASE && !DB.can('crm.leads','see')){
     document.getElementById('app').innerHTML=
       '<div class="card" style="max-width:520px;text-align:center;padding:34px">'+
       '<div style="font-size:34px;margin-bottom:8px">📇</div>'+

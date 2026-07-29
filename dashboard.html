@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=80"></script>
+<script src="store.js?v=81"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -224,7 +224,7 @@ function ddmmyyyy(iso){if(!iso)return'';const p=(''+iso).slice(0,10).split('-');
 /* ---------- tabs ---------- */
 const TABS=[['year','Year status'],['spx','Sponsorship'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events'],['insights','Insights']];
 /* the Insights tab (and every analysis strip) carries interpretation, not just figures — managers and up only */
-function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.canManage());}
+function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.can('money.insights','see'));}
 function activeTab(){const h=location.hash.replace('#','');return visTabs().some(t=>t[0]===h)?h:'year';}
 function render(){
   const tab=activeTab();
@@ -723,12 +723,12 @@ function drawComposition(ms){
    Every line is COMPUTED from the data at render time — nothing is written by
    hand, so the reading changes on its own as new weeks are imported. */
 function anaBox(lines){
-  if(!DB.canManage()||!lines||!lines.length)return '';
+  if(!DB.can('money.insights','see')||!lines||!lines.length)return '';
   return '<div class="ana"><div class="ana-t">📊 Analysis — computed live from the data · managers only</div><ul>'+
     lines.map(l=>'<li>'+l+'</li>').join('')+'</ul></div>';
 }
 function yearAnalysis(){
-  if(!DB.canManage())return '';
+  if(!DB.can('money.insights','see'))return '';
   const lines=[];
   const fs=DB.finance.filter(f=>yearFilter==='all'||f.year==yearFilter);
   const withInv=fs.filter(f=>{const v=DB.finInvoiced(f);return v!=null&&v!=='';});
@@ -760,7 +760,7 @@ function yearAnalysis(){
   return anaBox(lines);
 }
 function weekAnalysis(){
-  if(!DB.canManage()||!weekDate)return '';
+  if(!DB.can('money.insights','see')||!weekDate)return '';
   const today=new Date().toISOString().slice(0,10),y=String(weekDate).slice(0,4),lines=[];
   const totalsBy={};
   DB.weekly.forEach(r=>{if(r.date&&r.date.slice(0,4)===y&&r.date<=today)totalsBy[r.date]=(totalsBy[r.date]||0)+weekMoney(r);});
@@ -781,7 +781,7 @@ function weekAnalysis(){
   return anaBox(lines);
 }
 function detailAnalysis(ms,ev){
-  if(!DB.canManage()||!ev)return '';
+  if(!DB.can('money.insights','see')||!ev)return '';
   const lines=[],done=doneOf(ms).filter(e=>e.code!==ev.code);
   const pc=pctCurve(done,'soFarEur','final');
   const today=new Date().toISOString().slice(0,10);
@@ -805,7 +805,7 @@ function detailAnalysis(ms,ev){
   return anaBox(lines);
 }
 function compareAnalysis(ms,ev){
-  if(!DB.canManage()||!ev)return '';
+  if(!DB.can('money.insights','see')||!ev)return '';
   const lines=[];
   const others=ms.filter(e=>e.fam===ev.fam&&e.code!==ev.code&&e.final>0&&!cmpCodes.includes(e.code)).slice(-2)
     .concat(cmpCodes.map(c=>ms.find(e=>e.code===c)).filter(Boolean));
@@ -893,7 +893,7 @@ function keyFindings(ms,done){
   return out;
 }
 function renderInsights(){
-  if(!DB.canManage()){location.hash='year';renderYear();return;} // defense in depth — tab is hidden for members anyway
+  if(!DB.can('money.insights','see')){location.hash='year';renderYear();return;} // defense in depth — tab is hidden for members anyway
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   const done=doneOf(ms);
   document.getElementById('content').innerHTML=

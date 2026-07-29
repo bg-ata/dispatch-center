@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=80"></script>
+<script src="store.js?v=81"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -142,7 +142,11 @@ function addSubstage(lane){
    that default onto the event, so what you see is always what gets saved. */
 /* who may shape the plan: RENMAD timelines stay manager-only, but an external project is
    run by whoever opened it — the server agrees (dispatch_projects_ext/_phases.sql) */
-function canEditPlan(){return DB.canManage()||evKind(ev)==='external';}
+function canEditPlan(){
+  const o=(typeof permOverride==='function')?permOverride(DB.currentUser,'proj.plan'):null;
+  if(o&&o.edit!=null)return !!o.edit||evKind(ev)==='external';   // per-cell grant/revoke from the 🔐 panel
+  return DB.canManage()||evKind(ev)==='external';
+}
 function phasesOf(lane){return evStages(ev,lane).map(s=>Object.assign({},s));}
 function writePhases(lane,arr){
   ev.stages=ev.stages||{};
