@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=81"></script>
+<script src="store.js?v=82"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -239,6 +239,67 @@ function render(){
   if(tab==='spx'&&!DB.spxReady()){warn.innerHTML='<div class="warn">The SPX module is not active yet.</div>';document.getElementById('content').innerHTML='';return;}
   if(tab!=='year'&&tab!=='spx'&&!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
   ({year:renderYear,spx:renderSpxStatus,week:renderWeek,detail:renderDetail,compare:renderCompare,insights:renderInsights})[tab]();
+}
+
+/* ---- ⟳ FILL THIS WEEK FROM THE PLATFORM (Belén, 29 Jul evening: "you should be able,
+   with Jesús's info, to be automatically filling in both the weekly reports and the SPX
+   reporting"). The money side of the weekly Excel now writes itself into dc_weekly for
+   the CURRENT week, one row per selling event:
+     DERIVED  — sponsors new/acc (SPX board Won), tickets new/acc + delegates (invoice
+                ticket lines & passes), recordings + site visits (invoice lines by
+                product), totals, target/stretch (the Money row).
+     NOT DERIVABLE, deliberately untouched — topicLeads / eventLeads / telesales: those
+                come from marketing sources the platform does not hold (yet). Fill them
+                by hand or keep the Excel import for them; re-running ⟳ never overwrites
+                them. The 📧 Weekly report then writes itself from these rows. */
+function autoFillWeek(){
+  if(!DB.weeklyReady()||!DB.spxReady()||!DB.billReady()){alert('Needs the weekly, SPX and invoicing modules live.');return;}
+  const regs=spxStatusAll().filter(r=>r.active&&r.financeId!=null);
+  const out=[],skipped=[];
+  regs.forEach(r=>{
+    const f=DB.finance.find(x=>x.id==r.financeId);if(!f)return;
+    const evRow=f.eventId?DB.event(f.eventId):null;
+    const m=evRow?/^E\d+/.exec(evRow.name||''):null;
+    if(!m||!evRow.date){skipped.push(r.name+' — needs a Money row linked to a board event with an E-code and a date');return;}
+    const code=m[0];
+    /* cumulative money from Jesús's invoice lines, by product class (mirrors
+       spx.html invoicedPases — keep in sync if the exclusion rules change) */
+    let tkAcc=0,grAcc=0,svAcc=0,passes=0;
+    DB.invoiceAllocs.forEach(a=>{
+      if(a.eventId!=f.id)return;const inv=DB.invoice(a.invoice_id);
+      if(!inv||inv.status==='cancelado'||inv.status==='abono')return;
+      const eur=DB.allocEur(a);
+      if(isTicketProd(a.producto)){tkAcc+=eur;passes+=(+a.passes||0);}
+      else if(a.producto==='grabaciones')grAcc+=eur;
+      else if(a.producto==='sitevisits')svAcc+=eur;
+    });
+    const nowMon=monday(new Date()),evMon=monday(ymd(evRow.date));
+    const wk=Math.round((nowMon-evMon)/(7*864e5));
+    const rows=DB.weekly.filter(x=>x.eventCode===code);
+    const prev=rows.filter(x=>x.week<wk),sum=k=>prev.reduce((a,x)=>a+(+x[k]||0),0);
+    let row=rows.find(x=>x.week==wk);const isNew=!row;
+    if(isNew){row={id:DB.newId(),eventCode:code,name:(f.name+' '+(f.year||'')).trim(),year:f.year||null,
+      date:toISO(nowMon),week:wk,topicLeads:null,eventLeads:null,telesalesN:null,telesalesEur:null};
+      DB.weekly.push(row);}
+    row.sponsorsEur=Math.max(0,r.won-sum('sponsorsEur'));
+    row.sponsorsN=Math.max(0,r.wonN-sum('sponsorsN'));
+    row.spxAcc=r.won;
+    row.ticketsEur=Math.max(0,tkAcc-sum('ticketsEur'));
+    row.ticketsAcc=tkAcc;
+    row.delegatesN=Math.max(0,passes-sum('delegatesN'));
+    row.grabacionesEur=Math.max(0,grAcc-sum('grabacionesEur'));
+    row.siteVisitsEur=Math.max(0,svAcc-sum('siteVisitsEur'));
+    row.totalEur=(+row.sponsorsEur||0)+(+row.ticketsEur||0)+(+row.grabacionesEur||0)+(+row.siteVisitsEur||0)+(+row.telesalesEur||0);
+    row.soFarEur=r.won+tkAcc+grAcc+svAcc+prev.reduce((a,x)=>a+(+x.telesalesEur||0),0)+(+row.telesalesEur||0);
+    if(f.target!=null)row.target=+f.target;
+    if(f.stretch!=null)row.stretch=+f.stretch;
+    out.push(code+' W'+wk+(isNew?' · new row':' · updated')+' — so far '+finFmt(row.soFarEur));
+  });
+  if(!out.length){alert('Nothing to fill — no active SPX event maps to a Money row + board event with an E-code and date.'+(skipped.length?'\n\nSkipped:\n'+skipped.join('\n'):''));return;}
+  DB.save();render();
+  alert('✓ This week written from the platform:\n\n'+out.join('\n')+
+    (skipped.length?'\n\nSkipped (fix the links to include them):\n'+skipped.join('\n'):'')+
+    '\n\nLeads & telesales untouched — those come from marketing, not the platform (yet).');
 }
 
 /* ================= TAB: SPONSORSHIP (SPX status quo replicated into Money — Belén 29 Jul:
@@ -329,6 +390,7 @@ function renderYear(){
     '<div class="panel"><h3>Events of '+(yearFilter==='all'?'all years':yearFilter)+' — targets &amp; invoicing '+
     '<select id="yearSel" style="font-size:12px"></select> '+
     (canF?'<button class="btn primary" id="addBtn" style="font-size:12px;padding:4px 10px">+ Add event figures</button> ':'')+
+    (canF?'<button class="btn" id="fillBtn" title="Write this week\'s dc_weekly row per selling event from the SPX board + Jesús\'s invoicing — leads stay yours" style="font-size:12px;padding:4px 10px">⟳ Fill this week</button> ':'')+
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
     '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded. Invoiced marked 🧾 comes from Invoicing lines and is edited there.':'Read-only · invoiced flows in from Invoicing; targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
@@ -374,6 +436,7 @@ function renderYear(){
     const ab=document.getElementById('addBtn');if(ab)ab.onclick=openFinModal;
   }
   document.getElementById('repBtn').onclick=openReport;
+  const fb=document.getElementById('fillBtn');if(fb)fb.onclick=autoFillWeek;
   drawHeat(meta());
 }
 function openFinModal(){
