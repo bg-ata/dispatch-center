@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=82"></script>
+<script src="store.js?v=83"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -573,7 +573,7 @@ function proposalsTableGeneral(props){
     else valCell=moneyCell(p.id,'prop',propValue(p),editable);                          // General → edit the parent value
     h+='<tr class="'+rowCls(p)+'"'+rowTitle(p)+' data-id="'+p.id+'">'
       +'<td><b>'+esc(p.company||'—')+'</b>'+(p.isGeneral?' <span class="accb acc-none">general</span>':'')+'</td>'
-      +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
+      +'<td>'+(function(){const n=p.responsableName||p.responsable||'—';const q=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);return q?'<a href="person.html?id='+q.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);})()+'</td>'
       +'<td>'+esc(p.accountType||'—')+'</td>'
       +'<td>'+esc(p.source||'—')+'</td>'
       +'<td>'+evs+'</td>'
@@ -622,7 +622,7 @@ function proposalsTableByEvent(props){
     h+='<tr class="'+rowCls(p)+'"'+rowTitle(p)+' data-id="'+p.id+'">'
       +'<td>'+ev+'</td>'
       +'<td><b>'+esc(p.company||'—')+'</b></td>'
-      +'<td>'+esc(p.responsableName||p.responsable||'—')+'</td>'
+      +'<td>'+(function(){const n=p.responsableName||p.responsable||'—';const q=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);return q?'<a href="person.html?id='+q.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);})()+'</td>'
       +'<td>'+esc(p.source||'—')+'</td>'
       +'<td>'+stageCell(p,editable)+accBadge(p)+'</td>'
       +'<td><span class="clip" title="'+esc(l?(l.contents||''):(p.contents||''))+'">'+esc((l?l.contents:p.contents)||'—')+'</span></td>'

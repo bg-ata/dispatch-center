@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
-<title>RENMAD Dispatch Center — Invoicing</title>
+<title>RENMAD Dispatch Center — Facturación</title>
 <style>
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--red:#D32230;--purple:#8E5BC9;--green:#3E8C28;--amber:#C77800;}
   *{box-sizing:border-box}
@@ -81,8 +81,8 @@
 <body>
 <div class="app">
   <div id="nav"></div>
-  <h1>🧾 Invoicing</h1>
-  <p class="sub">The invoicing engine — every euro starts life here as an invoice line. Lines cascade into the 💶 Money figures, the per-event delegate lists (catering) and sales attribution. Every change is recorded.</p>
+  <h1>🧾 Facturación</h1>
+  <p class="sub">El motor de facturación — cada euro nace aquí como línea de factura. Las líneas alimentan las cifras de 💶 Money, las listas de delegados por evento (catering) y la atribución de ventas. Cada cambio queda registrado.</p>
   <div id="warnbox"></div>
   <div id="draftbox"></div>
   <div id="content"></div>
@@ -90,7 +90,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=82"></script>
+<script src="store.js?v=83"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -113,7 +113,7 @@ function yearTabsHtml(){
   const ys=invYears();if(flt.year!=='all'&&ys.length&&ys.indexOf(flt.year)<0)flt.year=ys[0];
   const mk=(v,lab,tip)=>'<button class="ytab'+(flt.year===v?' on':'')+'" data-year="'+v+'"'+(tip?' title="'+esc(tip)+'"':'')+'>'+lab+'</button>';
   return ys.map(y=>{const out=flt.year===y?0:yearOutstanding(y);
-    return mk(y,y+(out>0.005?' <span style="color:#D32230">●</span>':''),out>0.005?(eurF(out)+' still outstanding on '+y+' invoices'):'');}).join('')+mk('all','All years','');
+    return mk(y,y+(out>0.005?' <span style="color:#D32230">●</span>':''),out>0.005?(eurF(out)+' pendiente de cobro en facturas de '+y):'');}).join('')+mk('all','Todos los años','');
 }
 /* Collected = CASH view: ledger payments count in the year they were PAID (a 2026
    instalment on a 2025 invoice belongs to 2026); legacy invoices without a ledger
@@ -221,7 +221,7 @@ function render(){
      already worked exactly that way (SELECT = whole roster, INSERT/UPDATE = dc_can_bill()).
      So the book is open to read and every control that WRITES is gated instead. */
   const RO=!DB.canBill();
-  W.innerHTML=(RO?'<div class="banner" style="background:#EEF3FB;border:1px solid #cfe0f5;color:#1c4f8f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px">👁 You can read the invoice book — searching, filtering and downloading. Only the invoicing editors (accounting) can create or change anything.</div>':'')+
+  W.innerHTML=(RO?'<div class="banner" style="background:#EEF3FB;border:1px solid #cfe0f5;color:#1c4f8f;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:13px">👁 Puedes consultar el libro de facturas — buscar, filtrar y descargar. Solo los editores de facturación (contabilidad) pueden crear o cambiar cosas.</div>':'')+
     (DB.billReady()?'':'<div class="warn">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in the Supabase SQL editor, then reload. You can look around, but nothing will save.</div>')+
     (DB.billReady()&&window._inv2Ready===false?'<div class="warn">Invoicing 2.0 line details (product · qty · price per line) will not persist until <b>dispatch_invoicing2.sql</b> is run in Supabase. Amounts, códigos and passes still save fine.</div>':'');
   renderDraftBar();
@@ -246,25 +246,25 @@ function render(){
   const itemOpts=codsSorted().filter(c=>usedIds[c.id]).map(c=>'<option value="'+c.id+'" '+(flt.item==c.id?'selected':'')+'>'+esc(codLabel(c))+'</option>').join('');
   C.innerHTML=
     '<div class="cards">'+
-      '<div class="cardk"><div class="v">'+rows.length+'</div><div class="k">Invoices</div></div>'+
-      '<div class="cardk"><div class="v">'+eurF(base)+'</div><div class="k">Net</div></div>'+
-      '<div class="cardk"><div class="v">'+eurF(tot)+'</div><div class="k">Total (incl. VAT)</div></div>'+
-      '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Collected <span style="font-weight:400;opacity:.75">— cash in '+yearLab+'</span></div></div>'+
-      '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Outstanding <span style="font-weight:400;opacity:.75">— invoices of '+yearLab+'</span></div></div>'+
+      '<div class="cardk"><div class="v">'+rows.length+'</div><div class="k">Facturas</div></div>'+
+      '<div class="cardk"><div class="v">'+eurF(base)+'</div><div class="k">Base</div></div>'+
+      '<div class="cardk"><div class="v">'+eurF(tot)+'</div><div class="k">Total (IVA incl.)</div></div>'+
+      '<div class="cardk"><div class="v" style="color:var(--green)">'+eurF(cob)+'</div><div class="k">Cobrado <span style="font-weight:400;opacity:.75">— caja de '+yearLab+'</span></div></div>'+
+      '<div class="cardk"><div class="v" style="color:'+(pend>0?'var(--red)':'var(--charcoal)')+'">'+eurF(pend)+'</div><div class="k">Pendiente <span style="font-weight:400;opacity:.75">— facturas de '+yearLab+'</span></div></div>'+
     '</div>'+
-    '<div class="panel"><h3>Invoices '+(RO?'':'<button class="btn primary sm" id="addInv">+ New invoice</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Credit note</button> <button class="btn sm" id="cfgCod">⚙ Items &amp; codes</button> <button class="btn sm" id="cfgProd" title="The products a line can be sold as — add your own (Pase Online…) without asking anyone">🏷 Products</button> ')+'<button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button>'+(RO?'':' <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Load history</button>')+'</h3>'+
+    '<div class="panel"><h3>Facturas '+(RO?'':'<button class="btn primary sm" id="addInv">+ Nueva factura</button> <button class="btn sm" id="addCredit" style="background:#D32230;border-color:#D32230;color:#fff" title="Pick an invoice → total or partial → it is created automatically in negative, numbered R1, R2, R3…">+ Abono</button> <button class="btn sm" id="cfgCod">⚙ Artículos y códigos</button> <button class="btn sm" id="cfgProd" title="The products a line can be sold as — add your own (Pase Online…) without asking anyone">🏷 Productos</button> ')+'<button class="btn sm" id="xls" title="Download the invoices under the current filters + an Analítica sheet (one row per line: product · item · código · qty · price)">⬇ Excel</button>'+(RO?'':' <button class="btn sm" id="histLoad" title="Load historical invoices from the Excel template — rows sharing an invoice nº become one invoice with several lines">⬆ Cargar histórico</button>')+'</h3>'+
     '<div class="ytabs">'+yearTabsHtml()+'</div>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
       '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
-      '<select id="f_st"><option value="all">— status —</option>'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(flt.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'+
-      '<input id="f_txt" placeholder="search: company, invoice nº, order, comment…" value="'+esc(flt.text)+'" style="width:250px">'+
+      '<select id="f_st"><option value="all">— estado —</option>'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(flt.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'+
+      '<input id="f_txt" placeholder="buscar: empresa, nº factura, pedido, comentario…" value="'+esc(flt.text)+'" style="width:250px">'+
       '<span class="hint">from</span><input id="f_from" type="date" value="'+flt.from+'"><span class="hint">to</span><input id="f_to" type="date" value="'+flt.to+'">'+
-      '<button class="btn sm" id="f_clear">clear</button>'+
-      '<span class="hint" style="margin-left:auto"><span class="allocchip" style="background:#EFE3FB">credit note</span><span class="allocchip" style="background:#F8D7D7">cancelled</span></span>'+
+      '<button class="btn sm" id="f_clear">limpiar</button>'+
+      '<span class="hint" style="margin-left:auto"><span class="allocchip" style="background:#EFE3FB">abono</span><span class="allocchip" style="background:#F8D7D7">cancelled</span></span>'+
     '</div>'+
     '<div class="tblwrap"><table id="itbl"></table></div>'+
-    '<p class="hint">Sorted by date, then invoice nº — <b>click any column header</b> to sort by it, click again to reverse. When you save a <b>tickets</b> or <b>sponsorship</b> invoice with passes on an event line, its seats appear automatically on the event&#39;s delegate list (yellow until a name is filled in). <b>Cancelled</b> only happens through a total credit note — never by hand.</p></div>'+
+    '<p class="hint">Ordenadas por fecha y nº — <b>haz clic en cualquier cabecera</b> para ordenar por ella, otro clic invierte. Al guardar una factura de <b>tickets</b> o <b>sponsorship</b> con pases en una línea de evento, sus plazas aparecen solas en la lista de delegados del evento (en amarillo hasta poner nombre). <b>Cancelada</b> solo ocurre mediante un abono total — nunca a mano.</p></div>'+
     '';
   renderTable(rows);
   /* the write buttons only exist for an invoicing editor — wire whatever is on the page */
@@ -328,20 +328,20 @@ function allocSortVal(i){
   return c?(c.item||c.codigo||''):'';
 }
 const INV_COLS=[
-  {k:'num',   label:'Invoice nº',            get:i=>i.numero_factura},
-  {k:'fecha', label:'Date',      type:'date',get:i=>i.fecha},
-  {k:'venc',  label:'Due date',  type:'date',get:i=>i.vencimiento},
-  {k:'rs',    label:'Company',               get:i=>i.razon_social},
-  {k:'prod',  label:'Product',               get:i=>prodCell(i)},
-  {k:'pases', label:'Passes',    type:'num', cls:'num', get:i=>invPasses(i)},
+  {k:'num',   label:'Nº factura',            get:i=>i.numero_factura},
+  {k:'fecha', label:'Fecha',      type:'date',get:i=>i.fecha},
+  {k:'venc',  label:'Vencimiento',  type:'date',get:i=>i.vencimiento},
+  {k:'rs',    label:'Empresa',               get:i=>i.razon_social},
+  {k:'prod',  label:'Producto',               get:i=>prodCell(i)},
+  {k:'pases', label:'Pases',    type:'num', cls:'num', get:i=>invPasses(i)},
   {k:'base',  label:'Subtotal €',type:'num', cls:'num', get:i=>i.importe_base},
   {k:'usd',   label:'Subtotal US$',type:'num',cls:'num',get:i=>i.en_usd?i.importe_usd:null},
-  {k:'iva',   label:'VAT',       type:'num', cls:'num', get:i=>i.iva_importe},
+  {k:'iva',   label:'IVA',       type:'num', cls:'num', get:i=>i.iva_importe},
   {k:'total', label:'Total',     type:'num', cls:'num', get:i=>i.total_factura},
-  {k:'st',    label:'Status',                get:i=>INV_STATUS[i.status]||i.status},
-  {k:'ctr',   label:'Contract',              get:i=>contractOwnerVal(i)},
+  {k:'st',    label:'Estado',                get:i=>INV_STATUS[i.status]||i.status},
+  {k:'ctr',   label:'Contrato',              get:i=>contractOwnerVal(i)},
   {k:'alloc', label:'Analítica (item · código)', get:i=>allocSortVal(i)},
-  {k:'com',   label:'Comments',              get:i=>i.comentarios},
+  {k:'com',   label:'Comentarios',              get:i=>i.comentarios},
 ];
 function applyInvSort(rows){
   if(!SORT.col)return rows;                                       // no column picked → the caller's default order
@@ -363,7 +363,7 @@ function renderTable(rows){
   const canWrite=DB.canBill();      // everyone reads the book; only accounting changes it
   rows=applyInvSort(rows);
   let h='<tr>'+invThCells()+'</tr>';
-  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No invoices'+(DB.invoices.length?' under these filters.':(canWrite?' yet — create the first one with “+ New invoice”.':' yet.'))+'</td></tr>';
+  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No hay facturas'+(DB.invoices.length?' con estos filtros.':(canWrite?' todavía — crea la primera con “+ Nueva factura”.':' todavía.'))+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -373,7 +373,7 @@ function renderTable(rows){
     /* C2: Cancelled is NOT offered by hand — it only arrives via a total credit note.
        Credit-note rows are locked too (Jesús 2.5): an R-document is always a credit note. */
     const stOpts=Object.keys(INV_STATUS).filter(s=>(s!=='cancelado'||i.status==='cancelado')&&(s!=='abono'||i.status==='abono'));
-    const stLock=i.status==='cancelado'?'disabled title="Cancelled via credit note — final"':i.status==='abono'?'disabled title="Credit note — status is fixed"':'';
+    const stLock=i.status==='cancelado'?'disabled title="Cancelada por abono total — definitivo"':i.status==='abono'?'disabled title="Abono — el estado es fijo"':'';
     /* read-only reader: the status is a fact to look at, not a control */
     const stSel=canWrite?'<select class="inl" data-st="'+i.id+'" '+stLock+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'
                         :esc(INV_STATUS[i.status]||i.status||'');
@@ -399,7 +399,7 @@ function renderTable(rows){
   document.querySelectorAll('[data-ctr]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openModal(DB.invoice(b.dataset.ctr));};});
   document.querySelectorAll('[data-st]').forEach(s=>s.onchange=()=>{
     const i=DB.invoice(s.dataset.st);if(!i)return;
-    if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — use “+ Credit note”.');s.value=i.status;return;}
+    if(s.value==='abono'&&!(''+(i.numero_factura||'')).toUpperCase().startsWith('R')){alert('A credit note must have an invoice number starting with R — use “+ Abono”.');s.value=i.status;return;}
     i.status=s.value;
     if(i.status==='pagado'){if(!i.fecha_cobro)i.fecha_cobro=todayISO();}
     else i.fecha_cobro=null; // leaving Paid clears the stamp — a stale one made SPX count it as paid forever
@@ -455,7 +455,7 @@ function codsForPicker(sel){return codsSorted().filter(c=>!c.archived||(sel&&c.i
 function codigosBodyHtml(msg){
   const evOpts=sel=>'<option value="">— no event —</option>'+DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.name||'').localeCompare(b.name||'')).map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
   const dups={};DB.codigos.forEach(c=>{const v=(''+(c.codigo||'')).trim().toLowerCase();if(v)dups[v]=(dups[v]||0)+1;});
-  let h='<h3>Items &amp; accounting codes</h3>'+
+  let h='<h3>Artículos y códigos contables</h3>'+
     '<p class="hint" style="margin:0 0 10px">The mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list. '+
     'Linking an item to a € Dashboard event is what makes a RENMAD line roll into the money totals. <b>Códigos must be unique</b> — a repeated one is refused.</p>'+
     (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
@@ -530,14 +530,14 @@ function prodUsage(key){
 }
 function productosBodyHtml(msg){
   const mine=DB.productos.slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0));
-  let h='<h3>Products</h3>'+
+  let h='<h3>Productos</h3>'+
     '<p class="hint" style="margin:0 0 10px">What a line can be sold as. The list at the top is built into the Dispatch and cannot change — those products carry behaviour. '+
     'Add your own below: tick <b>Counts passes</b> when it is a seat someone attends with (that gives it the pass-type column, the Passes total and a delegate seat, exactly like Tickets). '+
     'Untick <b>Live</b> to retire one — it drops out of new invoices while old ones still read correctly.</p>'+
     (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
     (DB.prodReady()?'':'<div class="warn" style="margin:0 0 10px">The products table is not in the database yet — nothing added here can be saved.</div>')+
     '<div style="max-height:56vh;overflow:auto">'+
-    '<table><tr><th>Product</th><th style="width:110px;text-align:center" title="Behaves like Tickets: pass type × qty, Passes column, delegate seat, ticket money on the SPX board">Counts passes</th><th style="width:56px;text-align:center">Live</th><th style="width:70px" class="num">In use</th><th style="width:24px"></th></tr>';
+    '<table><tr><th>Producto</th><th style="width:110px;text-align:center" title="Behaves like Tickets: pass type × qty, Passes column, delegate seat, ticket money on the SPX board">Counts passes</th><th style="width:56px;text-align:center">Live</th><th style="width:70px" class="num">In use</th><th style="width:24px"></th></tr>';
   PRODUCTOS_BUILTIN.forEach(k=>{
     h+='<tr><td>'+esc(PRODUCTO_LABEL_BUILTIN[k])+' <span class="hint">· built in</span></td>'+
       '<td style="text-align:center">'+(k==='tickets'?'✓':'<span class="hint">—</span>')+'</td>'+
@@ -645,7 +645,7 @@ function openFragEditor(propId,backTo){
       '<p class="hint" style="margin:0 0 10px">Contract value <b>'+eurF(cVal)+'</b>. Break it into the invoices it will really be billed in '+
       '(Verdian: 6.000 € now, the rest in October). Each invoice then links to its own slice, and the SPX board shows how much of the contract is actually invoiced and collected.</p>'+
       (msg?'<div class="warn" style="margin:0 0 10px">'+esc(msg)+'</div>':'')+
-      '<table><tr><th>Label</th><th style="width:110px" class="num">Amount €</th><th style="width:150px">Expected</th><th style="width:120px">Invoiced</th><th style="width:24px"></th></tr>';
+      '<table><tr><th>Etiqueta</th><th style="width:110px" class="num">Importe €</th><th style="width:150px">Previsto</th><th style="width:120px">Facturado</th><th style="width:24px"></th></tr>';
     fr.forEach(f=>{const inv=fragNet(f.id,null);
       h+='<tr><td><input data-ff="label" data-id="'+f.id+'" value="'+esc(f.label||'')+'" placeholder="e.g. 1st invoice" style="width:100%"></td>'+
       '<td><input type="number" step="any" data-ff="amount" data-id="'+f.id+'" value="'+(f.amount!=null?f.amount:'')+'" style="text-align:right;width:100%"></td>'+
@@ -718,34 +718,34 @@ function openModal(inv,preset){
   /* C2: no manual Cancelled — the status only exists via a total credit note.
      A credit note's status is fixed (Jesús 2.5) — the select renders locked on R-documents. */
   const stOpts=Object.keys(INV_STATUS).filter(s=>s!=='cancelado'||i.status==='cancelado');
-  const stFixed=i.status==='abono'?'disabled title="Credit note — status is fixed"':'';
+  const stFixed=i.status==='abono'?'disabled title="Abono — el estado es fijo"':'';
   document.getElementById('modalbody').innerHTML=
-    '<h3>'+(preset&&preset.title?preset.title:(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice'))+'</h3>'+
+    '<h3>'+(preset&&preset.title?preset.title:(inv?'Editar factura '+esc(inv.numero_factura||''):'Nueva factura'))+'</h3>'+
     '<div class="frm">'+
-    '<label class="w2">Invoice nº *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R1, R2…"></label>'+
-    '<label>Date *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
-    '<label>Due date<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
-    '<label class="w2">Entered by <span class="hint" style="text-transform:none;font-weight:400">(automatic)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
-    '<label class="w2">Company (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
-    '<label>Order (pedido)<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'"></label>'+
+    '<label class="w2">Nº factura *<input id="m_num" value="'+esc(i.numero_factura||'')+'" placeholder="e.g. 20260009 · credit notes: R1, R2…"></label>'+
+    '<label>Fecha *<input id="m_fecha" type="date" value="'+(i.fecha||'')+'"></label>'+
+    '<label>Vencimiento<input id="m_venc" type="date" value="'+(i.vencimiento||'')+'"></label>'+
+    '<label class="w2">Registrada por <span class="hint" style="text-transform:none;font-weight:400">(automático)</span><input id="m_by" value="'+esc(i.entered_by||actorName())+'" readonly tabindex="-1" title="Set automatically from your profile" style="background:#f0eee7;color:#777;cursor:not-allowed"></label>'+
+    '<label class="w2">Empresa (razón social) *<input id="m_rs" value="'+esc(i.razon_social||'')+'"></label>'+
+    '<label>Pedido<input id="m_pedido" value="'+esc(i.pedido&&i.pedido!=='N/A'?i.pedido:'')+'"></label>'+
     '<label class="w2" id="l_contract" style="display:none">Contract (SPX proposal) * <span class="hint" style="text-transform:none;font-weight:400">— mandatory for SPX &amp; upgrade invoices; SPX Invoiced/Paid follows it</span><select id="m_spx">'+spxContractOpts(i.spxProposalId)+'</select></label>'+
     '<label class="w2" id="l_frag" style="display:none">Instalment <span class="hint" style="text-transform:none;font-weight:400">— when one contract is billed in several invoices, say which slice this one is</span>'+
       '<span style="display:flex;gap:6px"><select id="m_frag" style="flex:1">'+fragOpts(i.spxProposalId,i.spxFragmentId)+'</select>'+
       '<button type="button" class="btn sm" id="m_fragedit" title="Break this contract into the invoices it will actually be billed in">✂ Split…</button></span></label>'+
-    '<label id="l_owner" style="display:none">Contract salesperson<input id="m_owner" readonly tabindex="-1" value=""></label>'+
-    '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Invoiced in USD <span class="hint" style="font-weight:400">— line prices go in US$; type the final € figure for accounting in the totals box</span></label>'+
+    '<label id="l_owner" style="display:none">Contrato (comercial)<input id="m_owner" readonly tabindex="-1" value=""></label>'+
+    '<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-weight:700;color:var(--charcoal);white-space:normal;grid-column:1/-1;background:#fff8f4;border:1px solid #ffd9c4;border-radius:8px;padding:7px 10px"><input id="m_usd" type="checkbox" style="width:auto;transform:scale(1.35)" '+(i.en_usd?'checked':'')+'> Facturada en USD <span class="hint" style="font-weight:400">— los precios de línea van en US$; escribe el importe final en € para contabilidad en la caja de totales</span></label>'+
     '</div>'+
-    '<div class="sect" style="margin-top:8px">Analítica — the invoice, line by line <span class="hint" style="text-transform:none;font-weight:400">(Qty × Price does the maths · the código fills itself from the item · passes = pass type × qty)</span></div>'+
+    '<div class="sect" style="margin-top:8px">Analítica — la factura, línea a línea <span class="hint" style="text-transform:none;font-weight:400">(Cant. × Precio calcula solo · el código sale del item · pases = tipo de pase × cant.)</span></div>'+
     '<table class="lntbl" id="atbl"></table>'+
-    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ line</button></div>'+
+    '<div style="margin-top:6px"><button class="btn sm" id="addAlloc">+ línea</button></div>'+
     '<div style="display:flex;gap:16px;align-items:flex-start;margin-top:10px;flex-wrap:wrap">'+
       '<div style="flex:1;min-width:260px">'+
-        '<div class="sect">Payment</div>'+
+        '<div class="sect">Pago</div>'+
         '<div class="frm" style="grid-template-columns:repeat(2,1fr)">'+
-        '<label>Status<select id="m_st" '+stFixed+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
+        '<label>Estado<select id="m_st" '+stFixed+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select></label>'+
         /* N/A retired (Jesús 2.5) — only still offered on a legacy invoice that already has it */
-        '<label>Payment method<select id="m_pago">'+['tarjeta','transferencia','abono'].concat(i.metodo_pago==='na'?['na']:[]).map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'}[m])+'</option>').join('')+'</select></label>'+
-        '<label class="w2" id="l_abde" style="display:none">Credit note for invoice<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
+        '<label>Forma de pago<select id="m_pago">'+['tarjeta','transferencia','abono'].concat(i.metodo_pago==='na'?['na']:[]).map(m=>'<option value="'+m+'" '+(i.metodo_pago===m?'selected':'')+'>'+({tarjeta:'Tarjeta',transferencia:'Transferencia',abono:'Abono',na:'N/D'}[m])+'</option>').join('')+'</select></label>'+
+        '<label class="w2" id="l_abde" style="display:none">Abono de la factura<select id="m_abde">'+invOpts(i.abono_de)+'</select></label>'+
         '<label class="w2">Comments / notes<input id="m_com" value="'+esc(i.comentarios||'')+'"></label>'+
         '</div>'+
         '<div id="m_ctrhint" class="hint" style="margin-top:6px"></div>'+
@@ -764,7 +764,7 @@ function openModal(inv,preset){
        instalments are agreed on the CONTRACT and billed as separate invoices (✂ Split),
        not collected against one invoice. Nothing was ever recorded in it (0 rows), so the
        code and the table stay untouched behind it: put the two lines back and it returns. */
-    '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancel</button><button class="btn primary" id="m_save">Save</button></div>';
+    '<div class="mrow"><span class="amsg" id="m_msg"></span><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar</button></div>';
   document.getElementById('modal').classList.add('on');
   wireModal(i);
   renderPayments();
@@ -776,7 +776,7 @@ function renderLines(){
   const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('');
   const paseOpts=sel=>'<option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(t===sel?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+')</option>').join('');
   const usd=document.getElementById('m_usd')&&document.getElementById('m_usd').checked;
-  let h='<tr><th style="min-width:120px">Product *</th><th style="width:110px">Pass type</th><th style="width:56px" class="num">Qty</th><th style="width:84px" class="num">Price '+(usd?'US$':'€')+'</th><th style="width:92px" class="num">Amount '+(usd?'US$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Passes</th><th style="width:24px"></th></tr>';
+  let h='<tr><th style="min-width:120px">Producto *</th><th style="width:110px">Tipo de pase</th><th style="width:56px" class="num">Cant.</th><th style="width:84px" class="num">Precio '+(usd?'US$':'€')+'</th><th style="width:92px" class="num">Importe '+(usd?'US$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Pases</th><th style="width:24px"></th></tr>';
   allocRows.forEach((a,ix)=>{
     const warn=a.codigoId&&!a.codigo;
     h+='<tr><td><select data-lf="producto" data-ix="'+ix+'">'+prodOpts(a.producto)+'</select></td>'+
@@ -878,7 +878,7 @@ function wireModal(i){
     if(!propId){alert('Pick the contract first.');return;}
     const snap=formModel(),inv=editingId?DB.invoice(editingId):null;
     openFragEditor(propId,()=>{
-      openModal(inv,{fields:snap.fields,lines:snap.lines,title:(inv?'Edit invoice '+esc(inv.numero_factura||''):'New invoice')});
+      openModal(inv,{fields:snap.fields,lines:snap.lines,title:(inv?'Editar factura '+esc(inv.numero_factura||''):'Nueva factura')});
     });
   });
   $('m_usd').addEventListener('change',()=>{renderLines();refreshModal();}); // the line headers switch €/$ with the checkbox
@@ -909,7 +909,7 @@ function closeModal(){document.getElementById('modal').classList.remove('on');ed
 document.getElementById('modal').onclick=e=>{if(e.target===document.getElementById('modal'))closeModal();};
 
 /* ---------- split-payment ledger (inside the invoice modal) ---------- */
-const PM_LABEL={tarjeta:'Card',transferencia:'Bank transfer',abono:'Credit note',na:'N/A'};
+const PM_LABEL={tarjeta:'Tarjeta',transferencia:'Transferencia',abono:'Abono',na:'N/D'};
 /* re-derive the invoice's status / collected / stamp from its payment rows */
 function syncInvoiceFromPayments(invId){
   const inv=DB.invoice(invId);if(!inv)return;
@@ -927,10 +927,10 @@ function renderPayments(){
   if(!DB.payReady()){box.innerHTML='<p class="hint">Split payments are not active yet — run <b>dispatch_invoice_payments.sql</b> in Supabase, then reload.</p>';return;}
   if(!editingId){box.innerHTML='<p class="hint">Save the invoice first, then re-open it (✎) to record partial payments.</p>';return;}
   const inv=DB.invoice(editingId);if(!inv){box.innerHTML='';return;}
-  if(inv.status==='abono'||inv.status==='cancelado'){box.innerHTML='<p class="hint">'+(inv.status==='abono'?'Credit note':'Cancelled invoice')+' — the payment ledger does not apply.</p>';return;}
+  if(inv.status==='abono'||inv.status==='cancelado'){box.innerHTML='<p class="hint">'+(inv.status==='abono'?'Abono':'Factura cancelada')+' — the payment ledger does not apply.</p>';return;}
   const ps=DB.paymentsFor(editingId).slice().sort((a,b)=>(''+(a.fecha||'')).localeCompare(''+(b.fecha||'')));
   const total=+inv.total_factura||0,paid=num2(ps.reduce((s,p)=>s+(+p.importe||0),0)),rem=num2(total-paid);
-  let h='<table class="lntbl"><tr><th style="width:120px">Date</th><th style="width:110px" class="num">Amount €</th><th style="width:130px">Method</th><th>Note</th><th style="width:24px"></th></tr>';
+  let h='<table class="lntbl"><tr><th style="width:120px">Fecha</th><th style="width:110px" class="num">Importe €</th><th style="width:130px">Forma</th><th>Nota</th><th style="width:24px"></th></tr>';
   if(!ps.length)h+='<tr><td colspan="5" class="hint">No payments yet — add the first below.</td></tr>';
   ps.forEach(p=>{h+='<tr><td>'+ddmmyyyy(p.fecha)+'</td><td class="num">'+eurF(p.importe)+'</td><td>'+(PM_LABEL[p.metodo]||'—')+'</td>'+
     '<td style="white-space:normal">'+esc(p.notas||'')+'</td><td><button class="del" data-paydel="'+p.id+'" title="Remove this payment">×</button></td></tr>';});
@@ -987,7 +987,7 @@ function renderDraftBar(){
     '<button class="btn sm" id="draftResume">Resume it</button><button class="btn sm" id="draftDrop">Discard</button></div>';
   document.getElementById('draftResume').onclick=()=>{
     const inv=d.editingId?DB.invoice(d.editingId):null;
-    openModal(inv,{fields:d.fields,lines:d.lines,title:(inv?'Edit invoice (recovered draft)':'New invoice (recovered draft)')});
+    openModal(inv,{fields:d.fields,lines:d.lines,title:(inv?'Editar factura (borrador recuperado)':'Nueva factura (borrador recuperado)')});
   };
   document.getElementById('draftDrop').onclick=()=>{clearDraft();renderDraftBar();};
 }
@@ -996,8 +996,8 @@ async function saveInvoice(){
   const $=id=>document.getElementById(id),msg=$('m_msg');
   const err=t=>{msg.style.color='var(--red)';msg.textContent=t;};
   const num=$('m_num').value.trim(),st=$('m_st').value;
-  if(!num)return err('Invoice nº is missing.');
-  if(!$('m_rs').value.trim())return err('Company name is missing.');
+  if(!num)return err('Falta el nº de factura.');
+  if(!$('m_rs').value.trim())return err('Falta la razón social.');
   const lines=allocRows.filter(lineHasData);
   if(!lines.length)return err('The invoice needs at least one line (product · qty · price).');
   if(lines.some(r=>!r.producto))return err('Every line needs a product.');
@@ -1010,7 +1010,7 @@ async function saveInvoice(){
      colliding with 2026's R1. Cross-year duplicates are a warning, not a block. */
   const numYear=fecha.slice(0,4);
   if(DB.invoices.some(x=>x.id!=editingId&&invYearOf(x)===numYear&&(x.numero_factura||'').trim().toLowerCase()===num.toLowerCase()))
-    return err('Invoice nº '+num+' already exists in '+numYear+' — duplicates are blocked inside a year.');
+    return err('Invoice nº '+num+' ya existe en '+numYear+' — los duplicados están bloqueados dentro del año.');
   const yr=+fecha.slice(0,4);
   if(yr>new Date().getFullYear())return err('The date cannot go beyond the current year.');
   if(yr<2020)return err('That date looks wrong ('+fecha.slice(0,4)+') — check the year.');
@@ -1018,7 +1018,7 @@ async function saveInvoice(){
   if($('m_venc').value&&$('m_venc').value<fecha)return err('The due date cannot be before the invoice date.');
   if($('m_iva').value==='0'&&!$('m_motivo').value)return err('0% VAT: choose the reason (exempt / not subject / reverse charge / export).');
   const esAbono=(st==='abono');
-  /* abonos must start with R (own sequence — use “+ Credit note” to get the next one) */
+  /* abonos must start with R (own sequence — use “+ Abono” to get the next one) */
   if(esAbono&&!num.toUpperCase().startsWith('R'))return err('A credit note must start with R (e.g. '+nextRNumber(numYear)+').');
   if(!esAbono&&looksLikeRNumber(num))return err('R-numbers are reserved for credit notes.');
   /* A7: SPX & upgrade invoices must carry their contract — enforced on NEW invoices ONLY.
@@ -1030,7 +1030,7 @@ async function saveInvoice(){
   if(needsSpx&&!$('m_spx').value&&!esAbono&&!editingId)
     return err('Sponsorship / upgrade invoices must be linked to their SPX contract — pick it under Contract.');
   const t=calcTotals();
-  if(t.usd&&$('m_eur').value==='')return err('Invoiced in USD: type the final EUR figure for accounting in the totals box.');
+  if(t.usd&&$('m_eur').value==='')return err('Facturada en USD: escribe el importe final en EUR para contabilidad en la caja de totales.');
   /* credit notes are stored NEGATIVE — everywhere downstream (Money, KPIs, Excel) sums
      them, so a positive abono would double-count revenue instead of reversing it. */
   if(esAbono&&t.net>0){
@@ -1107,10 +1107,10 @@ async function saveInvoice(){
   if(!ok){err('Could not save — your draft is kept.');return;}
   clearDraft();
   closeModal();render();
-  if(cancelledOriginal)alert('Invoice '+cancelledOriginal+' is now Cancelled — covered by this total credit note '+num+'.');
+  if(cancelledOriginal)alert('Invoice '+cancelledOriginal+' queda Cancelada — cubierta por este abono total '+num+'.');
 }
 
-/* ---------- C1: + Credit note — pick invoice → total or partial → auto-negative draft ---------- */
+/* ---------- C1: + Abono — pick invoice → total or partial → auto-negative draft ---------- */
 /* The invoice a credit note reverses is picked from ONE YEAR's drawer, not from all
    660 invoices at once (Jesús, 23 jul: "el listado va a ser infinito"). Default = the
    year tab you are standing on; the one documented exception — a credit note that
@@ -1129,8 +1129,8 @@ function cnOptsHtml(year,q){
 function openCreditPicker(){
   const yNow=creditYear(), yPrev=(+yNow-1)+'';
   document.getElementById('modalbody').innerHTML=
-    '<h3>+ Credit note</h3>'+
-    '<p class="hint" style="margin:0 0 10px">Pick the invoice to credit. A <b>total</b> credit note reverses everything and marks the invoice Cancelled; a <b>partial</b> one auto-splits money, passes and lines proportionally — and you can still edit every line before saving.</p>'+
+    '<h3>+ Abono</h3>'+
+    '<p class="hint" style="margin:0 0 10px">Elige la factura a abonar. A <b>total</b> credit note reverses everything and marks the invoice Cancelled; a <b>partial</b> one auto-splits money, passes and lines proportionally — and you can still edit every line before saving.</p>'+
     '<label style="display:block;margin:0 0 10px;font-weight:600"><input type="checkbox" id="cn_prev"> Credit note de año anterior '+
       '<span class="hint" style="text-transform:none;font-weight:400">— tick to credit an invoice from '+yPrev+'. The credit note itself always carries '+
       'today&#39;s date and this year&#39;s number ('+esc(nextRNumber(yNow))+'), whatever year the invoice it cancels belongs to (Jesús, 28 jul).</span></label>'+
@@ -1141,7 +1141,7 @@ function openCreditPicker(){
     '<label>Type<select id="cn_type"><option value="total">Total — reverses everything, cancels the invoice</option><option value="partial">Partial — you set the amount</option></select></label>'+
     '<label id="cn_amtl" style="display:none">Net amount to credit €<input id="cn_amt" type="number" step="any" min="0"></label>'+
     '</div>'+
-    '<div class="mrow"><span class="amsg" id="cn_msg"></span><button class="btn" id="cn_cancel">Cancel</button><button class="btn primary" id="cn_go">Create draft →</button></div>';
+    '<div class="mrow"><span class="amsg" id="cn_msg"></span><button class="btn" id="cn_cancel">Cancelar</button><button class="btn primary" id="cn_go">Create draft →</button></div>';
   document.getElementById('modal').classList.add('on');
   const $=id=>document.getElementById(id);
   const refill=()=>{const y=$('cn_prev').checked?yPrev:yNow;
@@ -1153,7 +1153,7 @@ function openCreditPicker(){
   $('cn_cancel').onclick=closeModal;
   $('cn_go').onclick=()=>{
     const inv=DB.invoice($('cn_inv').value);
-    if(!inv){$('cn_msg').style.color='var(--red)';$('cn_msg').textContent='Pick the invoice to credit.';return;}
+    if(!inv){$('cn_msg').style.color='var(--red)';$('cn_msg').textContent='Elige la factura a abonar.';return;}
     const total=$('cn_type').value==='total';
     const origNet=Math.abs(+inv.importe_base||0);
     let credit=total?origNet:Math.abs(+$('cn_amt').value||0);
@@ -1247,7 +1247,7 @@ function exportExcel(){
   ]);
 }
 
-/* ---------- ⬆ Load history: Jesús's Excel template → historical invoices ----------
+/* ---------- ⬆ Cargar histórico: Jesús's Excel template → historical invoices ----------
    ONE template covers simple AND multi-line invoices: each row is one analítica line;
    rows sharing an invoice nº merge into one invoice. Credit notes (R…) and USD invoices
    stay MANUAL — they need linking/judgement and history has few of them. Re-running a
@@ -1294,7 +1294,7 @@ function downloadImportTemplate(){
     'Los datos de cabecera (fecha, razón social, IVA, estado…) se leen de la PRIMERA fila de cada factura; en las demás filas puedes dejarlos vacíos.',
     'Producto: sponsorship · tickets · ata · webinar · comisiones · upgrade · sitevisits · grabaciones · refacturacion.',
     'Tipo pase (solo tickets): single · double · triple · quad — los passes se calculan solos (tipo × cantidad).',
-    'Código contable: debe existir en ⚙ Items & codes. Si falta alguno, créalo allí primero — el resumen de carga te dirá cuáles faltan.',
+    'Código contable: debe existir en ⚙ Artículos y códigos. Si falta alguno, créalo allí primero — el resumen de carga te dirá cuáles faltan.',
     'IVA % vacío = 21. Con IVA 0 hay que indicar el motivo. Estado vacío = pagado. Fecha cobro vacía = fecha factura. Método pago vacío = transferencia.',
     'Fechas: dd/mm/aaaa (o formato fecha de Excel).',
     'NO van en esta plantilla (se meten a mano en la app): credit notes (R…) y facturas en USD.',

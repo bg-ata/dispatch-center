@@ -153,7 +153,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=82"></script>
+<script src="store.js?v=83"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -371,7 +371,10 @@ function finRowHtml(f,canF){
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
   const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
   if(!canF){
-    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+esc(f.pm||'')+'</td><td>'+esc(f.sales||'')+'</td>'+
+    /* PM/Sales names link to the person page when they match the roster (29 Jul stitches) */
+    const pLink=n=>{if(!n)return '';const p=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);
+      return p?'<a href="person.html?id='+p.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);};
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }

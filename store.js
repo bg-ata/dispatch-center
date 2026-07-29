@@ -2547,7 +2547,8 @@ function delegateState(d){
    "Pase Online" for the Talks was the first. PRODUCTOS / PRODUCTO_LABEL keep exactly the
    shape every page already reads; rebuildProductos() re-fills them after each load. */
 const PRODUCTOS_BUILTIN=['sponsorship','tickets','ata','webinar','abono','comisiones','upgrade','sitevisits','grabaciones','refacturacion'];
-const PRODUCTO_LABEL_BUILTIN={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Credit note',comisiones:'Commissions',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Recordings',refacturacion:'Refacturación'};
+/* product labels in Spanish — accounting's surface (29 Jul language rule) */
+const PRODUCTO_LABEL_BUILTIN={sponsorship:'Sponsorship',tickets:'Tickets',ata:'ATA',webinar:'Webinar',abono:'Abono',comisiones:'Comisiones',upgrade:'Upgrade',sitevisits:'Site Visits',grabaciones:'Grabaciones',refacturacion:'Refacturación'};
 let PRODUCTOS=PRODUCTOS_BUILTIN.slice();
 let PRODUCTO_LABEL=Object.assign({},PRODUCTO_LABEL_BUILTIN);
 let TICKET_PRODS=['tickets'];
@@ -2569,7 +2570,8 @@ function rebuildProductos(){
   });
 }
 const TIPO_PASES={single:1,double:2,triple:3,quad:4};
-const INV_STATUS={pagado:'Paid',no_pagado:'Unpaid',cancelado:'Cancelled',abono:'Credit note'};
+/* accounting speaks Spanish (29 Jul language rule: one language per audience) */
+const INV_STATUS={pagado:'Pagada',no_pagado:'No pagada',cancelado:'Cancelada',abono:'Abono'};
 const IVA_MOTIVOS=['exempt','not subject','reverse charge (ISP)','export'];
 /* label used by the Facturación event picker & delegate lists: the dc_finance row */
 function finLabel(f){return (f.name||'?')+' '+(f.year||'')+(f.city?' · '+f.city:'');}
