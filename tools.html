@@ -36,7 +36,7 @@
   <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished. Something broken or clunky? The 💡 request box now lives with your <a href="inbox.html#requests" style="color:var(--muted)">🔔 notifications</a>.</p>
   <p class="note" id="oldpb"></p>
 </div>
-<script src="store.js?v=79"></script>
+<script src="store.js?v=80"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
 function render(){
@@ -54,22 +54,27 @@ function render(){
   g.appendChild(pb);
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
-    if(t.id==='proposal')return; // old Streamlit builder: demoted to the footnote link below (29 Jul UX round)
     const pending=!t.url;
     const el=document.createElement(pending?'div':'a');
     el.className='tile'+(pending?' pending':'');
     if(!pending){el.href='tool.html?id='+t.id;} // open through the dispatch shell, not a bare new tab
-    const badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
+    let name=t.name,desc=t.desc,badge=pending?'coming soon':(t.game?'game':(t.ownLogin?'own login':''));
+    /* The old Streamlit builder stays a VISIBLE (muted) tile while the browser builder
+       settles in — a footnote-only fallback proved too quiet: Belén herself couldn't
+       find it (29 Jul evening). Retire the tile for good once the new builder has a
+       clean couple of weeks. */
+    if(t.id==='proposal'){
+      name='Proposal Builder <span style="color:var(--muted);font-weight:400">(old Streamlit)</span>';
+      desc='The previous version, kept as a fallback while the browser builder settles in. Use the one above unless something is missing.';
+      badge='fallback';
+      el.style.opacity='.72';
+    }
     el.innerHTML='<span class="ic" style="background:'+t.accent+'">'+t.ini+'</span>'+
-      '<span><h3>'+t.name+'</h3><p>'+t.desc+'</p></span>'+
+      '<span><h3>'+name+'</h3><p>'+desc+'</p></span>'+
       (badge?'<span class="badge'+(t.ownLogin?' own':'')+'">'+badge+'</span>':'');
     g.appendChild(el);
   });
-  /* Superseded 29 Jul 2026 cutover: the browser builder above is THE builder. The Streamlit
-     one stays reachable as a quiet fallback link until it is retired for good. */
-  const old=DISPATCH_TOOLS.find(t=>t.id==='proposal');
-  if(old&&old.url)document.getElementById('oldpb').innerHTML=
-    'Fallback: the <a href="tool.html?id=proposal" style="color:var(--muted)">previous Proposal Builder (Streamlit)</a> is still reachable while the browser builder settles in — use it only if something is missing.';
+  document.getElementById('oldpb').innerHTML='';
 }
 boot(render);
 window.addEventListener('dc-remote',render);

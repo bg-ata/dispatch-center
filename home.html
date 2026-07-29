@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=79"></script>
+<script src="store.js?v=80"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -939,10 +939,13 @@ function renderHolPanel(){
   /* the year we are SPENDING right now: in Jan/Feb that is still last year's allowance */
   const ay=holYearOfDate(toISO(new Date()));
   if(holExempt(me)){
-    /* Belén sits outside the allowance policy — her days are recorded, not counted down */
-    const taken=holUsed(me.id,ay);
-    h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+taken+' day'+(taken===1?'':'s')+' taken</span></div>'+
-      '<p class="hint" style="margin:6px 0 10px">The 23-day allowance and the 28 Feb carry-over deadline don’t apply to you — these are recorded so the team can see when you’re away.</p>';
+    /* Belén sits outside the allowance policy, but she asked (29 Jul evening) for the
+       full year picture anyway — allowance · taken · remaining, not just a taken-count.
+       The numbers are informative: no deadline box, no pressure. */
+    const used=holUsed(me.id,ay),adj=holAdjust(me.id,ay),rem=holRemaining(me.id,ay);
+    h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
+      '<div class="hint" style="margin:2px 0 4px">'+holFormulaHtml(me.id,ay)+'</div>'+
+      '<p class="hint" style="margin:6px 0 10px">The 28 Feb carry-over deadline doesn’t apply to you — the count is informative, recorded so the team can see when you’re away.</p>';
   }else{
     const used=holUsed(me.id,ay),adj=holAdjust(me.id,ay),rem=holRemaining(me.id,ay);
     h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
