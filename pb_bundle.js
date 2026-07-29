@@ -3230,18 +3230,36 @@ window.PB = {
     opts = opts || {};
     let parent;
     try {
-      parent = buildParent(opts);
+      /* Two call styles, and BOTH must work.
+         The page builds the parent itself (it owns the salesperson, client, zoho and
+         contacts) and hands it over as opts.parent; older/local callers pass the raw
+         fields and let us build it. Ignoring opts.parent — as this did until 29 Jul —
+         rebuilt the row from an options bag that contains none of those fields, so every
+         proposal the web builder logged landed as a blank, value-0, company-less row
+         while the page cheerfully reported success. 11 such rows reached the board. */
+      parent = opts.parent ? opts.parent : buildParent(opts);
     } catch (e) {
       return { ok: false, reason: "build-parent: " + String(e), audit: null };
     }
     const audit = _auditBase(parent);
     const token = opts.token || DC_ANON_KEY;
-    const isGeneral = !!opts.isGeneral;
+    const isGeneral = opts.parent ? !!parent.isGeneral : !!opts.isGeneral;
+
+    /* Refuse to write a row that would be indistinguishable from the blanks above.
+       Anti-loss rule: LOUD, and nothing written, rather than a silent bad row. */
+    if (!parent.company) {
+      return { ok: false, reason: "refusing to write a proposal with no company name",
+               audit: Object.assign({}, audit, { success: false, error: "no company" }) };
+    }
 
     try {
       const pid = newId();
       parent.id = pid;
-      const lines = buildLines(opts.quote, pid, isGeneral);
+      /* Lines built by the caller carry a placeholder parentId; re-stamp them onto the
+         parent row we are actually writing. */
+      const lines = (opts.lines && opts.lines.length)
+        ? opts.lines.map(function (l) { return Object.assign({}, l, { parentId: pid }); })
+        : buildLines(opts.quote, pid, isGeneral);
 
       await _dcRest("POST", "dc_spx_proposals", token, [parent], null);
       if (lines.length) {
@@ -4544,5 +4562,635 @@ window.PB = {
   };
 
   global.PBWEB = { buildWebinarDeck: buildWebinarDeck };
+})(window);
+
+/* ===== proposal\options_deck.js ===== */
+/* ============================================================================
+   RENMAD Proposal Builder  ·  OPTIONS deck (PptxGenJS)
+   ----------------------------------------------------------------------------
+   Port of proposal_builder/options_deck.py — "several bundles to choose from".
+   The salesperson defines 2-4 named options over a shared set of events; each
+   option gets its own divider, package slides and calculation page, and one
+   side-by-side comparison slide closes the set.
+
+   Exposes:  window.PBOPT = { buildOptionsDeck(opts) } -> PptxGenJS deck
+
+   opts = {
+     lang:        'en' | 'es'
+     client:      string
+     salesperson: 'cintia'|'ian'|'sheetal' | {name,email,phone}
+     events:      [eventObj]                  the shared event set (<=5)
+     options:     [{ name, selections:[[eventKey,[pkgId,...]],...] }]   2..4
+     recommended: option NAME (not an index — see below)
+     discountPct: number    ONE shared rate applied to every option
+     validUntil:  'D Month YYYY' already formatted in `lang`
+     proposalDate:'D Month YYYY' already formatted in `lang`
+     images:      PBIMG.load() result (optional)
+   }
+
+   Two deliberate departures from the Python, both fixing defects in it:
+
+   1. `recommended` is the option's NAME, not its position. options_deck.py keys
+      it to an index into a list that Streamlit rebuilds on every rerun and that
+      silently drops empty options — so emptying an earlier option moved the
+      recommendation onto the wrong bundle with no warning.
+   2. The comparison card clamps its pick list. The Python lays picks out at
+      0.72in from y=3.07 against a totals block pinned at y=5.15, so a 4th pick
+      touches it and a 5th runs straight through. Here the step tightens and,
+      past what fits, the remainder collapses into a "+N more" line.
+
+   Accent is RENMAD red (D32230) throughout, as in multi_deck/options_deck — an
+   options proposal always spans several events, so no single event colour owns it.
+   ============================================================================ */
+(function (global) {
+  "use strict";
+
+  var HEAD = "Montserrat", BODY = "Inter";
+  var CH = "1C2529", IK = "26282E", GR = "F3F3F5", WH = "FFFFFF", MU = "7A7E84";
+  var LN = "DDDDDD", DEEP = "101618", DM = "CDC8C4", SLATE = "363E42", ALT = "ECECF0";
+  var TRACK = "E4E4E8", SWHT = "E6E6EC";
+  var RED = "D32230";
+  var SW = 13.333, SH = 7.5;
+  var MAX_OPTIONS = 4, LETTERS = "ABCD";
+
+  var NEWSLETTERS = {
+    general:  { price: 14500, contacts: { en: "51,000", es: "51.000" }, scope: { en: "General newsletter", es: "Newsletter general" } },
+    storage:  { price: 9500,  contacts: { en: "31,000", es: "31.000" }, scope: { en: "Storage newsletter", es: "Newsletter de Almacenamiento" } },
+    hydrogen: { price: 6500,  contacts: { en: "19,000", es: "19.000" }, scope: { en: "Hydrogen newsletter", es: "Newsletter de Hidrógeno" } },
+  };
+  var SALESPEOPLE = {
+    cintia:  { name: "Cintia Hernández",   email: "cintia.hernandez@ata.email",   phone: "+34 605 40 85 93" },
+    ian:     { name: "Ian Casares",        email: "ian.casares@ata.email",        phone: "+34 665 161 069" },
+    sheetal: { name: "Sheetal Shamdasani", email: "sheetal.shamdasani@ata.email", phone: "+34 630 637 276" },
+  };
+
+  /* options_deck.OPT — copy that exists only in this deck. Verbatim. */
+  var OPT = {
+    cover_k:     { en: "SPONSORSHIP OPTIONS", es: "OPCIONES DE PATROCINIO" },
+    cover_t:     { en: "Choose your\nsponsorship partnership", es: "Elige tu\nalianza de patrocinio" },
+    opt_word:    { en: "OPTION", es: "OPCIÓN" },
+    recommended: { en: "RECOMMENDED", es: "RECOMENDADA" },
+    includes:    { en: "Includes", es: "Incluye" },
+    compare_k:   { en: "YOUR OPTIONS · SIDE BY SIDE", es: "TUS OPCIONES · COMPARATIVA" },
+    compare_t:   { en: "Compare and choose", es: "Compara y elige" },
+    compare_sub: { en: "Each option covers the same events — pick the level of presence that fits. Totals include your multi-event partner discount.",
+                   es: "Cada opción cubre los mismos eventos — elige el nivel de presencia que encaja. Los totales incluyen tu descuento de partner multi-evento." },
+    calc_k:      { en: "INVESTMENT · {label}", es: "INVERSIÓN · {label}" },
+    more:        { en: "+{n} more", es: "+{n} más" },
+  };
+
+  /* the subset of multi_deck.MULTI this deck consumes. Double spaces are intentional. */
+  var MULTI = {
+    invest:      { en: "INVESTMENT", es: "INVERSIÓN" },
+    see_summary: { en: "See the summary page  →", es: "Ver la página de resumen  →" },
+    col_ev:      { en: "EVENT", es: "EVENTO" },
+    col_pk:      { en: "PACKAGE", es: "PAQUETE" },
+    col_pr:      { en: "PRICE", es: "PRECIO" },
+    subtotal:    { en: "Subtotal", es: "Subtotal" },
+    disc:        { en: "Multi-event partner discount  ({pct}%)", es: "Descuento de partner multi-evento  ({pct}%)" },
+    total:       { en: "TOTAL", es: "TOTAL" },
+    valid_k:     { en: "OFFER VALID UNTIL", es: "OFERTA VÁLIDA HASTA" },
+    valid_days:  { en: "{u}  ({d} days)", es: "{u}  ({d} días)" },
+    sum_foot:    { en: "Prepared {date}. Prices per event, tax not included. Discount agreed for this multi-event partnership and valid until the date above.",
+                   es: "Preparado el {date}. Precios por evento, IVA no incluido. Descuento acordado para esta alianza multi-evento y válido hasta la fecha indicada." },
+    contact_t:   { en: "Shall we build your\nmulti-event partnership?", es: "¿Construimos tu\nalianza multi-evento?" },
+  };
+  var VALID_DAYS = 14;
+
+  // ---- helpers (same idiom as deck.js) -------------------------------------
+  function hx(h) { h = String(h).replace("#", ""); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+  function toHex(r, g, b) {
+    return [r, g, b].map(function (v) {
+      v = Math.max(0, Math.min(255, Math.round(v)));
+      var s = v.toString(16); return s.length === 1 ? "0" + s : s;
+    }).join("").toUpperCase();
+  }
+  function mix(h, o, t) { var a = hx(h); return toHex(a[0] + (o[0] - a[0]) * t, a[1] + (o[1] - a[1]) * t, a[2] + (o[2] - a[2]) * t); }
+  function darken(h, t) { return mix(h, [0, 0, 0], t); }
+  function eur(v) { return Number(v).toLocaleString("es-ES") + " €"; }
+
+  function tx(s, x, y, w, h, t, size, color, bold, font, align, valign, extra) {
+    var o = { x: x, y: y, w: w, h: h, fontFace: font || BODY, fontSize: size || 14,
+      color: color || CH, bold: !!bold, align: align || "left", valign: valign || "top" };
+    if (extra) for (var k in extra) o[k] = extra[k];
+    s.addText(t, o);
+  }
+  function rc(s, x, y, w, h, fill, opts) {
+    opts = opts || {};
+    var o = { x: x, y: y, w: w, h: h };
+    if (fill === null || fill === undefined) o.fill = { color: "FFFFFF", transparency: 100 };
+    else o.fill = { color: fill };
+    if (opts.line) { o.line = { color: opts.line, width: opts.lw || 1 }; }
+    if (opts.rad != null) o.rectRadius = opts.rad;
+    s.addShape(opts.rad != null ? "roundRect" : "rect", o);
+  }
+  function ell(s, x, y, d, fill) { s.addShape("ellipse", { x: x, y: y, w: d, h: d, fill: { color: fill } }); }
+  function bar(s, x, y, w, h, frac, track, accent) {
+    rc(s, x, y, w, h, track, { rad: h / 2 });
+    if (frac > 0) rc(s, x, y, Math.max(h, w * frac), h, accent, { rad: h / 2 });
+  }
+  function addImg(s, x, y, w, h, dataUrl) {
+    try { if (!dataUrl) return false;
+      s.addImage({ data: dataUrl, x: x, y: y, w: w, h: h, sizing: { type: "cover", w: w, h: h } }); return true;
+    } catch (e) { return false; }
+  }
+  function addLogo(s, x, y, w, h, dataUrl) {
+    try { if (!dataUrl) return false;
+      s.addImage({ data: dataUrl, x: x, y: y, w: w, h: h, sizing: { type: "contain", w: w, h: h } }); return true;
+    } catch (e) { return false; }
+  }
+  function discountText(text, invest) {
+    return String(text).replace(/(\d+)\s*%\s*\/\s*(\d+)\s*%(\s*\(Invest\))?/g,
+      function (m, a, b) { return (invest ? b : a) + "%"; });
+  }
+
+  // ==========================================================================
+  function buildOptionsDeck(o) {
+    o = o || {};
+    var PB = global.PB || {};
+    var RENMAD = global.RENMAD;
+    var PBP = global.PBP;
+    var lang = o.lang === "es" ? "es" : "en";
+    var L = (PB.strings && PB.strings[lang]) || {};
+    var arr = function (k) { return Array.isArray(L[k]) ? L[k] : []; };
+    var str = function (k) { return L[k] != null ? L[k] : ""; };
+    var t = function (tbl, k) { return (tbl[k] && tbl[k][lang]) || ""; };
+
+    var O = RED, OD = darken(RED, 0.20), SOFT = mix(RED, [255, 255, 255], 0.90);
+    var PRICE_VAL = mix(RED, [255, 255, 255], 0.42);
+    var pct = Math.max(0, Math.min(90, Number(o.discountPct) || 0));
+    var client = (o.client || "").trim();
+    var IMG = o.images || {};
+    var slotImg = function (slot) { return IMG[slot] || null; };
+    var sp = typeof o.salesperson === "string" ? SALESPEOPLE[o.salesperson] : (o.salesperson || SALESPEOPLE.cintia);
+    if (!sp) sp = SALESPEOPLE.cintia;
+
+    var evByKey = {};
+    (PB.events || []).forEach(function (e) { evByKey[e.key] = e; });
+    var pkgById = {};
+    (PB.packages || []).forEach(function (p) { pkgById[p.id] = p; });
+    var PKG_ORDER = (PB.packages || []).map(function (p) { return p.id; });
+
+    /* ---- normalise the options, exactly as options_deck.py does -------------
+       package order inside an event follows the canonical Diamond-first order,
+       NOT the order the salesperson happened to tick them in. An option with no
+       packages anywhere is dropped. */
+    var options = (o.options || []).map(function (op) {
+      var sel = [];
+      (op.selections || []).forEach(function (pair) {
+        var ek = pair[0], want = pair[1] || [];
+        if (!evByKey[ek]) return;
+        var ordered = PKG_ORDER.filter(function (pid) { return want.indexOf(pid) >= 0; });
+        if (ordered.length) sel.push([ek, ordered]);
+      });
+      return { name: op.name, sel: sel };
+    }).filter(function (op) { return op.sel.length; }).slice(0, MAX_OPTIONS);
+
+    /* ---- money -----------------------------------------------------------
+       One shared rate, applied independently to each option's own subtotal. */
+    function pyRound(x) {
+      if (PBP && PBP.pyRound) return PBP.pyRound(x);
+      var fl = Math.floor(x), frac = x - fl;
+      if (Math.abs(frac - 0.5) < 1e-9) return (fl % 2 === 0) ? fl : fl + 1;
+      return Math.round(x);
+    }
+    function linePrice(ek, pid) {
+      if (PBP && PBP.linePrice) return PBP.linePrice(ek, pid);
+      var e = evByKey[ek], p = pkgById[pid];
+      return (e && p) ? p.price[e.family] : 0;
+    }
+    options.forEach(function (op) {
+      op.lines = [];
+      op.sel.forEach(function (pair) {
+        pair[1].forEach(function (pid) {
+          op.lines.push({ ek: pair[0], pid: pid, price: linePrice(pair[0], pid) });
+        });
+      });
+      op.sub = op.lines.reduce(function (s, l) { return s + l.price; }, 0);
+      op.disc = pyRound(op.sub * pct / 100);
+      op.total = op.sub - op.disc;
+    });
+
+    /* recommendation is matched by NAME (see header note) */
+    var recName = o.recommended || null;
+    var isRec = function (op) { return recName != null && op.name === recName; };
+
+    var evShort = function (ek) {
+      var e = evByKey[ek];
+      return e ? (e.short || String(e.name || "").replace("RENMAD ", "").replace(/ 20\d\d/, "")) : ek;
+    };
+    var evColor = function (ek) {
+      var e = evByKey[ek];
+      return e ? String(e.color || "FF4A00").replace("#", "") : "FF4A00";
+    };
+    var pkgLabel = function (pid) {
+      var p = pkgById[pid];
+      return p ? p.name[lang] : pid;
+    };
+
+    var pptx = RENMAD.newDeck();
+
+    function badge(s) { tx(s, 9.9, 0.42, 2.72, 0.34, "RENMAD EVENTS", 11, MU, true, HEAD, "right"); }
+    function logoOr(s, x, y, w, h, fallbackSize) {
+      if (!addLogo(s, x, y, w, h, IMG.logo)) tx(s, x, y, w, h, "RENMAD EVENTS", fallbackSize || 18, WH, true, HEAD, "left", "middle");
+    }
+    function kicker(s, x, y, k, title, tsize, tcolor) {
+      tx(s, x, y, 10, 0.3, k, 13, O, true, HEAD);
+      tx(s, x, y + 0.30, 11.5, 0.7, title, tsize || 30, tcolor || CH, true, HEAD);
+      rc(s, x + 0.02, y + 0.95, 0.62, 0.05, O);
+    }
+    function twoLine(s, x, y, w, h, text, size, color) {
+      var parts = String(text).split("\n");
+      s.addText(parts.map(function (ln, i) { return { text: ln, options: { breakLine: i < parts.length - 1 } }; }),
+        { x: x, y: y, w: w, h: h, fontFace: HEAD, fontSize: size, color: color, bold: true, align: "left", valign: "top", lineSpacingMultiple: 1.04 });
+    }
+
+    // ===== 1 COVER (bespoke copy) ==========================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: CH };
+      if (!addImg(s, SW - 4.7, 0, 4.7, SH, slotImg("cover"))) rc(s, SW - 4.7, 0, 4.7, SH, darken(RED, 0.55));
+      rc(s, SW - 4.7, 0, 0.06, SH, O);
+      logoOr(s, 0.9, 1.3, 5.2, 1.0, 34);
+      tx(s, 0.95, 3.25, 7.3, 0.5, t(OPT, "cover_k"), 20, WH, true, HEAD);
+      twoLine(s, 0.95, 3.9, 7.3, 1.4, t(OPT, "cover_t"), 34, WH);
+      if (client) {
+        tx(s, 0.95, 5.85, 6, 0.4, str("prepared_for"), 16, DM, false, BODY);
+        tx(s, 0.95, 6.25, 6.5, 0.8, client, 30, WH, true, HEAD);
+      }
+      rc(s, 0, SH - 0.16, SW, 0.16, O);
+    })();
+
+    // ===== 2 ABOUT + STATS =================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.55, str("about_k"), str("about_t"));
+      if (!addImg(s, 9.55, 1.75, 3.0, 4.55, slotImg("about"))) rc(s, 9.55, 1.75, 3.0, 4.55, mix(RED, [255, 255, 255], 0.82), { rad: 0.08 });
+      tx(s, 0.7, 1.75, 8.5, 2.1, str("about_body"), 18, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
+      arr("stats").forEach(function (row, i) {
+        var x = 0.7 + (i % 3) * (2.55 + 0.18), y = 4.25 + Math.floor(i / 3) * (1.35 + 0.2);
+        rc(s, x, y, 2.55, 1.35, WH, { line: LN, lw: 1, rad: 0.08 });
+        ell(s, x + 0.18, y + 0.2, 0.66, O);
+        tx(s, x + 0.95, y + 0.16, 1.55, 0.5, row[1], 26, CH, true, HEAD);
+        tx(s, x + 0.95, y + 0.74, 1.55, 0.4, row[2], 13, MU, false, BODY);
+      });
+      badge(s);
+    })();
+
+    // ===== 3 ATTENDEE PROFILE ==============================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.55, str("attendee_k"), str("attendee_t"));
+      tx(s, 0.7, 1.85, 5, 0.3, str("sector_dist"), 15, CH, true, HEAD);
+      arr("sectors").forEach(function (row, i) {
+        var y = 2.3 + i * 0.62;
+        tx(s, 0.7, y, 4, 0.3, row[0], 13, IK, false, BODY);
+        bar(s, 0.7, y + 0.3, 4.7, 0.22, row[1] / 100, TRACK, O);
+      });
+      rc(s, 6.1, 1.9, 6.5, 1.7, WH, { line: LN, lw: 1, rad: 0.08 });
+      ell(s, 6.45, 2.25, 0.95, O);
+      tx(s, 7.65, 2.2, 4.6, 0.7, "75%", 46, CH, true, HEAD);
+      tx(s, 7.65, 3.05, 4.6, 0.4, str("big75_sub"), 15, MU, false, BODY);
+      tx(s, 6.1, 3.95, 4, 0.3, str("seniority"), 15, CH, true, HEAD);
+      arr("seniority_rows").forEach(function (row, i) {
+        var y = 4.45 + i * 0.6;
+        tx(s, 6.1, y, 2.0, 0.3, row[0], 13, IK, false, BODY);
+        bar(s, 8.0, y + 0.02, 3.5, 0.22, row[1] / 100, TRACK, O);
+        tx(s, 11.6, y - 0.02, 1.0, 0.3, row[1] + "%", 15, O, true, HEAD);
+      });
+      badge(s);
+    })();
+
+    // ===== 4 WHY SPONSOR ===================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.55, str("why_k"), str("why_t"));
+      arr("why_cards").forEach(function (c, i) {
+        var x = 0.7 + (i % 2) * (5.85 + 0.3), y = 1.85 + Math.floor(i / 2) * (2.3 + 0.3);
+        rc(s, x, y, 5.85, 2.3, WH, { line: LN, lw: 1, rad: 0.08 });
+        rc(s, x, y, 0.1, 2.3, O);
+        ell(s, x + 0.35, y + 0.35, 0.95, O);
+        tx(s, x + 1.55, y + 0.42, 4.15, 0.7, c[1], 22, CH, true, HEAD);
+        tx(s, x + 0.35, y + 1.4, 5.15, 0.8, c[2], 15, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.2 });
+      });
+      badge(s);
+    })();
+
+    // ===== 5 EVENTS CALENDAR ===============================================
+    /* highlight = the UNION of every event across every option */
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.5, str("events_k"), str("events_t"));
+      var chosen = {};
+      options.forEach(function (op) { op.sel.forEach(function (p) { chosen[p[0]] = 1; }); });
+      var cal = (PB.events || []).filter(function (e) { return e && e.type !== "talks" && !e.portfolio; });
+      var e26 = cal.filter(function (e) { return e.name.indexOf("2026") >= 0; });
+      var e27 = cal.filter(function (e) { return e.name.indexOf("2027") >= 0; });
+      var HY = 1.78, BOT = 6.66, Lx = 0.7, Lw = 3.95, Rx = 4.9, Rw = 7.7;
+      if (!e26.length) { Rx = 0.7; Rw = 11.93; }
+
+      if (e26.length) {
+        rc(s, Lx, HY, Lw, 0.46, SLATE, { rad: 0.08 });
+        tx(s, Lx + 0.26, HY, Lw - 0.45, 0.46, str("cal_2026_h"), 12.5, WH, true, HEAD, "left", "middle");
+        var ry = HY + 0.62, rh = (BOT - ry - (e26.length - 1) * 0.16) / e26.length;
+        e26.forEach(function (e) {
+          var sel = !!chosen[e.key], ec = String(e.color).replace("#", "");
+          rc(s, Lx, ry, Lw, rh, sel ? O : WH, sel ? { rad: 0.08 } : { line: LN, lw: 1, rad: 0.08 });
+          rc(s, Lx, ry, 0.11, rh, sel ? WH : ec);
+          var gy = ry + (rh - 0.92) / 2;
+          tx(s, Lx + 0.34, gy, Lw - 0.55, 0.4, e.short, 15, sel ? WH : CH, true, HEAD);
+          tx(s, Lx + 0.34, gy + 0.44, Lw - 0.55, 0.26, e.date[lang], 11.5, sel ? WH : ec, true, BODY);
+          tx(s, Lx + 0.34, gy + 0.7, Lw - 0.55, 0.24, e.city[lang], 10.5, sel ? DM : MU, false, BODY);
+          ry += rh + 0.16;
+        });
+      }
+      var hdr = str("cal_2027_h") + "  ·  " + e27.length + " " + String(str("cal_summits") || "summits").toUpperCase();
+      rc(s, Rx, HY, Rw, 0.46, SLATE, { rad: 0.08 });
+      tx(s, Rx + 0.26, HY, Rw - 0.45, 0.46, hdr, 12.5, WH, true, HEAD, "left", "middle");
+      var ry2 = HY + 0.62, rh2 = (BOT - ry2 - (e27.length - 1) * 0.08) / Math.max(1, e27.length);
+      e27.forEach(function (e, i) {
+        var sel = !!chosen[e.key];
+        rc(s, Rx, ry2, Rw, rh2, sel ? O : (i % 2 ? WH : ALT), { rad: 0.06 });
+        ell(s, Rx + 0.24, ry2 + rh2 / 2 - 0.09, 0.18, sel ? WH : CH);
+        tx(s, Rx + 0.62, ry2, 2.55, rh2, e.short, 12.5, sel ? WH : CH, true, HEAD, "left", "middle");
+        tx(s, Rx + 3.25, ry2, 1.9, rh2, e.date[lang], 11, sel ? WH : CH, true, BODY, "left", "middle");
+        tx(s, Rx + 5.3, ry2, 2.3, rh2, e.city[lang], 11, sel ? DM : MU, false, BODY, "left", "middle");
+        ry2 += rh2 + 0.08;
+      });
+      tx(s, 0.7, 6.95, 11.9, 0.3, str("cal_legend") || "", 10.5, MU, false, BODY);
+      badge(s);
+    })();
+
+    // ===== per option: divider -> package slides -> calculation ============
+    options.forEach(function (op, oi) {
+      var letter = LETTERS[oi];
+      var label = t(OPT, "opt_word") + " " + letter;
+      var rec = isRec(op);
+
+      // --- divider ---
+      (function () {
+        var s = pptx.addSlide(); s.background = { color: CH };
+        rc(s, 0, 0, 0.18, SH, O);
+        tx(s, 0.9, 1.5, 3, 0.35, label, 15, O, true, HEAD);
+        if (rec) {
+          rc(s, 3.0, 1.46, 2.5, 0.46, O, { rad: 0.23 });
+          tx(s, 3.0, 1.46, 2.5, 0.46, t(OPT, "recommended"), 12.5, WH, true, HEAD, "center", "middle");
+        }
+        tx(s, 0.88, 1.95, 11.5, 1.0, op.name, 40, WH, true, HEAD);
+        tx(s, 0.9, 3.25, 6, 0.3, String(t(OPT, "includes")).toUpperCase(), 12, DM, true, HEAD);
+        var y = 3.7;
+        op.lines.forEach(function (l) {
+          ell(s, 0.9, y + 0.06, 0.18, evColor(l.ek));
+          tx(s, 1.25, y, 4.8, 0.34, evShort(l.ek), 15, WH, true, HEAD);
+          tx(s, 6.2, y, 5.5, 0.34, pkgLabel(l.pid), 15, "C9CDD2", false, BODY);
+          y += 0.5;
+        });
+        rc(s, 0.9, 6.35, 3.4, 0.86, O, { rad: 0.1 });
+        tx(s, 1.2, 6.46, 3.0, 0.28, t(MULTI, "total"), 12, WH, true, BODY);
+        tx(s, 1.2, 6.72, 3.0, 0.45, eur(op.total), 26, WH, true, HEAD);
+        logoOr(s, 11.2, 6.55, 1.5, 0.6, 14);
+      })();
+
+      // --- one package slide per line ---
+      op.lines.forEach(function (l) {
+        var pk = pkgById[l.pid]; if (!pk) return;
+        var e = evByKey[l.ek] || {};
+        var ec = evColor(l.ek);
+        var isInvest = (e.family === "invest");
+        var eSoft = mix(ec, [255, 255, 255], 0.90), eDark = darken(ec, 0.20);
+        var s = pptx.addSlide(); s.background = { color: GR };
+
+        rc(s, 0, 0, SW, 1.55, ec);
+        rc(s, 0.7, 0.30, 2.0, 0.4, "101618", { rad: 0.2 });
+        tx(s, 0.7, 0.30, 2.0, 0.4, label, 12, WH, true, HEAD, "center", "middle");
+        tx(s, 0.7, 0.74, 8.5, 0.6, pk.name[lang].toUpperCase(), 30, WH, true, HEAD);
+        tx(s, 0.7, 1.30, 8.5, 0.3, pk.tagline[lang], 15, WH, false, HEAD);
+        tx(s, 8.7, 0.5, 3.95, 0.55, evShort(l.ek), 15, WH, true, HEAD, "right", "middle");
+
+        rc(s, 0.7, 1.85, 11.95, 0.74, eSoft, { rad: 0.08 });
+        ell(s, 0.92, 2.02, 0.42, ec);
+        tx(s, 1.5, 1.97, 3, 0.3, str("pkg_goodfor"), 13, eDark, true, HEAD);
+        tx(s, 1.5, 2.2, 11, 0.3, String(pk.good[lang]).replace(/\.$/, ""), 15, CH, true, BODY);
+
+        tx(s, 0.7, 2.95, 7.3, 1.45, (pk.pitch && pk.pitch[lang]) || pk.good[lang], 14, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.22 });
+        tx(s, 0.7, 4.5, 4, 0.3, str("pkg_included"), 16, CH, true, HEAD);
+        var by = 4.92;
+        (pk.incl[lang] || []).forEach(function (it) {
+          s.addText([{ text: "✓  ", options: { color: ec, bold: true } },
+                     { text: discountText(it, isInvest), options: { color: IK } }],
+            { x: 0.7, y: by, w: 7.35, h: 0.4, fontFace: BODY, fontSize: 13, valign: "top" });
+          by += 0.30;
+        });
+        var hy = 2.9;
+        ((pk.highlights && pk.highlights[lang]) || []).forEach(function (hl) {
+          rc(s, 8.4, hy, 4.25, 0.5, WH, { line: LN, lw: 1, rad: 0.06 });
+          ell(s, 8.56, hy + 0.11, 0.28, ec);
+          tx(s, 9.05, hy, 3.45, 0.5, Array.isArray(hl) ? hl[1] : hl, 13, CH, true, BODY, "left", "middle");
+          hy += 0.58;
+        });
+        /* no price here — an options deck reveals money only on the calc page */
+        rc(s, 8.4, 5.95, 4.25, 1.0, eSoft, { rad: 0.08 });
+        tx(s, 8.65, 6.08, 3.8, 0.3, t(MULTI, "invest"), 11, eDark, true, BODY);
+        tx(s, 8.65, 6.36, 3.8, 0.5, t(MULTI, "see_summary"), 15, CH, true, HEAD);
+      });
+
+      // --- calculation page ---
+      (function () {
+        var s = pptx.addSlide(); s.background = { color: GR };
+        kicker(s, 0.7, 0.5, String(t(OPT, "calc_k")).replace("{label}", label), op.name);
+        if (rec) {
+          rc(s, 9.7, 0.55, 2.9, 0.5, O, { rad: 0.25 });
+          tx(s, 9.7, 0.55, 2.9, 0.5, t(OPT, "recommended"), 13, WH, true, HEAD, "center", "middle");
+        }
+        var TX = 0.7, TY = 1.85, TW = 11.93;
+        var nl = op.lines.length, rh, gap;
+        if (nl <= 4) { rh = 0.56; gap = 0.08; }
+        else if (nl <= 6) { rh = 0.46; gap = 0.06; }
+        else { rh = 0.38; gap = 0.05; }
+
+        rc(s, TX, TY, TW, 0.5, SLATE, { rad: 0.04 });
+        tx(s, TX + 0.3, TY, 5.6, 0.5, t(MULTI, "col_ev"), 12, WH, true, BODY, "left", "middle");
+        tx(s, TX + 6.0, TY, 3.8, 0.5, t(MULTI, "col_pk"), 12, WH, true, BODY, "left", "middle");
+        tx(s, TX + TW - 2.4, TY, 2.1, 0.5, t(MULTI, "col_pr"), 12, WH, true, BODY, "right", "middle");
+
+        var ry = TY + 0.58;
+        op.lines.forEach(function (l, i) {
+          rc(s, TX, ry, TW, rh, i % 2 ? WH : ALT, { rad: 0.06 });
+          ell(s, TX + 0.16, ry + rh / 2 - 0.1, 0.2, evColor(l.ek));
+          tx(s, TX + 0.5, ry, 5.4, rh, evShort(l.ek), 14, CH, true, BODY, "left", "middle");
+          tx(s, TX + 6.0, ry, 3.8, rh, pkgLabel(l.pid), 13, IK, false, BODY, "left", "middle");
+          tx(s, TX + TW - 2.4, ry, 2.1, rh, eur(l.price), 15, CH, true, BODY, "right", "middle");
+          ry += rh + gap;
+        });
+        ry += 0.06;
+        tx(s, TX + 6.0, ry, 3.8, 0.36, t(MULTI, "subtotal"), 13, MU, false, BODY, "left", "middle");
+        tx(s, TX + TW - 2.4, ry, 2.1, 0.36, eur(op.sub), 16, CH, true, BODY, "right", "middle");
+        ry += 0.44;
+        if (pct > 0) {
+          tx(s, TX + 3.0, ry, 6.8, 0.36, String(t(MULTI, "disc")).replace("{pct}", pct), 13, O, false, BODY, "left", "middle");
+          tx(s, TX + TW - 2.4, ry, 2.1, 0.36, "– " + eur(op.disc), 16, O, true, BODY, "right", "middle");
+          ry += 0.48;
+        }
+        rc(s, TX + 5.2, ry, TW - 5.2, 0.82, O, { rad: 0.1 });
+        tx(s, TX + 5.5, ry, 3.0, 0.82, t(MULTI, "total"), 15, WH, true, BODY, "left", "middle");
+        tx(s, TX + TW - 2.6, ry, 2.3, 0.82, eur(op.total), 30, WH, true, HEAD, "right", "middle");
+        rc(s, TX, ry, 4.7, 0.82, WH, { line: O, lw: 1.5, rad: 0.1 });
+        tx(s, TX + 0.24, ry + 0.08, 4.2, 0.28, t(MULTI, "valid_k"), 10.5, O, true, BODY);
+        tx(s, TX + 0.24, ry + 0.36, 4.2, 0.38, String(t(MULTI, "valid_days")).replace("{u}", o.validUntil || "").replace("{d}", VALID_DAYS), 17, CH, true, HEAD);
+        tx(s, TX, ry + 0.98, 11.5, 0.3, String(t(MULTI, "sum_foot")).replace("{date}", o.proposalDate || ""), 10.5, MU, false, BODY);
+        badge(s);
+      })();
+    });
+
+    // ===== side-by-side comparison =========================================
+    (function () {
+      if (!options.length) return;
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.45, t(OPT, "compare_k"), t(OPT, "compare_t"));
+      tx(s, 0.7, 1.4, 11.9, 0.4, t(OPT, "compare_sub"), 13, MU, false, BODY);
+
+      var n = options.length, gap = 0.22, CX = 0.7, CY = 1.95, CHH = 4.7;
+      var CW = (11.93 - (n - 1) * gap) / n;
+      var ty = CY + CHH - 1.5;                       // totals block, pinned
+      options.forEach(function (op, j) {
+        var x = CX + j * (CW + gap), rec = isRec(op);
+        rc(s, x, CY, CW, CHH, WH, { line: rec ? O : LN, lw: rec ? 2 : 1, rad: 0.08 });
+        rc(s, x, CY, CW, 0.94, rec ? O : SLATE, { rad: 0.05 });
+        tx(s, x + 0.1, CY + 0.10, CW - 0.2, 0.28, rec ? t(OPT, "recommended") : (t(OPT, "opt_word") + " " + LETTERS[j]),
+           10.5, rec ? WH : DM, true, HEAD, "center", "middle");
+        tx(s, x + 0.1, CY + 0.36, CW - 0.2, 0.5, op.name, 15.5, WH, true, HEAD, "center", "middle");
+
+        /* Clamp: the Python steps 0.72in from y=3.07 into a totals block at 5.15,
+           so a 4th pick touches it and a 5th overruns. Tighten, then summarise. */
+        var yy = CY + 1.12, step = 0.62, room = ty - 0.18 - yy;
+        var maxRows = Math.max(1, Math.floor(room / step));
+        var shown = op.lines.slice(0, op.lines.length > maxRows ? maxRows - 1 : maxRows);
+        shown.forEach(function (l) {
+          ell(s, x + 0.14, yy + 0.04, 0.14, evColor(l.ek));
+          tx(s, x + 0.36, yy - 0.02, CW - 0.5, 0.26, evShort(l.ek), 10.5, CH, true, BODY);
+          tx(s, x + 0.36, yy + 0.24, CW - 0.5, 0.26, pkgLabel(l.pid), 10, MU, false, BODY, "left", "top", { lineSpacingMultiple: 0.95 });
+          yy += step;
+        });
+        if (op.lines.length > shown.length) {
+          tx(s, x + 0.36, yy, CW - 0.5, 0.26, String(t(OPT, "more")).replace("{n}", op.lines.length - shown.length), 10.5, MU, true, BODY);
+        }
+
+        rc(s, x + 0.16, ty, CW - 0.32, 0.012, "E2E2E6");
+        tx(s, x + 0.16, ty + 0.08, CW - 0.9, 0.26, t(MULTI, "subtotal"), 10.5, MU, false, BODY);
+        tx(s, x + 0.16, ty + 0.08, CW - 0.32, 0.26, eur(op.sub), 11.5, CH, true, BODY, "right");
+        if (pct > 0) {
+          tx(s, x + 0.16, ty + 0.34, CW - 0.9, 0.26, "−" + pct + "%", 10.5, O, false, BODY);
+          tx(s, x + 0.16, ty + 0.34, CW - 0.32, 0.26, "– " + eur(op.disc), 11.5, O, true, BODY, "right");
+        }
+        rc(s, x + 0.16, ty + 0.62, CW - 0.32, 0.66, rec ? O : CH, { rad: 0.08 });
+        tx(s, x + 0.32, ty + 0.62, CW - 1.1, 0.66, t(MULTI, "total"), 11, WH, true, BODY, "left", "middle");
+        tx(s, x + 0.16, ty + 0.62, CW - 0.44, 0.66, eur(op.total), 17, WH, true, HEAD, "right", "middle");
+      });
+      tx(s, 0.7, 6.78, 11.9, 0.3, String(t(MULTI, "sum_foot")).replace("{date}", o.proposalDate || ""), 10, MU, false, BODY);
+      badge(s);
+    })();
+
+    // ===== add-on · webinar ================================================
+    function addonNote(s) {
+      rc(s, 0.7, 1.62, 5.05, 0.44, SOFT, { rad: 0.22 });
+      tx(s, 0.7, 1.62, 5.05, 0.44, str("addon_note"), 11.5, OD, true, BODY, "center", "middle");
+    }
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.55, str("addons_k"), str("webinar_t"));
+      addonNote(s);
+      tx(s, 0.7, 2.45, 7.45, 1.2, str("webinar_body"), 17, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
+      var yy = 3.95;
+      arr("webinar_feats").forEach(function (f) {
+        ell(s, 0.7, yy + 0.08, 0.5, O);
+        tx(s, 1.35, yy, 6.9, 0.66, Array.isArray(f) ? f[1] : f, 18, CH, false, BODY, "left", "middle", { lineSpacingMultiple: 1.04 });
+        yy += 0.82;
+      });
+      var ox = 8.4, ow = 4.25, oy = 1.95;
+      [[str("webinar_opt1_t"), str("webinar_opt1_s"), 5500, O],
+       [str("webinar_opt2_t"), str("webinar_opt2_s"), 3500, CH]].forEach(function (c) {
+        rc(s, ox, oy, ow, 2.5, c[3], { rad: 0.08 });
+        tx(s, ox + 0.34, oy + 0.32, ow - 0.62, 0.5, c[0], 20, WH, true, HEAD);
+        tx(s, ox + 0.34, oy + 0.92, ow - 0.66, 0.8, c[1], 13.5, SWHT, false, BODY, "left", "top", { lineSpacingMultiple: 1.15 });
+        tx(s, ox + 0.34, oy + 1.78, ow - 0.6, 0.6, eur(c[2]), 34, WH, true, HEAD);
+        oy += 2.7;
+      });
+      badge(s);
+    })();
+
+    // ===== add-on · newsletter (fixed 3 cards) =============================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: GR };
+      kicker(s, 0.7, 0.55, str("news_k"), str("news_t"));
+      addonNote(s);
+      tx(s, 0.7, 2.35, 11.95, 0.8, str("news_body"), 15.5, IK, false, BODY, "left", "top", { lineSpacingMultiple: 1.18 });
+      var cw = 3.78, g = 0.305, cy = 3.5;
+      ["general", "storage", "hydrogen"].forEach(function (nk, i) {
+        var nl = NEWSLETTERS[nk], x = 0.7 + i * (cw + g);
+        rc(s, x, cy, cw, 3.2, WH, { line: LN, lw: 1, rad: 0.08 });
+        rc(s, x, cy, cw, 0.62, O, { rad: 0.08 });
+        tx(s, x + 0.24, cy, cw - 0.45, 0.62, nl.scope[lang], 15.5, WH, true, HEAD, "left", "middle");
+        tx(s, x + 0.32, cy + 0.9, cw - 0.6, 0.5, nl.contacts[lang], 30, CH, true, HEAD);
+        tx(s, x + 0.34, cy + 1.48, cw - 0.6, 0.34, str("news_reach"), 13, IK, false, BODY);
+        rc(s, x + 0.3, cy + 1.98, cw - 0.6, 1.0, CH, { rad: 0.08 });
+        tx(s, x + 0.54, cy + 2.1, cw - 0.95, 0.3, str("news_year"), 12.5, DM, true, BODY);
+        tx(s, x + 0.54, cy + 2.43, cw - 0.95, 0.5, eur(nl.price), 30, PRICE_VAL, true, HEAD);
+      });
+      tx(s, 0.7, 6.92, 11.95, 0.4, str("news_foot"), 12.5, MU, false, BODY);
+      badge(s);
+    })();
+
+    // ===== contact =========================================================
+    (function () {
+      var s = pptx.addSlide(); s.background = { color: DEEP };
+      var pw = 4.8;
+      if (!addImg(s, SW - pw, 0, pw, SH, IMG.photo)) rc(s, SW - pw, 0, pw, SH, darken(RED, 0.30));
+      rc(s, 0, 0, 0.14, SH, O);
+      ell(s, SW - pw - 0.9, 0.5, 0.7, O);
+      ell(s, SW - pw - 0.4, 1.3, 0.42, mix(RED, [255, 255, 255], 0.45));
+      tx(s, 0.6, 0.55, 5, 0.3, str("contact_k"), 14, O, true, HEAD);
+      rc(s, 0.62, 0.98, 0.9, 0.05, O);
+      twoLine(s, 0.6, 1.2, 7.3, 1.3, t(MULTI, "contact_t"), 34, WH);
+      tx(s, 0.6, 2.7, 7.3, 0.5, str("contact_sub"), 14, DM, false, BODY);
+      var cy = 3.62;
+      ell(s, 0.6, cy, 0.52, O);
+      tx(s, 1.4, cy, 6.7, 0.52, sp.name, 18, WH, true, HEAD, "left", "middle"); cy += 0.58;
+      ell(s, 0.6, cy, 0.52, O);
+      s.addText(sp.phone, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "tel:" + String(sp.phone).replace(/\s/g, "") } }); cy += 0.58;
+      ell(s, 0.6, cy, 0.52, O);
+      s.addText(sp.email, { x: 1.4, y: cy, w: 6.7, h: 0.52, fontFace: HEAD, fontSize: 18, color: WH, bold: true, valign: "middle", hyperlink: { url: "mailto:" + sp.email } });
+      rc(s, 0.6, 5.92, 7.3, 0.02, "393E44");
+      logoOr(s, 0.6, 6.26, 3.0, 0.88, 20);
+      if (client) {
+        tx(s, 3.95, 6.02, 3.3, 0.24, str("prepared_for"), 11, DM, true, BODY);
+        tx(s, 3.95, 6.3, 3.3, 0.4, client, 18, WH, true, HEAD);
+      }
+    })();
+
+    pptx.__options = options;      // exposed so the page can build the board write
+    return pptx;
+  }
+
+  /* ---- what the SPX board receives ---------------------------------------
+     register.record_options: the board takes the CHEAPEST option (conservative
+     pipeline), NOT the recommended one, and its `contents` is hard-coded Spanish
+     regardless of deck language. Both preserved deliberately. */
+  function boardPayload(o) {
+    var PBP = global.PBP;
+    var lang = o.lang === "es" ? "es" : "en";
+    var pct = Math.max(0, Math.min(90, Number(o.discountPct) || 0));
+    var rows = (o.options || []).map(function (op) {
+      var q = PBP.quote(op.selections, pct, lang);
+      return { name: op.name, total: q.total, quote: q };
+    });
+    if (!rows.length) return null;
+    var small = 0;
+    for (var i = 1; i < rows.length; i++) if (rows[i].total < rows[small].total) small = i;  // first minimum on a tie
+    var q = rows[small].quote;
+    var contents = 'Opción “' + rows[small].name + '” (la menor de ' + rows.length + '): ' +
+      q.lines.map(function (l) { return l.eventName + ": " + l.contents; }).join("; ");
+    return { quote: q, contents: contents, cheapestName: rows[small].name, optionTotals: rows.map(function (r) { return { name: r.name, total: r.total }; }) };
+  }
+
+  global.PBOPT = { buildOptionsDeck: buildOptionsDeck, boardPayload: boardPayload, MAX_OPTIONS: MAX_OPTIONS };
 })(window);
 
