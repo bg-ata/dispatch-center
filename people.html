@@ -78,7 +78,7 @@
   <div class="tabs1" id="tabs1" style="display:flex;gap:6px;margin:0 0 12px"></div>
   <div class="toolbar">
     <button class="btn primary" id="addBtn">+ Add person</button>
-    <button class="btn" id="xlsBtn">⬇ Download Excel</button>
+    <button class="btn" id="xlsBtn" style="margin-left:auto">⬇ Download Excel</button>
   </div>
   <div class="panel"><table id="tbl"></table></div>
   <p style="font-size:12px;color:var(--muted);margin-top:12px">Click a name to open their page — their events &amp; tasks on a timeline. Each person will eventually log in and see only their own.</p>
@@ -107,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=76"></script>
+<script src="store.js?v=77"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;

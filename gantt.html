@@ -80,7 +80,6 @@
   <div id="extBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:9px;padding:9px 13px;font-size:13px;margin:10px 0 0"></div>
   <div class="bar-top">
     <button class="btn primary" id="addBtn">+ Add event</button>
-    <button class="btn" id="xlsBtn">⬇ Download Excel</button>
     <span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:12px;color:var(--muted)">Zoom</span><button class="btn" id="zOut" style="padding:5px 11px">−</button><span id="zLbl" style="font-size:12px;color:var(--muted);min-width:40px;text-align:center;font-weight:600">100%</span><button class="btn" id="zIn" style="padding:5px 11px">+</button></span>
     <div class="legend">
       <span><span class="sw" style="background:#A9CBEE"></span>PM</span>
@@ -91,6 +90,7 @@
       <span><span class="sw" style="background:#8E5BC9"></span>Discount weeks</span>
       <span><span class="sw" style="background:#111"></span>Event week</span>
     </div>
+    <button class="btn" id="xlsBtn" style="margin-left:auto">⬇ Download Excel</button>
   </div>
   <p class="crit" id="critline">Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane's stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.</p>
   <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
@@ -120,7 +120,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=76"></script>
+<script src="store.js?v=77"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);

@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=76"></script>
+<script src="store.js?v=77"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -236,6 +236,8 @@ function render(){
     '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>';
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
     curTab=b.dataset.et;
+    /* hash-routed (29 Jul UX round) — keeps ?id= intact, makes tabs linkable */
+    try{history.replaceState(null,'',location.pathname+location.search+'#'+curTab);}catch(e){}
     document.querySelectorAll('[data-et]').forEach(x=>x.classList.toggle('on',x===b));
     document.getElementById('sec-time').style.display=b.dataset.et==='time'?'':'none';
     document.getElementById('sec-eur').style.display=b.dataset.et==='eur'?'':'none';
@@ -248,6 +250,9 @@ function render(){
   renderTeam(); renderPhases(); renderAddBar(); renderTimeline(); renderTasks(); wire();
   document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
+  // deep link: #eur/#imp/#del opens that tab directly (29 Jul UX round)
+  const hh=location.hash.replace('#','');
+  if(curTab==='time'&&['eur','imp','del'].includes(hh))curTab=hh;
   // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
   if(curTab!=='time'){const b=document.querySelector('[data-et="'+curTab+'"]');if(b)b.click();}
 }

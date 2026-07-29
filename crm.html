@@ -161,7 +161,7 @@
 <div id="ov"></div>
 <div class="panel" id="panel"></div>
 
-<script src="store.js?v=76"></script>
+<script src="store.js?v=77"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('crm');
 
@@ -496,6 +496,9 @@ function seed(){
 
 /* ================= UI ================= */
 let TAB='map', FILTER='all', TAGFILTER=null, SEARCH='', LANG='es', OPEN=null, PAGEN=0, EDITING=false;
+/* hash-routed tabs (29 Jul UX round — one nav pattern everywhere, linkable like Money/Inbox) */
+(function(){const h=location.hash.replace('#','');if(['map','queue','contacts','pipeline','projects'].includes(h))TAB=h;})();
+window.addEventListener('hashchange',()=>{const h=location.hash.replace('#','');if(['map','queue','contacts','pipeline','projects'].includes(h)&&h!==TAB){TAB=h;render();}});
 const CRM_TABS=[['map','Value map'],['queue','Work queue'],['contacts','Contacts'],['pipeline','Pipeline'],['projects','Projects']];
 const fmt=n=>n>=1000?'€ '+(n/1000).toFixed(n%1000?1:0)+'k':(n?'€ '+n:'—');
 
@@ -518,7 +521,7 @@ function banners(){
 }
 function renderTabs(){
   document.getElementById('tabs').innerHTML=CRM_TABS.map(([k,l])=>'<button class="'+(k===TAB?'on':'')+'" data-t="'+k+'">'+l+'</button>').join('');
-  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render();});
+  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;location.hash=TAB;render();});
 }
 function render(){ renderTabs(); banners(); ({map:renderMap,queue:renderQueue,contacts:renderContacts,pipeline:renderPipeline,projects:renderProjects}[TAB])(); }
 

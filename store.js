@@ -2730,6 +2730,7 @@ function navBar(active){
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
          '<a href="crm.html" id="nav-crm" style="white-space:nowrap;display:none" class="'+(active==='crm'?'on':'')+'" title="Leads CRM — private, only Belén sees this tab">📇 CRM</a>'+
+         '<a href="#" onclick="dcQuickOpen();return false" style="white-space:nowrap" title="Quick-jump — Ctrl+K: events, people, invoices, contracts, requests">🔍</a>'+
          '<a href="inbox.html" id="nav-inbox" style="white-space:nowrap" class="'+(active==='inbox'?'on':'')+'" title="Notifications — answers to your requests, team notices, time-off decisions">🔔</a>'+
          '</div><span class="brandlet">RENMAD <b>Dispatch Center</b>'+
          (USE_SUPABASE?' &nbsp;·&nbsp; <a href="#" onclick="DB.logout();return false" style="color:#7c7c78;text-decoration:none">log out</a>':'')+'</span></div>';
@@ -2760,6 +2761,60 @@ async function dcCheckBuild(){
 setInterval(dcCheckBuild,5*60*1000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)dcCheckBuild();});
 setTimeout(dcCheckBuild,15000);
+
+/* ---- 🔍 quick-jump, Ctrl+K / Cmd+K or the nav button (29 Jul UX round) ----
+   Type "verdian" → the invoice, the SPX contract, the person, the event. Pure
+   client-side: everything is already in DB after boot. CRM contacts only appear
+   on crm.html (their blob lives on that page, Belén-only). */
+/* accent-insensitive: "belen" must find "Belén", "jesus" → "Jesús" (Spanish roster) */
+function dcFold(s){return (''+(s||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+function dcQuickIndex(){
+  const ix=[],push=(icon,label,sub,href)=>{if(label)ix.push({icon,label,sub:sub||'',href,q:dcFold(label+' '+(sub||''))});};
+  try{(DB.events||[]).forEach(e=>push('📅',e.name,((e.city||'')+' · '+deIso(e.date||'')).replace(/^ · /,''),'event.html?id='+e.id));}catch(e){}
+  try{(DB.people||[]).filter(p=>!isTeamAccount(p)).forEach(p=>push('👤',p.name,p.role||'','person.html?id='+p.id));}catch(e){}
+  try{if(DB.financeReady())(DB.finance||[]).forEach(f=>push('💶',f.name+' '+(f.year||''),'Money · '+(f.when||''),'dashboard.html#year'));}catch(e){}
+  try{if(DB.billReady())(DB.invoices||[]).forEach(i=>push('🧾',(i.numero_factura||'—')+' · '+(i.razon_social||''),deIso((i.fecha||'').slice(0,10)),'facturacion.html'));}catch(e){}
+  try{if(DB.spxReady())(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded).forEach(p=>push('💼',p.company||'—','SPX · '+(p.stage||p.salesStatus||''),'spx.html'));}catch(e){}
+  try{if(DB.tickReady())(DB.tickets||[]).forEach(t=>push('💡',t.title,'request · '+(t.status||''),'inbox.html#requests'));}catch(e){}
+  try{if(typeof CRM!=='undefined'&&CRM.data&&isBelenP(DB.currentUser))(CRM.data.contacts||[]).forEach(c=>push('📇',c.name||c.company||'—','CRM · '+(c.company||''),'crm.html#contacts'));}catch(e){}
+  return ix;
+}
+function dcQuickOpen(){
+  if(document.getElementById('dcQj'))return;
+  const d=document.createElement('div');d.id='dcQj';
+  d.style.cssText='position:fixed;inset:0;background:rgba(20,20,20,.45);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh';
+  d.innerHTML='<div style="background:#fff;border-radius:14px;width:560px;max-width:92vw;box-shadow:0 18px 60px rgba(0,0,0,.3);overflow:hidden">'+
+    '<input id="qjIn" placeholder="Jump to… events, people, invoices, contracts, requests" autocomplete="off" style="width:100%;box-sizing:border-box;border:none;outline:none;font:15px Segoe UI,system-ui,sans-serif;padding:15px 18px;border-bottom:1px solid #e3e1da">'+
+    '<div id="qjList" style="max-height:46vh;overflow:auto"></div>'+
+    '<div style="font-size:11px;color:#7c7c78;padding:7px 14px;background:#faf9f6;font-family:Segoe UI,system-ui,sans-serif">↑↓ move · Enter open · Esc close</div></div>';
+  document.body.appendChild(d);
+  d.onclick=e=>{if(e.target===d)d.remove();};
+  const ix=dcQuickIndex();let sel=0,cur=[];
+  const inp=document.getElementById('qjIn'),list=document.getElementById('qjList');
+  const go=x=>{if(!x)return;d.remove();location.href=x.href;};
+  const draw=()=>{
+    const q=dcFold(inp.value.trim());
+    cur=q?ix.filter(x=>q.split(/\s+/).every(w=>x.q.indexOf(w)>=0)).slice(0,12):[];
+    if(sel>=cur.length)sel=Math.max(0,cur.length-1);
+    list.innerHTML=cur.map((x,i)=>'<div data-qj="'+i+'" style="display:flex;gap:10px;align-items:center;padding:9px 16px;cursor:pointer;font:13.5px Segoe UI,system-ui,sans-serif;'+(i===sel?'background:#FFF3EC':'')+'">'+
+      '<span>'+x.icon+'</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="color:#2B2B2B">'+esc(x.label)+'</b>'+(x.sub?' <span style="color:#7c7c78;font-size:12px">'+esc(x.sub)+'</span>':'')+'</span></div>').join('')||
+      (q?'<div style="padding:14px 16px;color:#7c7c78;font-size:13px;font-style:italic;font-family:Segoe UI,system-ui,sans-serif">Nothing matches.</div>':'');
+    list.querySelectorAll('[data-qj]').forEach(el=>{
+      el.onmouseenter=()=>{if(sel!==+el.dataset.qj){sel=+el.dataset.qj;draw();}};
+      el.onclick=()=>go(cur[+el.dataset.qj]);});
+  };
+  inp.oninput=()=>{sel=0;draw();};
+  inp.onkeydown=e=>{
+    if(e.key==='Escape')d.remove();
+    else if(e.key==='ArrowDown'){sel=Math.min(sel+1,Math.max(0,cur.length-1));draw();e.preventDefault();}
+    else if(e.key==='ArrowUp'){sel=Math.max(sel-1,0);draw();e.preventDefault();}
+    else if(e.key==='Enter')go(cur[sel]);
+  };
+  inp.focus();draw();
+}
+document.addEventListener('keydown',e=>{
+  if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();dcQuickOpen();}
+});
 function changePasswordUI(){
   if(!sb){alert('Login required.');return;}
   const ov=document.createElement('div');ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,system-ui,sans-serif';
