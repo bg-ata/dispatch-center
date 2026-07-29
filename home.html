@@ -210,6 +210,8 @@ function render(){
 }
 
 /* ================= clock in / out (SACRED — ported verbatim from the old home) ================= */
+let _midnightNote=null;   // set when the clock split a session at 00:00, shown once on the card
+window.addEventListener('dc-midnight',ev=>{_midnightNote=ev.detail;try{renderClock();renderAlarms();}catch(e){}});
 function renderClock(){
   const me=DB.currentUser,box=document.getElementById('clockPanel');
   if(_clockTick){clearInterval(_clockTick);_clockTick=null;}
@@ -220,6 +222,10 @@ function renderClock(){
   const today=toISO(new Date()),info=tcDayInfo(me.id,today),exp=tcExpectedDay(me.id,today);
   /* forgotten overnight clock-out this week (helper lands with the hours-guard work; guard so
      the card still renders if store.js hasn't got it yet) */
+  /* the app split a session at midnight while this page was open — say so plainly */
+  let mnBanner='';
+  if(_midnightNote)mnBanner='<div class="alarm" style="margin-top:10px;background:#F0F7EE;border-color:#CBE3C4">🌙 <b>It turned midnight while you were clocked in.</b> '+
+    fmtHuman(_midnightNote.prevDay)+' was closed at 23:59 and today opened at 00:00, so none of your hours are lost. If you actually stopped earlier, correct it below.</div>';
   let opBanner='';
   if(typeof tcOpenPastPair==='function'){const op=tcOpenPastPair();
     if(op)opBanner='<div class="alarm" style="margin-top:10px">⚠ <b>You never clocked out on '+fmtHuman(op.day)+'</b> — those hours are not counted. <a href="#" id="lnkOpenPair">File a time-clock claim</a> to fix it.</div>';}
@@ -229,7 +235,7 @@ function renderClock(){
     '<div><div style="font-size:15px;font-weight:700;color:'+(info.open?'var(--green)':'var(--charcoal)')+'" id="clockState">'+(info.open?'🟢 Clocked in':'⚪ Clocked out')+'</div>'+
     '<div style="font-size:28px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums;line-height:1.1" id="liveWorked">0:00:00</div>'+
     '<div style="font-size:12px;color:var(--muted)">worked today'+(exp?' · '+exp+' h expected':' · no work expected today')+'</div></div></div>'+
-    punchAckHtml()+opBanner+
+    punchAckHtml()+mnBanner+opBanner+
     '<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">'+(info.entries.length?('Punches: '+info.entries.map(e=>e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')).join(' · ')):'No punches yet today.')+'</div>'+
     '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
       '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px"><b style="font-size:12.5px;color:var(--charcoal)" id="dayLbl">Today</b><span id="dayLeft" style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums"></span></div>'+
@@ -255,7 +261,12 @@ function renderClock(){
   document.getElementById('lnkMonth').onclick=e=>{e.preventDefault();openFold('monthFold');};
   document.getElementById('lnkReport').onclick=e=>{e.preventDefault();openFold('reportFold');};
   const lop=document.getElementById('lnkOpenPair');if(lop)lop.onclick=e=>{e.preventDefault();openFold('reportFold');};
-  const tick=()=>{try{const li=tcLiveSeconds(me.id,today);const el=document.getElementById('liveWorked');if(el)el.textContent=fmtHMS(li.seconds);updateDayBar(me);updateWeekBar(me);}catch(e){console.error('clock tick',e);if(typeof showJsErrBar==='function')showJsErrBar('clock tick: '+(e&&e.message));}};
+  const tick=()=>{try{
+      /* watch for midnight while the page is open: a session that crosses 00:00 is split
+         instead of being stranded on a day that can no longer be clocked out of */
+      if(typeof midnightWatch==='function')midnightWatch();
+      const li=tcLiveSeconds(me.id,today);const el=document.getElementById('liveWorked');if(el)el.textContent=fmtHMS(li.seconds);updateDayBar(me);updateWeekBar(me);
+    }catch(e){console.error('clock tick',e);if(typeof showJsErrBar==='function')showJsErrBar('clock tick: '+(e&&e.message));}};
   tick();if(info.open)_clockTick=setInterval(tick,1000);
 }
 
@@ -972,7 +983,7 @@ function renderAwayFold(){
 
 /* ================= 🛠 report a clock mistake (fold; ported from hr.html) ================= */
 const fmtMin=m=>Math.floor(m/60)+' h '+String(Math.round(m%60)).padStart(2,'0');
-function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'');}
+function entryLabel(e){return e.kind.toUpperCase()+' '+(e.time||'').slice(0,5)+(e.manual?' *':'')+(/^automatic midnight split/.test(e.reason||'')?' 🌙':'');}
 /* Fail-proof corrections (2026-07-15): the person states WHAT HAPPENED, the system
    works out the punches. Simple fixes apply at once (Belén ratifies after); odd ones
    wait for her. Falls back to the old free-text flow until dispatch_hr11_claims.sql runs. */

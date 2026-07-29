@@ -922,6 +922,17 @@ function tcReportState(r){
 }
 /* every decision on a clock request goes back to the person's 🔔 inbox. Before this,
    the answer only lived inside the report thread — so people wrote in twice, or gave up. */
+/* the watcher behind the midnight split: call it from the 1-second clock tick. It fires
+   only when THIS page saw the date roll over a moment ago — if the laptop slept through
+   midnight and woke at 08:00 the gap gives it away and we leave the day alone rather than
+   credit eight hours of sleep. */
+let _tickDay=null,_tickAt=0;
+function midnightWatch(){
+  const d=toISO(new Date()),now=Date.now();
+  const fresh=_tickAt&&(now-_tickAt)<5*60*1000;          // the tab was really awake and ticking
+  if(_tickDay&&_tickDay!==d&&fresh)DB.splitAtMidnight(_tickDay,d);
+  _tickDay=d;_tickAt=now;
+}
 function tcNotify(r,text){
   try{return notifySend(r.personId,'notice','🕘 '+text,'home.html');}catch(e){return 0;}
 }
@@ -1950,6 +1961,46 @@ const DB={
       _punchAck={ok:false,kind,time:row.time,msg:(e.message||''+e),at:Date.now()};
       return {ok:false,row,msg:e.message||''+e};
     }
+  },
+  /* write ONE punch at a stated day/time (the midnight split — never a button). Same
+     insert-now / queue-on-failure safety as punch(), but no "is it my turn" guards:
+     the caller has already decided, and the reason goes into the permanent record. */
+  async punchAt(kind,day,time,reason){
+    const me=this.currentUser;if(!me)return {ok:false};
+    const row={id:this.newId(),personId:me.id,day:day,time:time,kind:kind,manual:false,amends:null,reason:reason||null,note:null,reportId:null};
+    if(!USE_SUPABASE){this.timeclock.push(row);this.save();return {ok:true,row};}
+    try{
+      const {error}=await sb.from('dc_timeclock').insert([pickRow(row,'timeclock')]);
+      if(error)throw error;
+      this.data.timeclock.push(row);
+      if(_shadow&&_shadow.timeclock)_shadow.timeclock[row.id]=JSON.stringify(pickRow(row,'timeclock'));
+      return {ok:true,row};
+    }catch(e){
+      console.error('midnight punch failed',e);
+      const q=pendingPunches();q.push(pickRow(row,'timeclock'));setPendingPunches(q);
+      return {ok:false,row,msg:e.message||''+e};
+    }
+  },
+  /* --- THE MIDNIGHT SPLIT (Belén, 29 Jul 2026) ---------------------------------
+     Punches pair inside ONE calendar day, so a session that crossed 00:00 could never be
+     closed: the old day stayed open for ever and the hours were lost. Carlos works Chilean
+     afternoons on a laptop still set to Madrid, so he crossed midnight every night (27 and
+     28 Jul, both reported at 00:17 and 00:01 — which is also why his reports carry the
+     wrong date); Cristina worked to 1:30 and watched the timer stop.
+     We only ever split when the app was OPEN and SAW it happen (the tick below observed the
+     date change a moment ago). If the app was closed at midnight we invent nothing — that
+     stays a forgotten clock-out, with the banner and the claim form it always had. */
+  async splitAtMidnight(prevDay,newDay){
+    const me=this.currentUser;if(!me||isTeamAccount(me)||!this.tcReady())return false;
+    if(!prevDay||!newDay||prevDay>=newDay)return false;
+    if(!tcDayInfo(me.id,prevDay).open)return false;        // nothing was left open
+    if(tcEffective(me.id,newDay).length)return false;      // the new day already has punches
+    const R='automatic midnight split';
+    const a=await this.punchAt('out',prevDay,'23:59:59',R+' — the day ended while you were still clocked in');
+    if(!a.ok)return false;
+    await this.punchAt('in',newDay,'00:00:00',R+' — carried over from '+prevDay);
+    try{window.dispatchEvent(new CustomEvent('dc-midnight',{detail:{prevDay,newDay}}));}catch(e){}
+    return true;
   },
   async logout(){if(sb)await sb.auth.signOut();location.reload();},
   reset(){if(!USE_SUPABASE)localStorage.removeItem('dispatchStore');},
