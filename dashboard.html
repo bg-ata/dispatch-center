@@ -173,7 +173,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=92"></script>
+<script src="store.js?v=93"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -352,15 +352,17 @@ function chipHtml(r){return r?'<span class="chip" style="background:'+r.color+'"
 /* which event cards are open (survives re-renders within the page) */
 let evxOpen=new Set();
 function finRowHtml(f,canF){
-  /* ONE TRUE SOURCE (Belén, 30 Jul): a Money row linked to a timeline event shows
-     the DERIVED name and cannot be renamed here — rename it on the timeline and it
-     cascades (reporting, SPX, invoicing item, hour project). Rows with no link
-     (past editions) keep their editable stored name — there is nothing to cascade
-     from. Clicking the name opens/closes the event card instead. */
+  /* ONE TRUE SOURCE (Belén, 30 Jul — tightened same evening): NO event name is
+     editable in reporting, ever. A row linked to a timeline event shows the DERIVED
+     name (rename it on the timeline and it cascades everywhere); a row with no link
+     (past editions — the board only holds current/future events) shows its stored
+     name FROZEN. Clicking the name opens/closes the event card. The only place a
+     name is ever typed is the add-figures modal, when creating a past edition that
+     exists nowhere yet. */
   const linked=!!(f.eventId&&DB.event(f.eventId));
   const open=evxOpen.has(f.id);
   const caret='<span class="evx" data-evx="'+f.id+'" title="'+(open?'Fold the event card':'Open the event card')+'">'+(open?'▾':'▸')+'</span> ';
-  const nameRO='<span class="evx evxname" data-evx="'+f.id+'" title="'+(linked?'Cascades from the timeline — rename it there. Click for the event card.':'Click for the event card')+'">'+esc(DB.finTrueLabel(f))+(linked?' <span style="font-size:9px;opacity:.5" title="name cascades from the timeline">🔗</span>':'')+'</span>';
+  const nameRO='<span class="evx evxname" data-evx="'+f.id+'" title="'+(linked?'Cascades from the timeline — rename it there. Click for the event card.':'Past edition — the name is frozen here. Click for the event card.')+'">'+esc(DB.finTrueLabel(f))+(linked?' <span style="font-size:9px;opacity:.5" title="name cascades from the timeline">🔗</span>':'')+'</span>';
   const ed=f.edition?('<span class="ed">'+f.edition+'ª</span>'):'';
   /* invoiced: summed from the Facturación invoice allocations when the event has lines
      (then it can't be typed here any more); typed dc_finance.invoiced as fallback */
@@ -374,7 +376,7 @@ function finRowHtml(f,canF){
   }
   const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
-  return '<tr><td>'+caret+(linked?nameRO:inp('name'))+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
+  return '<tr><td>'+caret+nameRO+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
     mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
