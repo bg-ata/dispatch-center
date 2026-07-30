@@ -234,9 +234,13 @@ function initBuilder(){
   document.getElementById('sp').innerHTML=Object.keys(SALESPEOPLE).map(k=>
     '<label data-sp="'+k+'" class="'+(k===SP?'on':'')+'"><input type="radio" name="sp" '+(k===SP?'checked':'')+'>'+SALESPEOPLE[k].name+'</label>').join('');
   const spwarn=document.getElementById('spwarn');
+  /* Show the contact line of whoever is picked, exactly as the Streamlit builder did
+     ("✉️ email · 📞 phone" under the radio): you SEE whose details go on the contact
+     slide, so nobody has to read a warning to notice it is the wrong person. */
   const spNote=()=>{if(!spwarn)return;
-    spwarn.textContent=spFromLogin?'':'⚠ You are signed in as '+((DB.currentUser&&DB.currentUser.name)||'someone')+
-      ', who is not one of the three salespeople — check who this deck should be prepared by. It will carry '+SALESPEOPLE[SP].name+"'s name, photo and phone.";};
+    const sp=SALESPEOPLE[SP]||{};
+    spwarn.innerHTML='<span style="color:var(--mut)">✉ '+esc(sp.email||'—')+(sp.phone?'&nbsp;&nbsp;·&nbsp;&nbsp;📞 '+esc(sp.phone):'')+'</span>'+
+      (spFromLogin?'':' &nbsp;<span style="color:#C77800">← not you? pick who signs it</span>');};
   document.querySelectorAll('#sp label').forEach(l=>l.onclick=()=>{SP=l.dataset.sp;document.querySelectorAll('#sp label').forEach(x=>x.classList.toggle('on',x===l));l.querySelector('input').checked=true;spNote();});
   spNote();
   document.getElementById('contacts').innerHTML=[0,1,2].map(i=>
