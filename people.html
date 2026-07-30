@@ -107,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=93"></script>
+<script src="store.js?v=94"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -168,7 +168,7 @@ function renderPerms(){
       '<span title="Only you can see this panel" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#F6E9E3;color:#A83A12">👁 you only</span></h3>'+
     '<p class="hint"><b>Seeing and editing are two different permissions.</b> Most of the system is open to read — the invoice book included — and only a few people can change each part; a handful of things are not for everybody’s eyes at all, and those say so below. '+
       'The tier sets the baseline, the four ticks add a specific power on top, and changing either here applies immediately (the database enforces the same rules and refuses these four ticks to everyone but you). '+
-      'Click a name for their full 👁/✏ list; the second table answers it the other way round, permission by permission.</p>'+
+      '<b>Click a name (or the ▸) to unfold everything that person can see and edit — every cell in that list is a tick you can change</b>: orange = set by hand for them, ⟲ = back to the default their tier/ticks give. The second table answers it the other way round, permission by permission.</p>'+
     '<div style="overflow-x:auto"><table style="font-size:12.5px">'+
     '<tr><th>Person</th><th>Tier</th><th style="text-align:center" title="Final step of the holiday chain + the ⏳ Pending decisions">HR</th>'+
     /* see/edit are two different answers — Belén, 29 Jul */
@@ -179,12 +179,19 @@ function renderPerms(){
     '<th class="num" title="How many of them they can change">✏ edits</th></tr>';
   roster.forEach(p=>{
     const c=permCount(p);
-    h+='<tr><td><a href="#" data-perm="'+p.id+'" style="font-weight:700;color:var(--charcoal)">'+esc(p.name)+'</a>'+
+    /* the NAME, the caret AND the counts all open the per-person editable list —
+       Belén 30 Jul: "how do I change what people see and edit? literally impossible".
+       The click target existed (the name) but nothing SAID so; same discoverability
+       lesson as the Money event card. */
+    const open=_permOpen==p.id;
+    h+='<tr><td><a href="#" data-perm="'+p.id+'" style="font-weight:700;color:var(--charcoal)" title="'+(open?'Fold the list':'Open the see/edit list — every cell is a tick you can change')+'">'+
+        '<span style="color:var(--orange)">'+(open?'▾':'▸')+'</span> '+esc(p.name)+'</a>'+
         '<div style="font-size:11px;color:var(--muted)">'+esc(p.role||'')+(isBelenP(p)?' · you':'')+'</div></td>'+
       '<td><select data-pa="'+p.id+'" style="font:inherit;font-size:12px;padding:2px 4px">'+
         ACCESS.map(a=>'<option value="'+a+'"'+((p.access||'member')===a?' selected':'')+'>'+ACCESS_LABEL[a]+'</option>').join('')+'</select></td>'+
       tick(p,'hr','HR')+tick(p,'finance','Finance')+tick(p,'billing','Invoicing')+tick(p,'salesLead','Sales lead')+
-      '<td class="num">'+c.see+'</td><td class="num"><b>'+c.edit+'</b></td></tr>';
+      '<td class="num" data-perm="'+p.id+'" style="cursor:pointer" title="Open the list to change what they see">'+c.see+' <span style="font-size:9px;color:var(--orange)">'+(open?'▾':'▸')+'</span></td>'+
+      '<td class="num" data-perm="'+p.id+'" style="cursor:pointer" title="Open the list to change what they edit"><b>'+c.edit+'</b> <span style="font-size:9px;color:var(--orange)">'+(open?'▾':'▸')+'</span></td></tr>';
     if(_permOpen==p.id){
       /* EDITABLE per cell (Belén, 29 Jul evening: "each team is responsible for different
          things" — the coarse ticks were not enough). Tick/untick any 👁/✏; a cell that
