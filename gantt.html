@@ -100,7 +100,8 @@
 <div id="modal"><div class="card">
   <h3 id="m_title">Edit event</h3>
   <div class="frm">
-    <label class="full">Event name<input type="text" id="m_name"></label>
+    <label class="full">Event name — the ONE true name: reporting, SPX, invoicing items and hour projects all cascade from it<input type="text" id="m_name"></label>
+    <label>Event code (E0xx)<input type="text" id="m_ecode" placeholder="e.g. E057 — add it when ZOHO assigns it"></label>
     <label>Topic<select id="m_topic"></select></label>
     <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
     <label id="m_durwrap" style="display:none">Duration<span style="display:flex;gap:5px;align-items:center"><input type="number" id="m_dur_n" min="1" step="1" value="2" style="width:56px"><select id="m_dur_u"><option value="half">Half day</option><option value="day">Days</option><option value="week" selected>Weeks</option><option value="month">Months</option><option value="year">Years</option></select></span></label>
@@ -120,7 +121,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=89"></script>
+<script src="store.js?v=90"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -283,7 +284,8 @@ function openModal(id){editingId=id;
   const defDate=modalIsExt?toISO(addDays(monday(new Date()),8*7)):'2027-09-01';
   const ev=id?DB.event(id):{name:'',topic:'Renewables / AI',pm:'',lead:'',sales:'',city:'',country:'Spain',date:defDate,days:2};
   document.getElementById('m_title').textContent=(id?'Edit ':'Add ')+(modalIsExt?'project':'event');
-  m_name.value=ev.name;fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
+  m_name.value=ev.name;m_ecode.value=ev.ecode||'';fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
+  document.getElementById('m_ecode').parentElement.style.display=modalIsExt?'none':''; // projects have no event code
   m_days.value=ev.days||2;m_date.value=ev.date;m_city.value=ev.city||'';m_pm.value=ev.pm||'';m_lead.value=ev.lead||'';m_sales.value=ev.sales||'';
   /* RENMAD events = 1/2-day length; external projects = free duration (half a day → years) */
   document.getElementById('m_lenwrap').style.display=modalIsExt?'none':'';
@@ -299,7 +301,8 @@ document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
 document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
-document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim(),
+    ecode:(modalIsExt?null:(m_ecode.value.trim().toUpperCase()||null))}; // editable on purpose — codes often arrive later
   if(modalIsExt){
     const sel=Array.prototype.slice.call(document.querySelectorAll('.m_lane:checked')).map(c=>c.value);
     if(!sel.length){alert('Pick at least one timeline — a project needs somewhere to live.');return;}

@@ -57,6 +57,26 @@
   .ftbl tr.semhead td{background:#faf9f6;font-weight:700;color:var(--charcoal);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
   .ftbl tr.subtotal td{background:#f6f5f1;font-weight:700;border-top:2px solid var(--line)}
   .evname{font-weight:600;color:var(--charcoal)}
+/* expandable event card (Belén 30 Jul: the name opens the event's detail, no renaming here) */
+.evx{cursor:pointer;user-select:none}
+.evxname{font-weight:600;color:var(--charcoal)}
+.evxname:hover{color:var(--orange)}
+.ftbl tr.evcard>td{background:#faf9f6;border-bottom:2px solid var(--line);padding:12px 16px;white-space:normal}
+.evc-head{font-size:12.5px;color:var(--ink);margin-bottom:8px}
+.evc-head .code{background:#eceae3;border-radius:8px;padding:1px 7px;font-weight:700;font-size:11px}
+.evc-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.evc-grid{grid-template-columns:1fr}}
+.evc-boxes{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+.evc-box{background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 12px;min-width:84px}
+.evc-box .v{font-weight:800;font-size:13.5px;color:var(--charcoal);font-variant-numeric:tabular-nums}
+.evc-box .k{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.evc-sc{max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+.evc-sc table{width:100%;border-collapse:collapse;font-size:11.5px}
+.evc-sc td,.evc-sc th{padding:3px 8px;border-bottom:1px solid #f0eee8;text-align:left;white-space:nowrap}
+.evc-sc th{position:sticky;top:0;background:#faf9f6;font-size:9.5px;text-transform:uppercase;color:var(--muted)}
+.evc-sc td.num,.evc-sc th.num{text-align:right;font-variant-numeric:tabular-nums}
+.evc-cap{font-size:11.5px;color:var(--muted);margin-top:5px}
+.evc-foot{margin-top:9px;font-size:12px}
   a.evlink{color:var(--charcoal);text-decoration:none} a.evlink:hover{color:var(--orange)}
   .ed{font-size:10px;color:var(--muted);background:#eceae3;border-radius:10px;padding:1px 7px;margin-left:5px}
   .chip{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#fff;border-radius:10px;padding:2px 9px;display:inline-block}
@@ -153,7 +173,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=89"></script>
+<script src="store.js?v=90"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -329,8 +349,18 @@ function finGrouped(){
 }
 function fSum(list,fld){return list.reduce((a,f)=>a+(+f[fld]||0),0);}
 function chipHtml(r){return r?'<span class="chip" style="background:'+r.color+'">'+r.label+'</span>':'<span style="color:#b4b1a8;font-size:11px">pending</span>';}
+/* which event cards are open (survives re-renders within the page) */
+let evxOpen=new Set();
 function finRowHtml(f,canF){
-  const nameCell=(f.eventId&&DB.event(f.eventId))?('<a class="evlink" href="event.html?id='+f.eventId+'">'+esc(f.name)+'</a>'):esc(f.name);
+  /* ONE TRUE SOURCE (Belén, 30 Jul): a Money row linked to a timeline event shows
+     the DERIVED name and cannot be renamed here — rename it on the timeline and it
+     cascades (reporting, SPX, invoicing item, hour project). Rows with no link
+     (past editions) keep their editable stored name — there is nothing to cascade
+     from. Clicking the name opens/closes the event card instead. */
+  const linked=!!(f.eventId&&DB.event(f.eventId));
+  const open=evxOpen.has(f.id);
+  const caret='<span class="evx" data-evx="'+f.id+'" title="'+(open?'Fold the event card':'Open the event card')+'">'+(open?'▾':'▸')+'</span> ';
+  const nameRO='<span class="evx evxname" data-evx="'+f.id+'" title="'+(linked?'Cascades from the timeline — rename it there. Click for the event card.':'Click for the event card')+'">'+esc(DB.finTrueLabel(f))+(linked?' <span style="font-size:9px;opacity:.5" title="name cascades from the timeline">🔗</span>':'')+'</span>';
   const ed=f.edition?('<span class="ed">'+f.edition+'ª</span>'):'';
   /* invoiced: summed from the Facturación invoice allocations when the event has lines
      (then it can't be typed here any more); typed dc_finance.invoiced as fallback */
@@ -338,19 +368,114 @@ function finRowHtml(f,canF){
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
   const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
   if(!canF){
-    /* PM/Sales names link to the person page when they match the roster (29 Jul stitches) */
-    const pLink=n=>{if(!n)return '';const p=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);
-      return p?'<a href="person.html?id='+p.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);};
-    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+nameCell+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
   const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
-  return '<tr><td>'+inp('name')+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
+  return '<tr><td>'+caret+(linked?nameRO:inp('name'))+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
     mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
+}
+/* PM/Sales names link to the person page when they match the roster (29 Jul stitches) */
+function pLink(n){if(!n)return '';const p=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);
+  return p?'<a href="person.html?id='+p.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);}
+/* ---------- the event card (Belén, 30 Jul): the name clicks through to this ----------
+   Identity from the timeline · money derived from Invoicing · sales boxes from the SPX
+   rollup · CUMULATIVE chart (this edition / previous edition / average → target) ·
+   week-by-week "what we did" table. Series data comes from store.js evPaceCard()
+   (E-code joins — keep in sync with spx.html drawHcPace). */
+const dmyS=iso=>iso?(''+iso).slice(8,10)+'/'+(''+iso).slice(5,7)+'/'+(''+iso).slice(2,4):'';
+/* history names sometimes carry their year already ("Testevento 2026") — don't double it */
+const prevLabel=p=>((''+p.name)+((p.year&&!(''+p.name).includes(''+p.year))?' '+p.year:'')).trim();
+function evCardMoney(f){
+  let cob=0,pen=0,pases=0;const perInv={};
+  DB.invoiceAllocs.forEach(a=>{
+    if(a.eventId!=f.id)return;const iv=DB.invoice(a.invoice_id);
+    if(!DB.invCountsMoney(iv))return;const eu=DB.allocEur(a);
+    if(iv.status==='pagado'||iv.fecha_cobro)cob+=eu;else pen+=eu;
+    if(iv.status!=='cancelado'&&iv.status!=='abono')pases+=(+a.passes||0);
+    (perInv[iv.id]=perInv[iv.id]||{iv,eur:0}).eur+=eu;
+  });
+  return {cob,pen,pases,invs:Object.values(perInv).sort((a,b)=>(''+(b.iv.fecha||'')).localeCompare(''+(a.iv.fecha||'')))};
+}
+function evCardHtml(f){
+  const ev=f.eventId?DB.event(f.eventId):null;
+  const canF=DB.canFinance();
+  const code=evCardCode(f);
+  const pace=evPaceCard(f);
+  const m=evCardMoney(f);
+  const st=(typeof spxStatusAll==='function'?spxStatusAll():[]).find(r=>r.financeId==f.id);
+  const bits=[];
+  if(f.edition)bits.push(f.edition+'ª edición');
+  if(code)bits.push('<span class="code">'+code+'</span>');
+  if(ev&&ev.date)bits.push(esc(dateRange(ev)));
+  else if(f['when'])bits.push(esc(f['when'])+(f.year?' '+f.year:''));
+  const city=(ev&&ev.city)||f.city;if(city)bits.push(esc(city));
+  if(f.pm)bits.push('PM '+pLink(f.pm));
+  if(f.sales)bits.push('Sales '+pLink(f.sales));
+  if(ev&&ev.date){const wk=Math.round((monday(new Date())-monday(ymd(ev.date)))/(7*864e5));
+    bits.push('<b>'+(wk<=0?'today: W'+wk:'held '+wk+' wk ago')+'</b>');}
+  const box=(v,k,c)=>'<div class="evc-box"><div class="v"'+(c?' style="color:'+c+'"':'')+'>'+v+'</div><div class="k">'+k+'</div></div>';
+  let boxes=box(finFmt(f.target),'Target')+box(finFmt(DB.finInvoiced(f)),'Invoiced 🧾')+
+    box(finFmt(m.cob),'Collected','#3E8C28')+box(finFmt(m.pen),'Outstanding',m.pen>0.005?'#D32230':null);
+  if(st)boxes+=box(finFmt(st.won),'Won (specs)','#3E8C28')+box(finFmt(st.sent),'Sent · pipeline','#C77800')+
+    box(finFmt(st.silent),'Silent','#8a8a86')+box(finFmt(st.lost),'Lost','#b4b1a8');
+  if(m.pases)boxes+=box(m.pases,'Passes sold');
+  if((canF||DB.isHRAdmin())&&f.eventId){
+    let hrs=0;DB.projects.filter(p=>p.eventId==f.eventId).forEach(p=>DB.timesheets.forEach(t=>{hrs+=+(((t.hours||{})[p.id])||0);}));
+    if(hrs)boxes+=box((Math.round(hrs*10)/10)+' h','Hours logged');
+  }
+  /* week-by-week: what came in each week (latest on top) */
+  const wrows=pace.cur.filter(r=>weekMoney(r)>0||(+r.soFarEur||0)>0).sort((a,b)=>(+b.week)-(+a.week));
+  let wtbl='<div class="evc-sc"><table><tr><th>Week</th><th>Date</th><th class="num">Sponsors</th><th class="num">Tickets</th><th class="num">Week total</th><th class="num">Cumulative</th></tr>';
+  if(!wrows.length)wtbl+='<tr><td colspan="6" style="color:var(--muted)">No weekly history yet'+(code?'':' — this event needs its E-code (timeline) to join the weekly data')+'.</td></tr>';
+  wrows.forEach(r=>{wtbl+='<tr><td><b>W'+r.week+'</b></td><td>'+dmyS(r.date)+'</td><td class="num">'+finFmt(r.sponsorsEur)+'</td><td class="num">'+finFmt(r.ticketsEur)+'</td><td class="num"><b>'+finFmt(weekMoney(r))+'</b></td><td class="num">'+finFmt(r.soFarEur)+'</td></tr>';});
+  wtbl+='</table></div>';
+  /* cumulative comparison caption */
+  let cap='';
+  const last=pace.cur.filter(r=>(+r.soFarEur||0)>0).sort((a,b)=>(+a.week)-(+b.week)).pop();
+  if(last&&pace.prev){
+    const pAt=pace.prev.rows.filter(r=>+r.week<=+last.week&&(+r.soFarEur||0)>0).pop();
+    cap='At W'+last.week+': <b>'+finFmt(last.soFarEur)+'</b> now vs <b>'+finFmt(pAt?pAt.soFarEur:0)+'</b> for '+esc(prevLabel(pace.prev))+' at the same week (it closed at '+finFmt(pace.prev.final)+').';
+  }else if(last){cap='At W'+last.week+': <b>'+finFmt(last.soFarEur)+'</b> so far · no previous edition in the weekly history.';}
+  const links=[];
+  if(ev)links.push('<a href="event.html?id='+f.eventId+'" style="color:var(--orange);font-weight:600">📅 Open the full event page →</a>');
+  links.push('<a href="facturacion.html" style="color:inherit">🧾 Its invoices live in Invoicing</a>');
+  /* invoice list */
+  let itbl='<div class="evc-sc" style="max-height:180px"><table><tr><th>Invoice</th><th>Date</th><th>Company</th><th class="num">€ (this event)</th><th>Status</th></tr>';
+  if(!m.invs.length)itbl+='<tr><td colspan="5" style="color:var(--muted)">No invoices allocated to this event yet.</td></tr>';
+  m.invs.forEach(x=>{itbl+='<tr><td><b>'+esc(x.iv.numero_factura||'')+'</b></td><td>'+dmyS(x.iv.fecha)+'</td><td>'+esc(x.iv.razon_social||'')+'</td><td class="num">'+finFmt(x.eur)+'</td><td>'+esc(INV_STATUS[x.iv.status]||x.iv.status||'')+'</td></tr>';});
+  itbl+='</table></div>';
+  return '<div class="evc-head">'+bits.join(' · ')+'</div>'+
+    '<div class="evc-boxes">'+boxes+'</div>'+
+    '<div class="evc-grid">'+
+      '<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Cumulative — this edition · previous · average → target</div>'+
+        '<div style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px;height:230px"><canvas id="evc_ch_'+f.id+'"></canvas></div>'+
+        (cap?'<div class="evc-cap">'+cap+'</div>':'')+'</div>'+
+      '<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Week by week — what came in</div>'+wtbl+
+        '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px">Invoices</div>'+itbl+'</div>'+
+    '</div>'+
+    '<div class="evc-foot">'+links.join(' · ')+'</div>';
+}
+function drawEvCard(f){
+  const cid='evc_ch_'+f.id;if(!document.getElementById(cid))return;
+  const pace=evPaceCard(f);
+  const wmin=Math.min(-26,...pace.cur.map(r=>+r.week),...(pace.prev?pace.prev.rows.map(r=>+r.week):[0]));
+  const weeks=[];for(let w=Math.max(-40,wmin);w<=1;w++)weeks.push(w);
+  const series=rows=>weeks.map(w=>{const r=rows.find(x=>+x.week===w);return (r&&r.soFarEur!=null&&r.soFarEur!=='')?+r.soFarEur:null;});
+  const ds=[{label:'This edition',data:series(pace.cur),borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,spanGaps:true,tension:.25}];
+  if(pace.prev)ds.push({label:prevLabel(pace.prev),data:series(pace.prev.rows),borderColor:'#9a978e',backgroundColor:'#9a978e',borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
+  if(pace.tgt&&pace.finishedN){
+    ds.push({label:'Average event → target',data:weeks.map(w=>{const s=pace.medShare(w);return s==null?null:s*pace.tgt;}),borderColor:'#29ACE3',borderDash:[6,4],borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
+    ds.push({label:'Target',data:weeks.map(()=>pace.tgt),borderColor:'#2B2B2B',borderDash:[2,3],borderWidth:1.5,pointRadius:0});
+  }
+  mkChart(cid,{type:'line',data:{labels:weeks.map(w=>'W'+w),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:14,font:{size:10}}},tooltip:{callbacks:{}}},
+      scales:{y:{ticks:{callback:v=>finFmt(v)}},x:{ticks:{maxTicksLimit:14}}}}});
 }
 function renderYear(){
   const canF=DB.canFinance();
@@ -378,13 +503,21 @@ function renderYear(){
   keys.forEach(k=>{
     const list=g[k];
     h+='<tr class="semhead"><td colspan="11">'+k.replace('·',' — ')+'</td></tr>';
-    list.forEach(f=>{h+=finRowHtml(f,canF);});
+    list.forEach(f=>{h+=finRowHtml(f,canF);
+      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="11">'+evCardHtml(f)+'</td></tr>';});
     const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>{const v=DB.finInvoiced(f);return v!=null&&v!=='';})?list.reduce((a,f)=>a+(+DB.finInvoiced(f)||0),0):null};
     h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
       '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
       '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td></td></tr>';
   });
   document.getElementById('ftbl').innerHTML=h;
+  /* the event card: click the name (or the caret) to open/close — everyone */
+  document.querySelectorAll('[data-evx]').forEach(el=>el.onclick=()=>{
+    const id=+el.dataset.evx;
+    if(evxOpen.has(id))evxOpen.delete(id);else evxOpen.add(id);
+    renderYear();
+  });
+  evxOpen.forEach(id=>{const f=DB.finance.find(x=>x.id==id);if(f)try{drawEvCard(f);}catch(e){console.warn('event card chart:',e.message||e);}});
   if(canF){
     document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
       const f=DB.finance.find(x=>x.id==el.dataset.id);if(!f)return;
@@ -413,11 +546,15 @@ function openFinModal(){
   const sel=document.getElementById('f_link');
   sel.innerHTML='<option value="">— past event (not on the board) —</option>'+
     DB.events.map(e=>'<option value="'+e.id+'">'+e.name+' · '+dateRange(e)+'</option>').join('');
-  sel.onchange=()=>{const ev=DB.event(+sel.value);if(!ev)return;
-    f_name.value=ev.name.replace(/^E\d+\s*RENMAD\s*/i,'');f_city.value=ev.city||'';f_when.value=dateRange(ev);
+  sel.onchange=()=>{const ev=DB.event(+sel.value);
+    /* linked → the name CASCADES from the timeline and is locked here (30 Jul) */
+    f_name.readOnly=!!ev;f_name.title=ev?'Cascades from the timeline event — rename it there':'';
+    if(!ev)return;
+    f_name.value=DB.evMasterName(ev);f_city.value=ev.city||'';f_when.value=dateRange(ev);
     f_pm.value=ev.pm||'';f_sales.value=ev.sales||'';
     const d=ymd(ev.date);f_year.value=d.getFullYear();document.getElementById('f_sem').value=(d.getMonth()<6?'1':'2');};
   ['f_name','f_edition','f_city','f_when','f_pm','f_sales','f_target','f_stretch','f_invoiced','f_spex','f_notes'].forEach(id=>document.getElementById(id).value='');
+  f_name.readOnly=false;f_name.title='';
   f_year.value=new Date().getFullYear();
   document.getElementById('modal').classList.add('on');f_name.focus();
 }

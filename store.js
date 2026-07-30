@@ -1361,7 +1361,7 @@ function weeklyAutoRefresh(){
          old rule skipped nearly everything) */
       const evRow=f.eventId?DB.event(f.eventId):null;
       let code=/^E\d+$/i.test(''+r.key)?(''+r.key).toUpperCase():null;
-      if(!code&&evRow){const m=/^E\d+/.exec(evRow.name||'');if(m)code=m[0];}
+      if(!code&&evRow){const c=DB.evCode(evRow);if(c&&/^E\d+$/i.test(c))code=c;}
       if(!code){res.skipped.push(r.name+' — registry key is not an E-code and no board event is linked');return;}
       let tkAcc=0,grAcc=0,svAcc=0,passes=0;
       DB.invoiceAllocs.forEach(a=>{
@@ -1408,6 +1408,50 @@ function weeklyAutoRefresh(){
     });
   }catch(e){console.warn('weekly auto-refresh:',e.message||e);}
   return res;
+}
+/* ---------- Money event card data (Belén, 30 Jul 2026) ----------
+   The Year tab's expandable event card shows CUMULATIVE curves: this edition,
+   the previous edition of the same franchise (if any) and the average finished
+   event shaped to this target. Joins follow the standing rule: dc_weekly ↔
+   registry on the E-CODE, never on dc_finance names; the franchise fallback
+   folds accents/spaces/digits. spx.html drawHcPace applies the same rules —
+   KEEP IN SYNC (changing a join rule here means changing it there). */
+function famFold(s){return (''+(s||'')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z]/g,'').replace(/^renmad/,'');}
+function evCardCode(f){
+  if(!f)return null;
+  const reg=(DB.spxEventReg||[]).find(r=>!r.deleted&&r.financeId==f.id);
+  if(reg&&/^E\d+$/i.test(''+reg.eventKey))return (''+reg.eventKey).toUpperCase();
+  const ev=f.eventId?DB.event(f.eventId):null;
+  const c=ev?DB.evCode(ev):null;
+  return (c&&/^E\d+$/i.test(c))?c:null;
+}
+function evPaceCard(f){
+  const code=evCardCode(f);
+  const rowsOf=c=>DB.weekly.filter(x=>x.eventCode===c).sort((a,b)=>(+a.week)-(+b.week));
+  const cur=code?rowsOf(code):[];
+  const codes={};DB.weekly.forEach(x=>{if(x.eventCode)codes[x.eventCode]=1;});
+  const finished=[];
+  Object.keys(codes).forEach(c=>{
+    const rs=rowsOf(c);if(!rs.length)return;
+    /* finished = the curve REACHED W0 (weekly rows are always past-dated, so
+       "last date < today" would count live events as done — the 30 Jul lesson) */
+    if(!rs.some(r=>+r.week>=0))return;
+    const fin=Math.max(0,...rs.map(r=>+r.soFarEur||0));
+    if(fin>0)finished.push({code:c,rows:rs,final:fin,name:rs[0].name||c,year:rs[0].year});
+  });
+  const fam=famFold(cur.length?cur[0].name:DB.finTrueLabel(f));
+  let prev=null;
+  finished.forEach(e=>{if(e.code===code||famFold(e.name)!==fam)return;
+    if(!prev||(+e.year||0)>(+prev.year||0))prev=e;});
+  /* average finished event: per-week MEDIAN share of final, scaled to this target */
+  const shares={};
+  finished.forEach(e=>{e.rows.forEach(r=>{const s=(+r.soFarEur||0)/e.final;
+    (shares[r.week]=shares[r.week]||[]).push(s);});});
+  const medShare=w=>{const a=(shares[w]||[]).slice().sort((x,y)=>x-y);
+    return a.length?a[Math.floor(a.length/2)]:null;};
+  const tgt=(+f.target||+f.stretch||0)||null;
+  return {code,cur,prev,medShare,tgt,finishedN:finished.length};
 }
 let _wkAutoTimer=null;
 /* called from syncNow with the set of tables the sync just pushed */
@@ -1805,7 +1849,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
 const COLS={
-  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql)
+  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages','ecode'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = official event code, migration event_ecode 30 Jul
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace','perms'], // startDate/workPlace/perms tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
@@ -2506,6 +2550,22 @@ const DB={
      Jesús (accounting). Mirrors dc_can_finance() in SQL = admin OR finance flag, so
      the client shows the panel to exactly whom the server-side RLS will let write. */
   canManageProjects(){const u=this.currentUser;return !!(u&&(u.access==='admin'||u.finance));},
+  /* ---------- ONE TRUE SOURCE for event identity (Belén, 30 Jul 2026) ----------
+     The timeline event (dc_events) is the master record: its name cascades to
+     reporting/SPX/invoicing labels, which are NOT editable downstream.
+     ecode = the official event code (E057…) as its OWN field — deliberately
+     EDITABLE on the timeline, because codes are often assigned after the event
+     starts life. Falls back to a legacy "E0xx " name prefix while any remain. */
+  evCode(ev){if(!ev)return null;const c=(''+(ev.ecode||'')).trim();if(c)return c.toUpperCase();
+    const m=/^E\d+\b/.exec(ev.name||'');return m?m[0].toUpperCase():null;},
+  evMasterName(ev){return (''+((ev&&ev.name)||'')).replace(/^E\d+\s*/i,'').trim();},
+  /* a Money row's display label — cascades from its linked timeline event; a row
+     with no link (past editions) keeps its own stored name */
+  finTrueLabel(f){if(!f)return '';
+    const ev=f.eventId?this.event(f.eventId):null;
+    const base=(ev?this.evMasterName(ev):(''+(f.name||'?'))).trim();
+    const hasYear=/\b(19|20)\d{2}\b/.test(base)||/\s\d{2}$/.test(base);
+    return base+((f.year&&!hasYear)?(' '+f.year):'');},
   /* ---------- event → allocation-line cascade (Belén, 2026-07-17) ----------
      The moment an event exists, its two "allocation" lines exist too:
      an invoicing ITEM in dc_codigos and an hour-allocation PROJECT in

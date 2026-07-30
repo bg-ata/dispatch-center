@@ -98,7 +98,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=89"></script>
+<script src="store.js?v=90"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -262,7 +262,7 @@ function render(){
 }
 
 /* ---- € Results tab: this event's finance summary + weekly money ---- */
-function evCode(){const m=(ev.name||'').match(/^E\d+/);return m?m[0]:null;}
+function evCode(){return DB.evCode(ev);} // ecode field first, legacy name prefix as fallback
 function evWeekly(){const c=evCode();return c?DB.weekly.filter(r=>r.eventCode===c).sort((a,b)=>a.week-b.week):[];}
 function famKey(n){return (n||'').replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim();}
 function renderEuroTab(){
