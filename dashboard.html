@@ -1251,7 +1251,9 @@ function wireImport(){
 
 boot(()=>{render();});
 window.addEventListener('hashchange',render);
-window.addEventListener('dc-remote',()=>{if(activeTab()==='year')renderYear();});
+/* full render, whatever tab: the background refresh must clear stale "module not
+   active" banners too — renderYear alone left the warn box untouched (30 Jul) */
+window.addEventListener('dc-remote',()=>render());
 </script>
 </body>
 </html>

@@ -1882,6 +1882,23 @@ const COLS={
   pmsgs:['id','personId','byId','byName','text','created'],
 };
 let _pmsgReady=false,_prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+/* ---- module flags travel WITH the snapshot (30 Jul fix) ----
+   A snapshot boot used to render with every flag still false, so pages showed
+   "module not active — run X.sql in Supabase" although Supabase had everything;
+   Belén read it as SQL never applied. The snapshot now restores the flags the
+   live load discovered, so the first paint knows what exists. */
+function _modFlags(){return {fin:_finReady,weekly:_weeklyReady,hr:_hrReady,tc:_tcReady,event:_eventReady,
+  bill:_billReady,pay:_payReady,tick:_tickReady,spx:_spxReady,spxEv:_spxEvReady,spxFrag:_spxFragReady,
+  todo:_todoReady,inbox:_inboxReady,holmsg:_holmsgReady,pmsg:_pmsgReady,prod:_prodReady,
+  w:{_extColsMissing:window._extColsMissing,_phaseColMissing:window._phaseColMissing,_tzReady:window._tzReady,
+     _permsColReady:window._permsColReady,_holYearColMissing:window._holYearColMissing,_projEvReady:window._projEvReady,
+     _claimReady:window._claimReady,_inv2Ready:window._inv2Ready,_tzColsReady:window._tzColsReady,_tdColorMissing:window._tdColorMissing}};}
+function _setModFlags(f){if(!f)return;
+  _finReady=!!f.fin;_weeklyReady=!!f.weekly;_hrReady=!!f.hr;_tcReady=!!f.tc;_eventReady=!!f.event;
+  _billReady=!!f.bill;_payReady=!!f.pay;_tickReady=!!f.tick;_spxReady=!!f.spx;_spxEvReady=!!f.spxEv;
+  _spxFragReady=!!f.spxFrag;_todoReady=!!f.todo;_inboxReady=!!f.inbox;_holmsgReady=!!f.holmsg;
+  _pmsgReady=!!f.pmsg;_prodReady=!!f.prod;
+  Object.keys(f.w||{}).forEach(k=>{if(f.w[k]!==undefined)window[k]=f.w[k];});}
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
 function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
@@ -1900,7 +1917,7 @@ const DB={
       try{const {data}=await sb.auth.getSession();this._snapEm=(data&&data.session&&data.session.user&&data.session.user.email)||'';}catch(e){this._snapEm='';}
       const snap=this._readSnap();
       if(snap){
-        this.data=snap;rebuildProductos();snapshot();this.fromSnapshot=true;
+        this.data=snap.data;_setModFlags(snap.flags);rebuildProductos();snapshot();this.fromSnapshot=true;
         setTimeout(()=>{this._refresh();},0);
         setTimeout(()=>{try{subscribeRealtime();}catch(e){console.warn('realtime:',e.message||e);}},0);
         return this.data;
@@ -1936,7 +1953,8 @@ const DB={
       const s=JSON.parse(raw);
       if(!s||!s.t||Date.now()-s.t>30*60*1000)return null;      // too old to flash at the user
       if(!s.data||!Array.isArray(s.data.people)||!s.data.people.length)return null;
-      return s.data;
+      if(!s.flags)return null;   // pre-30-Jul snapshot without flags → do a live boot instead
+      return {data:s.data,flags:s.flags};
     }catch(e){return null;}
   },
   _writeSnap(){
@@ -1944,7 +1962,7 @@ const DB={
       if(!USE_SUPABASE||!this.data)return;
       Object.keys(sessionStorage).filter(k=>k.indexOf('dcSnap:')===0&&k!==this._snapKey())
         .forEach(k=>sessionStorage.removeItem(k));                // user/version switch: drop foreign snapshots
-      sessionStorage.setItem(this._snapKey(),JSON.stringify({t:Date.now(),data:this.data}));
+      sessionStorage.setItem(this._snapKey(),JSON.stringify({t:Date.now(),data:this.data,flags:_modFlags()}));
     }catch(e){/* quota / private mode: the snapshot is a luxury, never an error */}
   },
   async _live(){
