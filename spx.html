@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=86"></script>
+<script src="store.js?v=87"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -847,6 +847,54 @@ function eventTargets(ev){
   return {source:'spx',specsPct:w,moneyTotal:fin?(+fin.target||null):null,totTarget:spT+tkT,totStretch:spS+tkS,
     spTarget:spT,tkTarget:tkT,spStretch:spS,tkStretch:tkS};
 }
+/* ---- proposed specs/tickets split (Belén, 30 Jul): "you must propose the % split
+   and explain why your methodology proposes this specific split" ----
+   The real mix of every FINISHED edition lives in dc_weekly: final spxAcc vs final
+   ticketsAcc. Methodology, in order of trust:
+     1. ≥2 finished editions of THIS franchise → recency-weighted mean of the last
+        three (weights 3·2·1 — recent behaviour beats old behaviour).
+     2. exactly 1 finished edition → blend it 50/50 with the recent portfolio mix
+        (one data point is evidence, not a law).
+     3. none → the mean mix of all events finished in the last two data years
+        (a new event starts from how the portfolio as a whole sells).
+   Always a PROPOSAL: Cintia/Belén keep the pencil — the % field stays editable and
+   an applied proposal can be overwritten at any time. */
+function wkFam(n){return (''+(n||'')).replace(/\s*(20\d{2}|\d{2})\s*$/,'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'');}
+function specsMixProposal(ev){
+  if(!DB.weeklyReady()||!DB.weekly.length)return null;
+  const byCode={};DB.weekly.forEach(r=>{(byCode[r.eventCode]=byCode[r.eventCode]||[]).push(r);});
+  const eds=Object.keys(byCode).map(c=>{
+    const rows=byCode[c];let spx=0,tk=0,reached=false;
+    rows.forEach(r=>{spx=Math.max(spx,+r.spxAcc||0);tk=Math.max(tk,+r.ticketsAcc||0);if(+r.week>=0)reached=true;});
+    return {code:c,name:rows[0].name||c,year:+rows[0].year||null,spx,tk,total:spx+tk,
+      share:(spx+tk)>0?spx/(spx+tk):null,completed:reached};
+  }).filter(e=>e.completed&&e.share!=null&&e.total>0);
+  if(!eds.length)return null;
+  const curCode=/^E\d+$/i.test(''+ev.key)?(''+ev.key).toUpperCase():null;
+  const curRows=curCode?byCode[curCode]:null;
+  const famKey=curRows?wkFam(curRows[0].name):wkFam(ev.name);
+  const own=eds.filter(e=>wkFam(e.name)===famKey&&e.code!==curCode).sort((a,b)=>(b.year||0)-(a.year||0));
+  const maxYear=Math.max.apply(null,eds.map(e=>e.year||0));
+  const port=eds.filter(e=>(e.year||0)>=maxYear-1);
+  const portShare=port.length?port.reduce((a,e)=>a+e.share,0)/port.length:null;
+  const pc=v=>Math.round(v*100);
+  let frac,why,basis;
+  if(own.length>=2){
+    const use=own.slice(0,3),wts=[3,2,1];let num=0,den=0;
+    use.forEach((e,i)=>{num+=e.share*wts[i];den+=wts[i];});
+    frac=num/den;basis='franquicia — '+use.length+' ediciones';
+    why='Media ponderada de tus últimas ediciones de esta familia, pesando más lo reciente (3·2·1): '+
+      use.map(e=>(e.year||'?')+' → '+pc(e.share)+'% specs ('+money(e.spx)+' de '+money(e.total)+')').join(' · ')+'.';
+  }else if(own.length===1&&portShare!=null){
+    frac=(own[0].share+portShare)/2;basis='1 edición + portfolio';
+    why='Solo hay una edición previa con datos ('+(own[0].year||'?')+': '+pc(own[0].share)+'% specs), así que se mezcla al 50% con la media del portfolio '+(maxYear-1)+'–'+maxYear+' ('+pc(portShare)+'%). Un solo dato es una pista, no una ley.';
+  }else if(portShare!=null){
+    frac=portShare;basis='portfolio (evento sin histórico)';
+    why='Este evento no tiene ediciones previas con datos — se propone cómo vende el portfolio entero: media de '+port.length+' eventos cerrados en '+(maxYear-1)+'–'+maxYear+'.';
+  }else return null;
+  frac=Math.max(0.05,Math.min(0.95,frac));   // never propose 0/100 — both lines always exist
+  return {pct:pc(frac),why:why,basis:basis};
+}
 /* the editable "specs %" cell — Cintia enters it per event (whole %, stored 0–1) */
 function specsPctCell(w,editable){
   const disp=w==null?'—':(Math.round(w*1000)/10)+'%';
@@ -980,6 +1028,22 @@ function healthCard(ev){
     h+=hcRow2('Target',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget','pasesTarget');
     h+=hcRow2('Stretch',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch','pasesStretch');
     if(T.moneyTotal!=null)h+='<tr><td colspan="4" class="ro-note" style="text-align:left">Money total del evento: <b>'+money(T.moneyTotal)+'</b> — fija el Specs % para dividirlo automáticamente: '+specsPctCell(T.specsPct,editable)+'</td></tr>';
+  }
+  /* the proposed split, with its reasoning — shown in BOTH target branches so a new
+     event and a tracked one get the same guidance. Apply = one click; the % field
+     above stays editable, so Cintia/Belén always keep the last word. */
+  const prop=specsMixProposal(ev);
+  if(prop){
+    const curPct=T.specsPct!=null?Math.round(T.specsPct*100):null;
+    const applied=curPct===prop.pct;
+    h+='<tr><td colspan="4" style="text-align:left;background:#FFF8F2;border-left:3px solid var(--orange);font-size:12px;white-space:normal;padding:8px 10px">'+
+      '🤖 <b>Propuesta del histórico: '+prop.pct+'% specs · '+(100-prop.pct)+'% tickets</b> <span class="ro-note">('+esc(prop.basis)+')</span>'+
+      (applied?' <span style="color:var(--green);font-weight:700">— aplicada ✓</span>'
+        :(editable?' <button class="btn sm" id="hc_prop_apply" data-pct="'+prop.pct+'" style="margin-left:6px">Aplicar '+prop.pct+'%</button>':''))+
+      (curPct!=null&&!applied?' <span class="ro-note">— ahora mismo manda tu '+curPct+'% manual</span>':'')+
+      '<br><span class="ro-note">'+esc(prop.why)+'</span>'+
+      (T.moneyTotal!=null?'<br><span class="ro-note">Con '+prop.pct+'%: specs '+money((T.moneyTotal||0)*prop.pct/100)+' · tickets '+money((T.moneyTotal||0)*(100-prop.pct)/100)+' del target '+money(T.moneyTotal)+(totStretch?' (y el stretch '+money(totStretch)+' se reparte igual)':'')+'.</span>':'')+
+      '</td></tr>';
   }
   h+='<tr class="section"><td colspan="4">Firmado y pipeline</td></tr>';
   h+='<tr class="row-total"><td>Firmado (Won en el tablero)</td><td class="num">'+money(wonSpecs)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(signedNow)+'</td></tr>';
@@ -1115,6 +1179,11 @@ function invoicedPases(finId){
 function wireHC(t){
   const conv=document.getElementById('hc_conv');
   if(conv)conv.onchange=()=>{let c=+conv.value;if(c>1)c=c/100;c=Math.max(0,Math.min(1,c));const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{Sent:c});DB.save();render();};
+  // apply the proposed split (30 Jul) — same storage as the hand-typed %, so editing
+  // the field afterwards overrides the proposal exactly like any manual value
+  const pap=document.getElementById('hc_prop_apply');
+  if(pap)pap.onclick=()=>{const v=Math.max(0,Math.min(1,(+pap.dataset.pct||0)/100));
+    const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{specsPct:v});DB.save();render();};
   // specs % (Cintia) → convByStatus.specsPct (whole % in, stored 0–1); blank clears it
   const spc=document.getElementById('hc_specs');
   if(spc)spc.onchange=()=>{let v=spc.value===''?null:+spc.value;if(v!=null){if(v>1)v=v/100;v=Math.max(0,Math.min(1,v));}const row=ensureTarget();row.convByStatus=Object.assign({},row.convByStatus||{},{specsPct:v});DB.save();render();};
