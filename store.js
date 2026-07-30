@@ -2864,7 +2864,7 @@ function showJsErrBar(msg){
         '<span style="opacity:.6;font-size:11.5px;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+String(msg||'').replace(/</g,'&lt;')+'</span>'+
         '<button id="dcJsErrReload" style="margin-left:auto;background:#fff;color:#8E1B26;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Reload</button>';
       document.body.appendChild(d);
-      document.getElementById('dcJsErrReload').onclick=()=>location.reload();
+      document.getElementById('dcJsErrReload').onclick=()=>dcHardReload(); // cache-busting reload — a plain reload can re-serve the broken cached pair
     }catch(e){}
   };
   if(document.body)put();else document.addEventListener('DOMContentLoaded',put);
@@ -3003,6 +3003,19 @@ function navBar(active){
    version.json (bumped with the cache-buster on every deploy) and offers one tap.
    Local rigs: fetch fails or matches -> silent. */
 const PAGE_V=(()=>{try{const s=[...document.scripts].find(x=>/store\.js\?v=/.test(x.src));return +s.src.match(/v=(\d+)/)[1];}catch(e){return 0;}})();
+/* A NORMAL reload reuses cached html+js — exactly what a broken page must NOT do.
+   30 Jul incident: a tab that fetched store.js mid-deploy cached the OLD file under
+   the NEW ?v= (the server sends max-age=1 YEAR on .js), and location.reload() kept
+   serving that poisoned pair forever. Reloading through a fresh query string forces
+   the page itself to come from the server, whose reference then points at a clean
+   store.js URL. Every recovery button goes through this, never location.reload(). */
+function dcHardReload(){
+  try{
+    const u=new URL(location.href);
+    u.searchParams.set('fresh',Date.now().toString(36));
+    location.replace(u.toString());
+  }catch(e){location.reload();}
+}
 async function dcCheckBuild(){
   if(!PAGE_V)return;
   try{
@@ -3013,7 +3026,7 @@ async function dcCheckBuild(){
       const d=document.createElement('div');d.id='dcUpd';
       d.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99998;background:#FF4A00;color:#fff;font:600 13px Segoe UI,system-ui,sans-serif;padding:12px 16px;text-align:center;cursor:pointer;box-shadow:0 -4px 18px rgba(0,0,0,.18)';
       d.textContent='⚡ The Dispatch has been updated — tap here to load the new version';
-      d.onclick=()=>location.reload();
+      d.onclick=()=>dcHardReload();
       document.body.appendChild(d);
     }
   }catch(e){}
