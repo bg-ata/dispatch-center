@@ -1987,19 +1987,19 @@ window.PB = {
    "key": "E059",
    "spx_key": "E059",
    "name": "RENMAD Talks · BESS Invest 2026",
-   "date_es": "22 sep 2026"
+   "date_es": "29 sep 2026"
   },
   {
    "key": "E060",
    "spx_key": "E060",
    "name": "RENMAD Talks · Biometano 2026",
-   "date_es": "6 oct 2026"
+   "date_es": "10 nov 2026"
   },
   {
    "key": "E061",
    "spx_key": "E061",
    "name": "RENMAD Talks · Datacenters Off-Grid 2026",
-   "date_es": "10 nov 2026"
+   "date_es": "13 oct 2026"
   }
  ]
 };

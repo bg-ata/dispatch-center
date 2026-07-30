@@ -73,7 +73,7 @@
         <span class="seg"><button id="lang_en" class="on" data-lang="en">English</button><button id="lang_es" data-lang="es">Español</button></span>
       </div>
     </div>
-    <div style="margin-top:12px"><label class="lab">Salesperson <span class="req">*</span></label><div class="sp" id="sp"></div></div>
+    <div style="margin-top:12px"><label class="lab">Salesperson <span class="req">*</span></label><div class="sp" id="sp"></div><div id="spwarn" style="font-size:12px;color:#C77800;margin-top:5px"></div></div>
     <div style="margin-top:12px">
       <label class="lab">Client logo <span style="text-transform:none;font-weight:400;color:var(--mut)">(optional — transparent PNG works best; goes on the cover, divider, comparison and contact slides)</span></label>
       <input type="file" id="clogo" accept="image/png,image/jpeg,image/webp" style="font-size:13px">
@@ -168,7 +168,7 @@
 </div>
 
 <script src="store.js?v=86"></script>
-<script src="pb_bundle.js?v=9"></script>
+<script src="pb_bundle.js?v=10"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
 const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
@@ -186,9 +186,13 @@ const MODE_HINT={events:"Full sponsorship deck for one or several RENMAD events 
 // into a multi-event deck. They carry their OWN Talks packages (type:"talks").
 function injectTalksEvents(){
   PB.families=PB.families||{}; if(!PB.families.talks)PB.families.talks="RENMAD Talks";
-  const meta={E059:{color:"E84830",short:"Talks · BESS Invest",en:"22 Sep 2026"},
-              E060:{color:"4C3079",short:"Talks · Biometano",en:"6 Oct 2026"},
-              E061:{color:"29ACE3",short:"Talks · Datacenters Off-Grid",en:"10 Nov 2026"}};
+  /* dates corrected 30 Jul 2026 — they were stale AND Biometano/Datacenters were swapped.
+     Confirmed with Belén 28 Jul (BESS verified off the live ticket page):
+     BESS 29 Sep · Datacenters 13 Oct · Biometano 10 Nov. Same fix in spx_data.py +
+     pb_bundle.js (talksEvents), which is where the Spanish dates come from. */
+  const meta={E059:{color:"E84830",short:"Talks · BESS Invest",en:"29 Sep 2026"},
+              E060:{color:"4C3079",short:"Talks · Biometano",en:"10 Nov 2026"},
+              E061:{color:"29ACE3",short:"Talks · Datacenters Off-Grid",en:"13 Oct 2026"}};
   (PB.talksEvents||[]).forEach(te=>{
     if(PB.events.some(e=>e.key===te.key))return;
     const m=meta[te.key]||{color:"FF4A00",short:te.name,en:te.date_es};
@@ -214,8 +218,13 @@ function initBuilder(){
   injectTalksEvents();
   realEvents=PB.events.filter(e=>!e.portfolio);
   y26=realEvents.filter(e=>e.name.includes("2026")); y27=realEvents.filter(e=>e.name.includes("2027"));
+  /* The picker starts on whoever is signed in. When the person signed in is NOT one of the
+     salespeople (Belén, or a new starter not added to the list yet) it silently stayed on
+     Cintia and her details went out on a client deck — so say so instead of hiding it. */
+  let spFromLogin=false;
   try{ const em=(DB.currentUser&&DB.currentUser.email||'').toLowerCase();
-    const k=Object.keys(SALESPEOPLE).find(k=>(SALESPEOPLE[k].email||'').toLowerCase()===em); if(k)SP=k; }catch(e){}
+    const k=Object.keys(SALESPEOPLE).find(k=>(SALESPEOPLE[k].email||'').toLowerCase()===em);
+    if(k){SP=k;spFromLogin=true;} }catch(e){}
 
   const opt=(v)=>'<option value="'+String(v).replace(/"/g,'&quot;')+'">'+v+'</option>';
   const fillSel=(id,arr,ph)=>{document.getElementById(id).innerHTML='<option value="">'+ph+'</option>'+arr.map(opt).join('');};
@@ -224,7 +233,12 @@ function initBuilder(){
   { const d=new Date(Date.now()+7*864e5); document.getElementById('fup').value=d.toISOString().slice(0,10); }
   document.getElementById('sp').innerHTML=Object.keys(SALESPEOPLE).map(k=>
     '<label data-sp="'+k+'" class="'+(k===SP?'on':'')+'"><input type="radio" name="sp" '+(k===SP?'checked':'')+'>'+SALESPEOPLE[k].name+'</label>').join('');
-  document.querySelectorAll('#sp label').forEach(l=>l.onclick=()=>{SP=l.dataset.sp;document.querySelectorAll('#sp label').forEach(x=>x.classList.toggle('on',x===l));l.querySelector('input').checked=true;});
+  const spwarn=document.getElementById('spwarn');
+  const spNote=()=>{if(!spwarn)return;
+    spwarn.textContent=spFromLogin?'':'⚠ You are signed in as '+((DB.currentUser&&DB.currentUser.name)||'someone')+
+      ', who is not one of the three salespeople — check who this deck should be prepared by. It will carry '+SALESPEOPLE[SP].name+"'s name, photo and phone.";};
+  document.querySelectorAll('#sp label').forEach(l=>l.onclick=()=>{SP=l.dataset.sp;document.querySelectorAll('#sp label').forEach(x=>x.classList.toggle('on',x===l));l.querySelector('input').checked=true;spNote();});
+  spNote();
   document.getElementById('contacts').innerHTML=[0,1,2].map(i=>
     '<div class="ct"><input type="text" id="cf'+i+'" placeholder="First name'+(i===0?' *':'')+'"><input type="text" id="cl'+i+'" placeholder="Last name"><input type="email" id="ce'+i+'" placeholder="Email'+(i===0?' *':'')+'"></div>').join('');
 
@@ -482,7 +496,13 @@ function collect(){
   const talksPackages=(PB.talksPackages||[]).map(p=>p.id).filter(id=>pkChecked('tpk_'+id));
   const selections=events.map(e=>[e.key, e.type==='talks'?talksPackages:stdPackages]);
   const sp=SALESPEOPLE[SP];
-  return {client:document.getElementById('client').value.trim(),lang:LANG,spKey:SP,spName:sp.name,spEmail:sp.email,sp:Object.assign({key:SP},sp),
+  /* `salesperson` is the name the deck modules read (deck.js: opts.salesperson, falling
+     back to Cintia when it is missing). It used to be passed as `sp` only, so EVERY deck
+     built in events mode came out with Cintia's contact details no matter who was logged
+     in — Ian, 30 Jul: "me sale la propuesta … con los datos de Cintia". Both keys are set:
+     `sp` for the Talks/webinar calls, `salesperson` for buildFullDeck. */
+  return {client:document.getElementById('client').value.trim(),lang:LANG,spKey:SP,spName:sp.name,spEmail:sp.email,
+    sp:Object.assign({key:SP},sp),salesperson:Object.assign({key:SP},sp),
     events,packages:stdPackages,talksPackages,selections,
     hasStd:events.some(e=>e.type!=='talks'),hasTalks:events.some(e=>e.type==='talks'),
     talksOnly:events.length>0&&events.every(e=>e.type==='talks'),
@@ -538,8 +558,10 @@ async function genEvents(msg){
          deck being built, it only means the slides fall back to their block colours */
       try{
         if(window.PBIMG&&window.IMGCFG){
-          o.images=await PBIMG.load(window.IMGCFG,(o.events[0]||{}).key||'',
-                                    {salesperson:(typeof o.sp==='string')?o.sp:null});
+          /* the headshot is fetched by KEY ('ian'), and o.sp is always an object — so this
+             test was always false and the contact slide came out with no photo at all
+             (Ian, 30 Jul: "sin algunas fotos"). o.spKey is the key. */
+          o.images=await PBIMG.load(window.IMGCFG,(o.events[0]||{}).key||'',{salesperson:o.spKey});
         }
       }catch(e){ console.warn('deck imagery unavailable:',e&&e.message); }
       const deck=(typeof PBDECK!=='undefined')?PBDECK.buildFullDeck(o):PB.buildDeck(o);
