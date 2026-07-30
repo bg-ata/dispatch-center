@@ -1358,10 +1358,14 @@ function weeklyAutoRefresh(){
     if(!DB.canFinance()||!DB.weeklyReady()||!DB.spxReady()||!DB.billReady())return res;
     spxStatusAll().filter(r=>r.active&&r.financeId!=null).forEach(r=>{
       const f=DB.finance.find(x=>x.id==r.financeId);if(!f)return;
+      /* the weekly history's eventCode = the registry key when it is an E-code
+         (E047=E047) — the board-event link is a fallback, not a requirement
+         (30 Jul fix: almost no Money row is linked to a board event, so the
+         old rule skipped nearly everything) */
       const evRow=f.eventId?DB.event(f.eventId):null;
-      const m=evRow?/^E\d+/.exec(evRow.name||''):null;
-      if(!m||!evRow.date){res.skipped.push(r.name+' — needs a Money row linked to a board event with an E-code and a date');return;}
-      const code=m[0];
+      let code=/^E\d+$/i.test(''+r.key)?(''+r.key).toUpperCase():null;
+      if(!code&&evRow){const m=/^E\d+/.exec(evRow.name||'');if(m)code=m[0];}
+      if(!code){res.skipped.push(r.name+' — registry key is not an E-code and no board event is linked');return;}
       let tkAcc=0,grAcc=0,svAcc=0,passes=0;
       DB.invoiceAllocs.forEach(a=>{
         if(a.eventId!=f.id)return;const inv=DB.invoice(a.invoice_id);
@@ -1371,8 +1375,15 @@ function weeklyAutoRefresh(){
         else if(a.producto==='grabaciones')grAcc+=eur;
         else if(a.producto==='sitevisits')svAcc+=eur;
       });
-      const nowMon=monday(new Date()),wk=Math.round((nowMon-monday(ymd(evRow.date)))/(7*864e5));
       const rows=DB.weekly.filter(x=>x.eventCode===code);
+      /* week anchor: board event date when linked; else extrapolate from this
+         edition's latest dated weekly row (its W-number + weeks elapsed since) */
+      const nowMon=monday(new Date());
+      let wk=null;
+      if(evRow&&evRow.date)wk=Math.round((nowMon-monday(ymd(evRow.date)))/(7*864e5));
+      if(wk==null){let last=null;rows.forEach(x=>{if(x.date&&x.week!=null&&(!last||+x.week>+last.week))last=x;});
+        if(last)wk=Math.min(0,(+last.week)+Math.round((nowMon-monday(ymd(last.date)))/(7*864e5)));}
+      if(wk==null){res.skipped.push(r.name+' — no board-event date and no dated weekly row to anchor the week number');return;}
       const prev=rows.filter(x=>x.week<wk),sum=k=>prev.reduce((a,x)=>a+(+x[k]||0),0);
       let row=rows.find(x=>x.week==wk);const isNew=!row;
       const vals={
@@ -1386,7 +1397,9 @@ function weeklyAutoRefresh(){
       if(f.stretch!=null)vals.stretch=+f.stretch;
       const dirty=isNew||Object.keys(vals).some(k=>(+((row||{})[k])||0)!==(+vals[k]||0));
       if(!dirty)return;
-      if(isNew){row={id:DB.newId(),eventCode:code,name:(f.name+' '+(f.year||'')).trim(),year:f.year||null,
+      if(isNew){row={id:DB.newId(),eventCode:code,
+        name:(rows[0]&&rows[0].name)||(f.name+' '+(f.year||'')).trim(),   // keep the history's own naming
+        year:(rows[0]&&rows[0].year)||f.year||null,
         date:toISO(nowMon),week:wk,topicLeads:null,eventLeads:null,telesalesN:null,telesalesEur:null};
         DB.weekly.push(row);}
       Object.assign(row,vals);

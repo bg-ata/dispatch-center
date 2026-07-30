@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=85"></script>
+<script src="store.js?v=86"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -1022,7 +1022,9 @@ function drawHcPace(ev){
   if(!el)return;
   if(!DB.weeklyReady()||!DB.weekly.length){const p=el.parentElement;if(p)p.innerHTML='<div class="ro-note" style="padding:20px 8px">Aún no hay datos semanales — se rellenan solos según entra facturación y ventas.</div>';return;}
   const fid=ev.financeId,f=fid!=null?DB.finance.find(x=>x.id==fid):null;
-  const fam=n=>(''+(n||'')).replace(/\s*(20\d{2}|\d{2})\s*$/,'').trim().toLowerCase();
+  /* family key: minus the trailing year, accents and ALL spaces — the history says
+     "Data Centers 25" and "Datacenters 26" for the same franchise */
+  const fam=n=>(''+(n||'')).replace(/\s*(20\d{2}|\d{2})\s*$/,'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,'');
   const byCode={};DB.weekly.forEach(r=>{(byCode[r.eventCode]=byCode[r.eventCode]||[]).push(r);});
   const today=toISO(new Date());
   const metas=Object.keys(byCode).map(c=>{
@@ -1032,10 +1034,20 @@ function drawHcPace(ev){
        wrong here: a live event's rows are always dated in the past — that bug made a
        half-run edition pollute the fraction-of-final benchmark. */
     return {code:c,rows,final,name:rows[0].name||c,year:+rows[0].year||null,completed:rows.some(r=>+r.week>=0)};});
-  const myFam=fam(f?f.name:ev.name),myYear=f?+f.year:null;
-  const mine=metas.filter(m=>fam(m.name)===myFam);
-  const cur=mine.find(m=>m.year===myYear)||mine.filter(m=>!m.completed).sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;
-  const prevEd=mine.filter(m=>(!cur||m.code!==cur.code)&&m.completed).sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;
+  /* THIS edition: the registry key IS the weekly history's E-code (E047 = E047) — match
+     on it directly. The finance-name fallback alone was the 30 Jul bug: finance says
+     "H2", the history says "Hidrógeno 2026", and the chart came up empty although
+     Belén had given us every number. */
+  const myYear=f?+f.year:null;
+  let cur=(/^E\d+$/i.test(''+ev.key)&&metas.find(m=>m.code.toUpperCase()===(''+ev.key).toUpperCase()))||null;
+  if(!cur){const myFam=fam(f?f.name:ev.name);
+    const mine=metas.filter(m=>fam(m.name)===myFam);
+    cur=mine.find(m=>m.year===myYear)||mine.filter(m=>!m.completed).sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;}
+  /* PREVIOUS edition: same family as the edition we just found — judged on the weekly
+     history's OWN names, which are consistent within a franchise */
+  const famKeyOf=cur?fam(cur.name):fam(f?f.name:ev.name);
+  const prevEd=metas.filter(m=>fam(m.name)===famKeyOf&&(!cur||m.code!==cur.code)&&m.completed)
+    .sort((a,b)=>(b.year||0)-(a.year||0))[0]||null;
   const T=eventTargets(ev);let target=T.totTarget||0;
   if(!target&&f&&f.target!=null)target=+f.target;   // Money total even before Cintia sets the specs %
   const weeks=[];for(let w=-30;w<=0;w++)weeks.push(w);
@@ -1046,10 +1058,13 @@ function drawHcPace(ev){
     const v=a.length%2?a[(a.length-1)/2]:(a[a.length/2-1]+a[a.length/2])/2;return v*target;});
   const carry=m=>weeks.map(w=>{if(!m)return null;let v=null;m.rows.forEach(r=>{if(r.week<=w&&r.soFarEur!=null)v=+r.soFarEur;});return v;});
   const curData=carry(cur),prevData=carry(prevEd);
-  /* HOY: from the linked board event's date; fallback = the edition's latest dated row */
+  /* HOY: from the linked board event's date; else EXTRAPOLATED from the edition's
+     latest dated row (its week + the weeks elapsed since) — most Money rows are not
+     linked to a board event, and the weekly history itself carries the anchor */
   let nowWk=null;
   if(f&&f.eventId){const e=DB.event(f.eventId);if(e&&e.date)nowWk=Math.round((monday(new Date())-monday(ymd(e.date)))/(7*864e5));}
-  if(nowWk==null&&cur){cur.rows.forEach(r=>{if((r.date||'')<=today)nowWk=r.week;});}
+  if(nowWk==null&&cur){let last=null;cur.rows.forEach(r=>{if(r.date&&r.week!=null)last=r;});
+    if(last)nowWk=Math.min(0,(+last.week)+Math.round((monday(new Date())-monday(ymd(last.date)))/(7*864e5)));}
   const note=document.getElementById('hcpaceNote');
   if(note)note.textContent=(cur?'':'Esta edición aún no tiene semanas registradas. ')+
     (prevEd?('Edición anterior: '+prevEd.name+(prevEd.year&&(''+prevEd.name).indexOf(''+prevEd.year)<0?' '+prevEd.year:'')+' · cerró en '+money(prevEd.final)+'.'):'Sin edición anterior con datos.');
