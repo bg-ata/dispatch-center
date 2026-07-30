@@ -2585,7 +2585,12 @@ const DB={
         if((+f.year||0)<curYear)return;
         if(this.codigos.some(c=>c.eventId==f.id))return;
         const label=((f.name||'?')+' '+(f.year?(''+f.year).slice(-2):'')).trim();
-        this.codigos.push({id:this.newId(),item:label,codigo:'',descripcion:'auto — created with the event',eventId:f.id});
+        /* archived set EXPLICITLY: the diff-sync sends null for whitelisted-but-unset
+           columns, and a NOT NULL column then refuses the whole insert forever
+           (30 Jul: "a change could not be saved" on Belén's screen — the cascade
+           kept failing to create the 2027 items). Rule: every column in COLS that
+           the DB constrains must be set here, not left to the default. */
+        this.codigos.push({id:this.newId(),item:label,codigo:'',descripcion:'auto — created with the event',eventId:f.id,archived:false});
         out.items++;
       });
     }
