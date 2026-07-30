@@ -293,8 +293,13 @@ function workingDaysBetween(fromISO,toISO_){
    23-day holiday allowance. 'adjust' = a signed balance change (carry-over / borrow). */
 const OFF_TYPES=['vacation','sick','maternity','paternity'];
 const LEAVE_TYPES=['sick','maternity','paternity'];
-const TYPE_LABEL={vacation:'Holiday',remote:'Office day',sick:'Sick leave',maternity:'Maternity leave',paternity:'Paternity leave',adjust:'Balance adjustment'};
-const TYPE_EMOJI={vacation:'🌴',remote:'🏢',sick:'🤒',maternity:'👶',paternity:'👶',adjust:'±'};
+/* Belén, 30 Jul: "can you make clear which requests are holidays and which are remote
+   work? Here these are remote work but nothing really is explaining them." The type was
+   labelled "Office day" on the request cards while the presence badge called the same thing
+   "Remote 🏠" — so nobody could tell what they were approving. One name everywhere now:
+   REMOTE WORK. The stored value stays 'remote'. */
+const TYPE_LABEL={vacation:'Holidays',remote:'Remote work',sick:'Sick leave',maternity:'Maternity leave',paternity:'Paternity leave',adjust:'Balance adjustment'};
+const TYPE_EMOJI={vacation:'🌴',remote:'🏠',sick:'🤒',maternity:'👶',paternity:'👶',adjust:'±'};
 function personDaysOfTypes(personId,fromISO,toISO_,types){ // approved working days of given types in a range
   const out=[];
   DB.holidays.filter(h=>h.personId==personId&&h.status==='approved'&&types.includes(h.type||'vacation')).forEach(h=>{
@@ -700,7 +705,7 @@ function holMsgSend(holidayId,text,toRequester){
   }
   return row;
 }
-/* office days: up to 8 office days per person per year — logged via the 'remote' entry type */
+/* remote work: up to 8 days per person per year — logged via the 'remote' entry type */
 const REMOTE_MAX_DAYS=8;
 function remoteDaysUsed(personId,year){
   return DB.holidays.filter(h=>h.personId==personId&&h.type==='remote'&&h.status!=='denied'&&(h.dateFrom||'').slice(0,4)===String(year))

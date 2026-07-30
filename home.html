@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=87"></script>
+<script src="store.js?v=88"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -646,7 +646,7 @@ function reqAlarms(r){ // ⚠ strings for one request (used at request time AND 
   if(r.type==='remote'){
     const yr=r.dateFrom.slice(0,4);
     const used=remoteDaysUsed(r.personId,yr)+(r.id?0:(+r.workDays||0));
-    if(used>REMOTE_MAX_DAYS)alarms.push('Office days: '+used+' of '+REMOTE_MAX_DAYS+' in '+yr+' — over the 8-day yearly limit.');
+    if(used>REMOTE_MAX_DAYS)alarms.push('Remote work: '+used+' days of '+REMOTE_MAX_DAYS+' in '+yr+' — over the yearly limit.');
     return alarms;
   }
   DB.holidays.filter(o=>o.id!=r.id&&(o.type||'vacation')!=='remote'&&o.status!=='denied'&&o.status!=='cancelled'&&o.personId!=r.personId
@@ -662,9 +662,13 @@ function reqAlarms(r){ // ⚠ strings for one request (used at request time AND 
   });
   return alarms;
 }
-function typeChip(r){const ty=r.type||'vacation';if(ty==='vacation')return '';
-  const col=ty==='remote'?'var(--blue)':'var(--amber)';
-  return '<span class="chip" style="background:'+col+'">'+TYPE_LABEL[ty]+'</span> ';}
+/* EVERY request says what it is, holidays included — an unlabelled card was read as
+   "holidays" by default, which is exactly how two remote-work days looked like time off
+   (Belén, 30 Jul). Colour + emoji + the word: 🌴 green holidays · 🏠 blue remote work. */
+function typeChip(r,opts){const ty=r.type||'vacation';
+  if(ty==='vacation'&&!(opts&&opts.always))return '';
+  const col=ty==='vacation'?'var(--green)':ty==='remote'?'var(--blue)':'var(--amber)';
+  return '<span class="chip" style="background:'+col+'">'+(TYPE_EMOJI[ty]||'')+' '+TYPE_LABEL[ty]+'</span> ';}
 function statusChip(h){
   if(h.status==='approved')return '<span class="chip" style="background:var(--green)">Approved</span>';
   if(h.status==='denied')return '<span class="chip" style="background:var(--red)">Denied</span>';
@@ -747,7 +751,11 @@ function renderDecide(){
     const flags=reqAlarms(r);
     const adv=changeAdvice(r);
     h+='<div class="decidecard">'+
-      '<div style="font-size:13px"><b style="color:var(--charcoal)">'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span> · '+(r.type==='remote'?'Office day':'Holidays')+' · <b>'+fmtRange(r)+'</b> · '+(r.workDays||'?')+'d</div>'+
+      /* the type leads the card as a coloured chip: what you are approving is the first
+         thing you read, not a grey word in the middle of the line */
+      '<div style="font-size:13px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">'+typeChip(r,{always:1})+
+        '<b style="color:var(--charcoal)">'+esc(p?p.name:'?')+'</b> <span style="color:var(--muted);font-size:11px">'+esc(p?p.role:'')+'</span>'+
+        '<span>· <b>'+fmtRange(r)+'</b> · '+(r.workDays||'?')+'d'+(r.type==='remote'?' working from home':'')+'</span></div>'+
       (r.note?'<div style="font-size:12px;color:var(--muted);margin-top:2px">“'+esc(r.note)+'”</div>':'')+
       chainHtml(r)+
       (adv?'<div class="flag" style="color:var(--amber)">🔁 '+adv+'</div>':'')+
@@ -962,10 +970,10 @@ function renderHolPanel(){
   box.innerHTML=h;
   const fb=document.getElementById('holFoldBody');
   fb.innerHTML=
-    '<p class="hint" style="margin-top:2px">Your request goes to <span id="chainTxt"></span>. Office days: up to '+REMOTE_MAX_DAYS+' days per year. Approved holidays can be changed — use “Request change” next to them.</p>'+
+    '<p class="hint" style="margin-top:2px">Your request goes to <span id="chainTxt"></span>. Remote work: up to '+REMOTE_MAX_DAYS+' days a year. Approved holidays can be changed — use “Request change” next to them.</p>'+
     '<div id="chgBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12.5px;padding:8px 12px;border-radius:8px;margin-bottom:10px"></div>'+
     '<div class="frm">'+
-    '<label>Type<select id="r_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
+    '<label>Type<select id="r_type"><option value="vacation">🌴 Holidays</option><option value="remote">🏠 Remote work (working from home)</option></select></label>'+
     '<label>From<input type="date" id="r_from"></label>'+
     '<label>To (inclusive)<input type="date" id="r_to"></label>'+
     '<div class="days" id="r_days">&nbsp;</div><div class="flags" id="r_flags"></div>'+
@@ -983,20 +991,21 @@ function renderHolPanel(){
 function renderMine(){
   const me=DB.currentUser;const tbl=document.getElementById('mine');if(!tbl)return;
   const mine=DB.holidays.filter(x=>x.personId==me.id&&(x.type||'vacation')!=='adjust').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-  let h='<tr><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
-  if(!mine.length)h+='<tr><td colspan="4" class="empty">No requests yet.</td></tr>';
+  let h='<tr><th>What</th><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>';
+  if(!mine.length)h+='<tr><td colspan="5" class="empty">No requests yet.</td></tr>';
   mine.forEach(r=>{
     const deny=(r.log||[]).filter(l=>l.action==='denied').map(l=>l.note).filter(Boolean).join('; ');
     const pending=['manager','belen','hr'].includes(r.status);
     const hrLeave=LEAVE_TYPES.includes(r.type); // sick/mat/pat added by HR — not self-cancellable
     const chg=r.replaces?' <span style="color:var(--muted);font-size:11px" title="'+esc2(changeAdvice(r)||'')+'">🔁 change</span>':'';
-    h+='<tr><td>'+typeChip(r)+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
+    /* own list: the type gets its own column so holidays and remote work never look alike */
+    h+='<tr><td>'+typeChip(r,{always:1})+'</td><td>'+fmtRange(r)+chg+'</td><td>'+(r.workDays||'?')+'</td>'+
       '<td>'+statusChip(r)+(deny?' <span style="color:var(--muted);font-size:11px">'+esc(deny)+'</span>':'')+'</td>'+
       '<td>'+(pending&&!hrLeave?'<button class="btn" style="font-size:11px;padding:3px 9px" data-cx="'+r.id+'">Cancel</button>':'')+
       (r.status==='approved'&&r.type==='vacation'?'<button class="btn" style="font-size:11px;padding:3px 9px" data-chg="'+r.id+'">Request change</button>':'')+'</td></tr>';
     /* anything an approver asked THEM, plus a reply box — only when there's something to show */
     const qs=holMsgs(r.id);
-    if(qs.length)h+='<tr><td colspan="4" style="padding-top:0">'+msgsHtml(r,{allowReply:true})+'</td></tr>';
+    if(qs.length)h+='<tr><td colspan="5" style="padding-top:0">'+msgsHtml(r,{allowReply:true})+'</td></tr>';
   });
   tbl.innerHTML=h;
   tbl.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{
@@ -1011,7 +1020,7 @@ function startChange(id,rearm){ // rearm=true: re-showing after a re-render — 
   if(!rearm)openFold('holFold');
   const ban=document.getElementById('chgBanner');
   ban.style.display='block';
-  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'office days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
+  ban.innerHTML='🔁 Changing your approved '+(o.type==='remote'?'remote-work days':'holidays')+' <b>'+fmtRange(o)+'</b> ('+o.workDays+'d). Pick the NEW dates below and send — the old dates stay until the change is approved, then they are released automatically. <a href="#" id="chgOff" style="color:#8a4a12;font-weight:700">never mind</a>';
   document.getElementById('chgOff').onclick=e=>{e.preventDefault();changeOf=null;ban.style.display='none';const ty2=document.getElementById('r_type');if(ty2)ty2.disabled=false;};
   const ty=document.getElementById('r_type');ty.value=o.type||'vacation';ty.disabled=true;
   if(!rearm)ban.scrollIntoView({block:'center',behavior:'smooth'});
@@ -1049,7 +1058,7 @@ function wireForm(){
     DB.holidays.push({id:DB.newId(),personId:me.id,dateFrom:f.value,dateTo:t.value,workDays:wd,type:ty.value,
       replaces:orig?orig.id:null,
       note:document.getElementById('r_note').value.trim(),status:chain[0].key,
-      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'office days':'holidays'))}]});
+      log:[{by:me.name,at:new Date().toISOString(),action:orig?('requested CHANGE of '+fmtRange(orig)+' ('+orig.workDays+'d)'):('requested '+(ty.value==='remote'?'remote work':'holidays'))}]});
     /* audit: wait for the database before saying "Sent" — a backgrounded phone
        suspends the debounce timer and the request never existed */
     const sendBtn=document.getElementById('r_send');sendBtn.disabled=true;sendBtn.textContent='Sending…';

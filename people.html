@@ -86,7 +86,7 @@
   <div class="panel calpanel"><h3>📆 Team calendar<span title="Visible to the whole team" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#E9F0FB;color:#185FA5">👁 everyone</span></h3><p class="hint" id="calHint"></p>
     <div class="mnav"><button class="btn" id="c_prev">‹</button><b id="c_lab"></b><button class="btn" id="c_next">›</button></div>
     <div class="cal" id="cal"></div>
-    <div class="legend"><span class="sw" style="background:var(--green)"></span>holidays<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending<span class="sw" style="background:var(--blue)"></span>office day<span class="sw" style="background:var(--amber)"></span>sick / parental leave<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday<span class="sw" style="background:#f2f0ea"></span>weekend</div>
+    <div class="legend"><span class="sw" style="background:var(--green)"></span>holidays<span class="sw" style="background:repeating-linear-gradient(45deg,#F0B429,#F0B429 4px,#fce9bb 4px,#fce9bb 8px)"></span>pending<span class="sw" style="background:var(--blue)"></span>remote work<span class="sw" style="background:var(--amber)"></span>sick / parental leave<span class="sw" style="background:#E9DEF5"></span>Madrid bank holiday<span class="sw" style="background:#f2f0ea"></span>weekend</div>
     <p class="hint" id="holList" style="margin-top:8px"></p></div>
   <div class="panel calpanel"><h3>Madrid bank holidays <span id="yhY"></span></h3><p class="hint">The official “calendario laboral” this app deducts automatically — review against the BOCM each January and tell Claude if any date moved.</p><div id="yearHols"></div></div>
 </div>
@@ -107,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=87"></script>
+<script src="store.js?v=88"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -343,7 +343,7 @@ function renderCal(){
   const people=DB.people.filter(p=>!isTeamAccount(p)).slice().sort((a,b)=>a.role===b.role?a.name.localeCompare(b.name):a.role.localeCompare(b.role));
   const canSeeLeaveOf=p=>DB.isAdmin()||DB.isHR()||(me&&me.id==p.id)||(DB.canManage()&&me&&p.role===me.role);
   document.getElementById('calHint').textContent=
-    'Everyone can see who’s on holiday or in the office. Green = approved holidays, striped = pending, blue = office days.'+
+    'Everyone can see who’s off and who is working from home. Green = approved holidays, striped = pending, blue = remote-work days.'+
     ((DB.isAdmin()||DB.isHR()||DB.canManage())?' Amber = sick / parental leave (visible to managers & HR only).':'')+
     ' Your own requests live in 🙋 Me.';
   const nDays=new Date(y,m+1,0).getDate();

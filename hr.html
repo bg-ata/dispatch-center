@@ -97,7 +97,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=87"></script>
+<script src="store.js?v=88"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -221,7 +221,7 @@ function renderHolidays(){
   document.getElementById('adminFoldBody').innerHTML=
     '<h4>Load past holidays</h4><p class="hint">Enter what people already took or booked this year — added directly as APPROVED so the balances are right.</p>'+
     '<div class="padd"><label>Person<select id="b_who"></select></label>'+
-    '<label>Type<select id="b_type"><option value="vacation">Holidays</option><option value="remote">Office day</option></select></label>'+
+    '<label>Type<select id="b_type"><option value="vacation">🌴 Holidays</option><option value="remote">🏠 Remote work</option></select></label>'+
     '<label>From<input type="date" id="b_from"></label><label>To<input type="date" id="b_to"></label>'+
     '<label>Note<input id="b_note" placeholder="loaded from record" style="width:160px"></label>'+
     '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
@@ -266,7 +266,7 @@ function renderBackfill(){
   const xh=document.getElementById('x_hol');
   if(xh){
     const opts=DB.holidays.filter(h=>h.status==='approved').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
-    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+esc(DB.personName(h.personId))+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', office':'')+')</option>').join(''):'<option value="">— none approved —</option>';
+    xh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+esc(DB.personName(h.personId))+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type==='remote'?', remote work':'')+')</option>').join(''):'<option value="">— none approved —</option>';
     document.getElementById('x_go').onclick=()=>{
       const h=DB.holidays.find(x=>x.id==xh.value);if(!h)return;
       const reason=prompt('Reason for cancelling '+DB.personName(h.personId)+'’s '+fmtRange(h)+' (they will see it):');
@@ -449,11 +449,11 @@ function ledgerHtml(r,y){
     .sort((a,b)=>(a.dateFrom||'').localeCompare(b.dateFrom||''));
   const rmtN=rmt.reduce((a,x)=>a+(+x.workDays||0),0);
   h+='<tr><td colspan="4" style="padding-top:10px;border-top:2px solid var(--line)">'+
-     '<b>🏢 Office days '+y+'</b> <span style="color:var(--muted);font-size:11px">'+rmtN+' of '+REMOTE_MAX_DAYS+
+     '<b>🏠 Remote work '+y+'</b> <span style="color:var(--muted);font-size:11px">'+rmtN+' of '+REMOTE_MAX_DAYS+
      ' used — a separate entitlement, counted apart from the '+r.allow+' holiday days above</span></td></tr>';
   rmt.forEach(x=>{h+='<tr><td style="padding-left:14px;color:var(--muted)">'+fmtRange(x)+'</td>'+
     '<td class="num" style="color:var(--muted)">'+x.workDays+'</td>'+
-    '<td><span class="chip" style="background:#29ACE3">office day</span></td><td style="color:var(--muted)">'+esc(x.note||'')+'</td></tr>';});
+    '<td><span class="chip" style="background:#29ACE3">🏠 remote work</span></td><td style="color:var(--muted)">'+esc(x.note||'')+'</td></tr>';});
   if(!rmt.length)h+='<tr><td colspan="4" style="padding-left:14px;color:var(--muted);font-style:italic">None this year.</td></tr>';
   return h+'</table>';
 }
