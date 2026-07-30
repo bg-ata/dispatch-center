@@ -97,7 +97,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=88"></script>
+<script src="store.js?v=89"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -331,11 +331,11 @@ let balOpen=null,balYear=null;
 function renderBalances(){
   const box=document.getElementById('balBox');if(!box)return;
   const now=new Date();
-  /* the year being spent right now — in Jan/Feb that is still LAST year's allowance */
+  /* holiday year = calendar year (Belén, 30 Jul); each year's bookings deduct from it */
   const y=balYear!=null?balYear:holYearOfDate(toISO(now));
   const yearFrac=(now-new Date(y,0,1))/(new Date(y+1,0,1)-new Date(y,0,1));
   const ramp=Math.max(0,Math.min(1,(yearFrac-0.25)/0.60)); // nothing "due" before ~April, full spread by ~Nov
-  const feb28=new Date(y+1,1,28,23,59); // the spill deadline for THIS holiday year
+  const feb28=new Date(y+1,1,28,23,59); // carry-over expiry for THIS holiday year
   // exclude the HR team login (not a person) and Belén (she tracks her own — don't nudge)
   const rows=DB.people.filter(p=>!isTeamAccount(p)&&!isBelenP(p)).map(p=>{
     const allow=holAllowance(p),used=holUsed(p.id,y),adj=holAdjust(p.id,y),rem=holRemaining(p.id,y);
@@ -354,14 +354,14 @@ function renderBalances(){
   let h=over.length?('<div class="alarm" style="margin-bottom:10px">⚠ <b>'+over.length+' over their holiday allowance:</b> '+
     over.map(r=>esc(r.p.name)+' (by '+Math.abs(r.rem)+' day'+(Math.abs(r.rem)===1?'':'s')+')').join(' · ')+
     ' — if any of these came from <b>last year\'s</b> allocation, add them under “Carry-over / borrowed days” in the ⚙ Admin actions fold so the balance is right.</div>'):'';
-  /* year picker + what "holiday year" means, since it is not the calendar year */
+  /* year picker — the holiday year IS the calendar year; the picker lets HR look ahead (2027…) */
   h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'+
     '<span style="font-size:12px;color:var(--muted)">Holiday year</span>'+
     '<button class="btn" style="font-size:12px;padding:3px 9px" id="bal_prev">‹</button>'+
     '<b style="font-size:14px">'+y+'</b>'+
     '<button class="btn" style="font-size:12px;padding:3px 9px" id="bal_next">›</button>'+
-    '<span style="font-size:11.5px;color:var(--muted)">= days enjoyed 1 Mar '+y+' → 28 Feb '+(y+1)+
-    ' <span title="Company policy: 23 days a year, and whatever is left may be enjoyed until 28 February of the next year. So days taken in January and February count against the previous year.">ⓘ</span></span>'+
+    '<span style="font-size:11.5px;color:var(--muted)">= days enjoyed in '+y+
+    ' <span title="Company policy (30 Jul 2026): each calendar year has its own allowance and the days you take that year come out of it — booking into next year already deducts from next year’s count. Leftover days only continue as an HR carry-over, which expires 28 February.">ⓘ</span></span>'+
     '<button class="btn" style="font-size:12px;padding:3px 10px" id="bal_xls" title="Download the holiday pack (balances + full ledger) to Excel">⬇ Holiday pack</button>'+
     '<span style="flex:1"></span>'+
     '<span style="font-size:11.5px;color:var(--muted)">Click a name to see every day</span></div>';
@@ -427,14 +427,12 @@ function ledgerHtml(r,y){
   rows.forEach(x=>{
     const counts=x.status==='approved';
     if(counts)run+=(+x.workDays||0);
-    const spill=inSpillWindow(x.dateFrom);
     const st=x.status==='approved'?'<span class="chip" style="background:var(--green)">approved</span>'
       :x.status==='denied'?'<span class="chip" style="background:var(--red)">denied</span>'
       :x.status==='cancelled'?'<span class="chip" style="background:#9AA0A8">cancelled</span>'
       :'<span class="chip" style="background:var(--amber)">'+esc(holStageLabel(x))+'</span>';
     h+='<tr'+(counts?'':' style="opacity:.5"')+'><td>'+fmtRange(x)+
-      (spill?' <span class="chip" style="background:#7A5AA8;font-size:9px" title="Taken in Jan/Feb — counts against '+y+'">'+y+' days</span>':'')+
-      (holStraddles(x)?'<div style="font-size:10px;color:#C77800;margin-top:1px">⚠ spans 28 Feb — the whole block is counted in '+holYearOf(x)+'. Split it if part belongs to '+(holYearOf(x)+1)+'.</div>':'')+
+      (holStraddles(x)?'<div style="font-size:10px;color:#C77800;margin-top:1px">⚠ crosses 31 Dec — the whole block is counted in '+holYearOf(x)+'. Split it if part belongs to '+(holYearOf(x)+1)+', or set the charge year.</div>':'')+
       '</td><td class="num">'+(counts?x.workDays:'<s>'+x.workDays+'</s>')+
       (counts?' <span style="color:var(--muted);font-size:10px">('+run+')</span>':'')+'</td>'+
       '<td>'+st+'</td><td style="color:var(--muted)">'+esc(x.note||'')+'</td></tr>';

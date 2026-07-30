@@ -34,8 +34,14 @@
   .flt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
   .flt input,.flt select{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:7px}
   .tblwrap{overflow-x:auto}
+  /* a second horizontal scrollbar ABOVE the table, synced with the real one below —
+     Belén 30 Jul: "it is hard to have to go all the way down just to scroll" */
+  .topscroll{overflow-x:auto;overflow-y:hidden;height:14px;margin-bottom:2px}
+  .topscroll>div{height:1px}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  td,th{text-align:left;padding:6px 8px;border-bottom:1px solid #eee;white-space:nowrap}
+  td,th{text-align:left;padding:4px 6px;border-bottom:1px solid #eee;white-space:nowrap}
+  .invnum{color:var(--orange);cursor:pointer;text-decoration:none}
+  .invnum:hover{text-decoration:underline}
   th{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px}
   th.sortable{cursor:pointer;user-select:none} th.sortable:hover{background:#e2dfd6;color:var(--charcoal)}
   th.sorton{background:#ded8c8;color:var(--charcoal)}
@@ -90,7 +96,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=88"></script>
+<script src="store.js?v=89"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -210,8 +216,13 @@ function lineHasData(r){return lineAmount(r)!==0||(+r.passes||0)!==0||(+r.amount
 /* line product with legacy fallback: pre-2.0 alloc rows have no producto of their own */
 function lineProd(a,inv){return a.producto||(inv?inv.producto:'')||'';}
 function invPasses(i){return DB.allocsFor(i.id).reduce((s,a)=>s+(+a.passes||0),0);}
-/* Σ net of every live invoice linked to an SPX contract — the A11 check reads this */
-function linkedNet(propId,exceptId){return DB.invoices.filter(x=>x.spxProposalId==propId&&x.status!=='cancelado'&&x.id!=exceptId).reduce((s,x)=>s+(+x.importe_base||0),0);}
+/* Σ net of every invoice linked to an SPX contract — the A11 check reads this.
+   Pair rule (30 Jul): a cancelled-by-abono invoice counts and its abono rides along
+   (inheriting the link when only the original carries it) so the pair nets to zero. */
+function linkedNet(propId,exceptId){
+  const ids={};DB.invoices.forEach(x=>{if(x.spxProposalId==propId)ids[x.id]=1;});
+  return DB.invoices.filter(x=>(x.spxProposalId==propId||(x.abono_de&&ids[x.abono_de]&&x.status==='abono'))
+    &&DB.invCountsMoney(x)&&x.id!=exceptId).reduce((s,x)=>s+(+x.importe_base||0),0);}
 
 /* ---------- main render ---------- */
 function render(){
@@ -226,9 +237,12 @@ function render(){
     (DB.billReady()&&window._inv2Ready===false?'<div class="warn">Invoicing 2.0 line details (product · qty · price per line) will not persist until <b>dispatch_invoicing2.sql</b> is run in Supabase. Amounts, códigos and passes still save fine.</div>':'');
   renderDraftBar();
   const rows=filtered();
-  /* cancelled invoices are OUT of every card (they were inflating Net/Total while the
-     € Dashboard correctly excluded them — the two screens disagreed) */
-  const live=rows.filter(i=>i.status!=='cancelado');
+  /* the cards follow the pair rule (30 Jul): a cancelled invoice stays in as long as its
+     abono is in — together they add zero. Excluding the cancelled one while counting the
+     abono made Base/Total drop TWICE per cancellation. A cancelled invoice with no live
+     credit note (legacy states) stays excluded. NOTE the year tabs are drawers by issue
+     date, so a cross-year pair nets to zero only on "Todos los años". */
+  const live=rows.filter(i=>DB.invCountsMoney(i));
   const base=live.reduce((a,i)=>a+(+i.importe_base||0),0), tot=live.reduce((a,i)=>a+(+i.total_factura||0),0);
   /* Collected: CASH received in the tab's year, whatever year its invoice was issued
      (see collectedFor). Outstanding: what is still owed on the invoices ISSUED in the
@@ -263,8 +277,9 @@ function render(){
       '<button class="btn sm" id="f_clear">limpiar</button>'+
       '<span class="hint" style="margin-left:auto"><span class="allocchip" style="background:#EFE3FB">abono</span><span class="allocchip" style="background:#F8D7D7">cancelled</span></span>'+
     '</div>'+
-    '<div class="tblwrap"><table id="itbl"></table></div>'+
-    '<p class="hint">Ordenadas por fecha y nº — <b>haz clic en cualquier cabecera</b> para ordenar por ella, otro clic invierte. Al guardar una factura de <b>tickets</b> o <b>sponsorship</b> con pases en una línea de evento, sus plazas aparecen solas en la lista de delegados del evento (en amarillo hasta poner nombre). <b>Cancelada</b> solo ocurre mediante un abono total — nunca a mano.</p></div>'+
+    '<div class="topscroll" id="tscroll"><div id="tscroll_i"></div></div>'+
+    '<div class="tblwrap" id="twrap"><table id="itbl"></table></div>'+
+    '<p class="hint">Ordenadas por fecha y nº — <b>haz clic en cualquier cabecera</b> para ordenar por ella, otro clic invierte.'+(RO?'':' <b>Haz clic en el nº de factura</b> para abrir y editar la factura.')+' Al guardar una factura de <b>tickets</b> o <b>sponsorship</b> con pases en una línea de evento, sus plazas aparecen solas en la lista de delegados del evento (en amarillo hasta poner nombre). <b>Cancelada</b> solo ocurre mediante un abono total — nunca a mano.</p></div>'+
     '';
   renderTable(rows);
   /* the write buttons only exist for an invoicing editor — wire whatever is on the page */
@@ -348,22 +363,36 @@ function applyInvSort(rows){
   const col=INV_COLS.find(c=>c.k===SORT.col); if(!col)return rows;
   return rows.slice().sort((a,b)=>cmpV(col.get(a),col.get(b),col.type||'text',SORT.dir));
 }
-function invThCells(){
-  return INV_COLS.map(c=>{
+function invThCells(cols){
+  return cols.map(c=>{
     const active=SORT.col===c.k;
     const arr=active?(SORT.dir>0?'<span class="sarr">▲</span>':'<span class="sarr">▼</span>'):'<span class="sarr sarr-dim">↕</span>';
     return '<th class="sortable'+(c.cls?' '+c.cls:'')+(active?' sorton':'')+'" data-sort="'+c.k+'" title="Sort by '+esc(c.label)+'">'+esc(c.label)+' '+arr+'</th>';
-  }).join('')+'<th style="width:50px"></th>';
+  }).join('')+'<th style="width:26px"></th>';
 }
 function setSort(key){if(SORT.col===key)SORT.dir=-SORT.dir;else{SORT.col=key;SORT.dir=1;}renderTable(filtered());}
+/* keep the top scrollbar the same width as the table and the two in lockstep */
+function wireTopScroll(){
+  const top=document.getElementById('tscroll'),inner=document.getElementById('tscroll_i'),
+        wrap=document.getElementById('twrap'),tbl=document.getElementById('itbl');
+  if(!top||!wrap||!tbl)return;
+  inner.style.width=tbl.scrollWidth+'px';
+  top.style.display=tbl.scrollWidth>wrap.clientWidth+2?'':'none';
+  let lock=false;
+  top.onscroll=()=>{if(lock)return;lock=true;wrap.scrollLeft=top.scrollLeft;lock=false;};
+  wrap.onscroll=()=>{if(lock)return;lock=true;top.scrollLeft=wrap.scrollLeft;lock=false;};
+}
 function renderTable(rows){
-  /* "Entered by" left the board (Jesús 28 Jul): it pushed the ✎ off-screen, and getting to
-     it meant scrolling right at the very bottom of the page and back up. It stays on the
-     invoice itself and in the Excel export. "Contract salesperson" → "Contract" for width. */
+  /* "Entered by" left the board (Jesús 28 Jul): it pushed the edit control off-screen.
+     The pen itself left on 30 Jul (Belén): the INVOICE NUMBER is the edit link now, so
+     there is nothing to scroll right for. "Contract salesperson" → "Contract" for width.
+     Subtotal US$ only appears when the filtered list actually has a USD invoice. */
   const canWrite=DB.canBill();      // everyone reads the book; only accounting changes it
   rows=applyInvSort(rows);
-  let h='<tr>'+invThCells()+'</tr>';
-  if(!rows.length)h+='<tr><td colspan="15" class="hint" style="white-space:normal">No hay facturas'+(DB.invoices.length?' con estos filtros.':(canWrite?' todavía — crea la primera con “+ Nueva factura”.':' todavía.'))+'</td></tr>';
+  const showUsd=rows.some(i=>i.en_usd&&i.importe_usd!=null&&i.importe_usd!=='');
+  const cols=INV_COLS.filter(c=>showUsd||c.k!=='usd');
+  let h='<tr>'+invThCells(cols)+'</tr>';
+  if(!rows.length)h+='<tr><td colspan="'+(cols.length+1)+'" class="hint" style="white-space:normal">No hay facturas'+(DB.invoices.length?' con estos filtros.':(canWrite?' todavía — crea la primera con “+ Nueva factura”.':' todavía.'))+'</td></tr>';
   rows.forEach(i=>{
     const allocs=DB.allocsFor(i.id);
     const chips=allocs.map(a=>{const c=DB.codigoById(a.codigoId)||DB.codigoForEvent(a.eventId);const f=finById(a.eventId);
@@ -378,22 +407,28 @@ function renderTable(rows){
     const stSel=canWrite?'<select class="inl" data-st="'+i.id+'" '+stLock+'>'+stOpts.map(s=>'<option value="'+s+'" '+(i.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'
                         :esc(INV_STATUS[i.status]||i.status||'');
     const passes=invPasses(i);
+    /* the invoice number IS the edit link (Belén 30 Jul — the pen at the far right
+       forced a horizontal scroll for every edit) */
+    const numCell=canWrite
+      ?'<b class="invnum" data-edit="'+i.id+'" title="Abrir y editar esta factura">'+esc(i.numero_factura||'')+'</b>'
+      :'<b>'+esc(i.numero_factura||'')+'</b>';
     h+='<tr class="'+(i.status==='abono'?'abono':i.status==='cancelado'?'cancelado':'')+'">'+
-      '<td><b>'+esc(i.numero_factura||'')+'</b>'+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
+      '<td>'+numCell+(i.abono_de?' <span class="hint" title="credit note for invoice '+esc((DB.invoice(i.abono_de)||{}).numero_factura||'#'+i.abono_de)+'">↩</span>':'')+'</td>'+
       '<td>'+ddmmyyyy(i.fecha)+'</td><td>'+ddmmyyyy(i.vencimiento)+'</td><td style="white-space:normal">'+esc(i.razon_social||'')+'</td>'+
       '<td>'+prodCell(i)+'</td>'+
       '<td class="num">'+(passes?passes:'<span class="hint">—</span>')+'</td>'+
       '<td class="num">'+eurF(i.importe_base)+'</td>'+
-      '<td class="num">'+(i.en_usd&&i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'<span class="hint">—</span>')+'</td>'+
+      (showUsd?'<td class="num">'+(i.en_usd&&i.importe_usd!=null&&i.importe_usd!==''?'$'+(+i.importe_usd).toFixed(2):'<span class="hint">—</span>')+'</td>':'')+
       '<td class="num">'+eurF(i.iva_importe)+' <span class="hint">'+(i.iva_pct!=null?i.iva_pct+'%':'')+'</span></td>'+
       '<td class="num"><b>'+eurF(i.total_factura)+'</b></td>'+
       '<td>'+statusCell(i,stSel)+'</td>'+
       '<td style="white-space:normal">'+contractOwnerCell(i)+'</td>'+
       '<td style="white-space:normal">'+chips+'</td>'+
       '<td style="white-space:normal;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="'+esc(i.comentarios||'')+'">'+esc(i.comentarios||'')+'</td>'+
-      '<td>'+(canWrite?'<button class="btn sm" data-edit="'+i.id+'">✎</button><button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button>':'')+'</td></tr>';
+      '<td>'+(canWrite?'<button class="del" data-kill="'+i.id+'" title="Delete (recoverable from the audit log)">×</button>':'')+'</td></tr>';
   });
   document.getElementById('itbl').innerHTML=h;
+  wireTopScroll();
   document.querySelectorAll('th[data-sort]').forEach(th=>th.onclick=()=>setSort(th.dataset.sort));
   document.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openModal(DB.invoice(b.dataset.edit)));
   document.querySelectorAll('[data-ctr]').forEach(b=>{b.onclick=e=>{e.stopPropagation();openModal(DB.invoice(b.dataset.ctr));};});
@@ -925,7 +960,7 @@ function syncInvoiceFromPayments(invId){
 function renderPayments(){
   const box=document.getElementById('paybox');if(!box)return;
   if(!DB.payReady()){box.innerHTML='<p class="hint">Split payments are not active yet — run <b>dispatch_invoice_payments.sql</b> in Supabase, then reload.</p>';return;}
-  if(!editingId){box.innerHTML='<p class="hint">Save the invoice first, then re-open it (✎) to record partial payments.</p>';return;}
+  if(!editingId){box.innerHTML='<p class="hint">Save the invoice first, then re-open it (click its number) to record partial payments.</p>';return;}
   const inv=DB.invoice(editingId);if(!inv){box.innerHTML='';return;}
   if(inv.status==='abono'||inv.status==='cancelado'){box.innerHTML='<p class="hint">'+(inv.status==='abono'?'Abono':'Factura cancelada')+' — the payment ledger does not apply.</p>';return;}
   const ps=DB.paymentsFor(editingId).slice().sort((a,b)=>(''+(a.fecha||'')).localeCompare(''+(b.fecha||'')));

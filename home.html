@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=88"></script>
+<script src="store.js?v=89"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -944,7 +944,8 @@ function renderHolPanel(){
     /* signpost (29 Jul UX round): the same concept has three views — say where the others live */
     '<p class="hint" style="margin:0 0 8px">Yours here · the whole team’s calendar in <a href="people.html" style="color:var(--orange)">👥 Team</a>'+(DB.canSeeHR&&DB.canSeeHR()?' · approvals in <a href="hr.html" style="color:var(--orange)">Team → HR admin</a>':'')+'.</p>';
   if(!DB.hrReady()){box.innerHTML=h+'<p class="hint">Not active yet — run dispatch_hr.sql in Supabase, then reload.</p>';return;}
-  /* the year we are SPENDING right now: in Jan/Feb that is still last year's allowance */
+  /* the year we are spending = the calendar year (Belén, 30 Jul: each year's days come
+     out of that year's allowance; bookings into next year deduct from next year's) */
   const ay=holYearOfDate(toISO(new Date()));
   if(holExempt(me)){
     /* Belén sits outside the allowance policy, but she asked (29 Jul evening) for the
@@ -957,12 +958,13 @@ function renderHolPanel(){
   }else{
     const used=holUsed(me.id,ay),adj=holAdjust(me.id,ay),rem=holRemaining(me.id,ay);
     h+='<div class="kv"><span class="k">Holidays '+ay+'</span><span class="v">'+used+' used · '+rem+' left of '+holAllowance(me)+(adj?' <span style="color:#29ACE3;font-weight:400">('+(adj>0?'+':'')+adj+' carry/borrow)</span>':'')+'</span></div>'+
-      '<div class="hint" style="margin:2px 0 4px">'+holFormulaHtml(me.id,ay)+' <span style="color:var(--muted)">— “booked” = approved days still ahead of you (January bookings count here too)</span></div>'+
-      '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 10px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(ay)+'. Days you take in January and February still come out of your '+ay+' count.</div>';
-    /* during the spill window next year's allowance is already running too — show both */
-    if(inSpillWindow(toISO(new Date()))){
-      const ny=ay+1,nUsed=holUsed(me.id,ny),nRem=holRemaining(me.id,ny);
-      h+='<div class="kv"><span class="k">Holidays '+ny+'</span><span class="v">'+nUsed+' used · '+nRem+' left of '+holAllowance(me)+'</span></div>';
+      '<div class="hint" style="margin:2px 0 4px">'+holFormulaHtml(me.id,ay)+' <span style="color:var(--muted)">— “booked” = approved days still ahead of you within this year (next-year bookings sit in next year’s count)</span></div>'+
+      '<div style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:12px;padding:8px 10px;border-radius:8px;margin:8px 0 10px"><b>'+rem+' day'+(rem===1?'':'s')+' left</b> — '+holDeadlineText(ay)+'.</div>';
+    /* the moment someone books days into NEXT year, its allowance is already running —
+       show it alongside so the advance deduction is visible (the "2027 system") */
+    {const ny=ay+1,nUsed=holUsed(me.id,ny),nRem=holRemaining(me.id,ny);
+      if(nUsed>0)h+='<div class="kv"><span class="k">Holidays '+ny+'</span><span class="v">'+nUsed+' booked · '+nRem+' left of '+holAllowance(me)+'</span></div>'+
+        '<div class="hint" style="margin:2px 0 4px">Days booked in '+ny+' come out of the '+ny+' allowance, not this year’s.</div>';
     }
   }
   h+='<table id="mine"></table>'+
@@ -1037,10 +1039,11 @@ function wireForm(){
       (hols.length?' <span style="color:var(--muted)">(bank holidays not counted: '+esc(hols.join(', '))+')</span>':'');
     const fake={id:null,personId:DB.currentUser.id,dateFrom:f.value,dateTo:t.value,type:ty.value,workDays:wd,replaces:changeOf};
     let flags=reqAlarms(fake).map(a=>'<div>⚠ '+a+'</div>');
-    /* say out loud which year's allowance these days come out of — the Jan/Feb surprise */
-    if(ty.value==='vacation'&&!holExempt(DB.currentUser)&&inSpillWindow(f.value)){
+    /* say out loud which year's allowance these days come out of — booking into NEXT
+       year deducts from next year's count (advance deduction, Belén 30 Jul) */
+    if(ty.value==='vacation'&&!holExempt(DB.currentUser)&&holYearOfDate(f.value)!==new Date().getFullYear()){
       flags.unshift('<div style="color:#29ACE3">ℹ These days come out of your <b>'+holYearOfDate(f.value)+
-        '</b> allowance — days taken in January and February belong to the previous year’s count.</div>');
+        '</b> allowance — each calendar year’s days are deducted from that year’s count.</div>');
     }
     fl.innerHTML=flags.join('');
     if(cal)cal.innerHTML=ty.value==='remote'?'':holMiniCal(f.value,t.value,{personId:DB.currentUser.id,excludeId:changeOf});

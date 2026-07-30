@@ -360,45 +360,37 @@ function personStatusNow(p){
   return {key:'unknown',label:'Available',emoji:'●',color:'#3E8C28',detail:''};
 }
 /* ---- the holiday YEAR ----
-   The policy: 23 days a year, and whatever is left may spill over into the next year
-   until 28 February. So days enjoyed on 2–8 Jan are "last year's days" — the count they
-   belong to is NOT the calendar year they fall in. Every balance question therefore asks
-   holYearOf(row), never dateFrom.slice(0,4).
-     • Jan/Feb  -> charged to the PREVIOUS year (the spill window)
-     • Mar–Dec  -> charged to their own year
-     • chargeYear on the row overrides both (HR can reassign: someone genuinely spending
-       next year's allowance in January, or days borrowed in advance)
-   'adjust' rows are the exception: HR stamps them on 1 Jan of the year they apply to, so
-   they always mean that calendar year. */
-/* The first holiday year the system tracks. Records start 2026-01-01, so the Jan/Feb
-   spill rule must not reach back past it: without this floor, the team's real Jan/Feb
-   2026 days (45 of them) fell into a "2025" year nobody can see and every 2026 balance
-   inflated — Cintia 0→5, Carlos 4→9… (Belén caught it live, 15 Jul 2026). In the first
-   tracked year the allowance simply covers Jan 2026 through Feb 2027. */
-const HOL_YEAR_MIN=2026;
-const HOL_SPILL_END_MD='02-28';   // last day of the spill window
-const HOL_DEADLINE_MD='02-28';    // (kept: carry-over must be enjoyed before end of February)
+   Belén's rule (30 Jul 2026, REPLACING the old Jan/Feb spill model): days are charged to
+   the CALENDAR YEAR they are enjoyed in. A January-2027 booking spends the 2027 allowance
+   — an advance deduction. That IS "the 2027 system": every year has its own 23-day count
+   and bookings into it deduct from it the moment they're approved, year after year.
+   (The old model charged Jan/Feb to the PREVIOUS year, which made balances impossible to
+   follow — a next-January booking inflated this year's "used" count.)
+   What survives from the old policy:
+     • chargeYear on the row still overrides (HR can charge January days to last year's
+       leftover when that is what was agreed)
+     • carry-over 'adjust' rows: HR moves leftover days into the next year explicitly,
+       and THOSE still expire on 28 Feb
+   'adjust' rows are stamped on 1 Jan of the year they apply to = their calendar year. */
+const HOL_DEADLINE_MD='02-28';    // carry-over days must be enjoyed before end of February
 function holYearOf(h){
   if(!h)return null;
   if(h.chargeYear!=null&&h.chargeYear!=='')return +h.chargeYear;
-  const iso=h.dateFrom||'';if(iso.length<7)return null;
-  const y=+iso.slice(0,4),m=+iso.slice(5,7);
-  if(h.type==='adjust')return y;                 // stamped on 1 Jan of the year it belongs to
-  return m<=2?Math.max(y-1,HOL_YEAR_MIN):y;      // Jan & Feb belong to last year's count (never before the first tracked year)
+  const iso=h.dateFrom||'';if(iso.length<4)return null;
+  return +iso.slice(0,4);         // the calendar year of the dates — nothing cleverer
 }
 /* the charge year a NEW request would default to (shown in the form so nobody is surprised) */
-function holYearOfDate(iso){const m=+(iso||'').slice(5,7);const y=+(iso||'').slice(0,4);return m<=2?Math.max(y-1,HOL_YEAR_MIN):y;}
+function holYearOfDate(iso){const y=+(''+(iso||'')).slice(0,4);return y||null;}
+/* kept for the pages: Jan/Feb window (only informational now) */
 function inSpillWindow(iso){const m=+(iso||'').slice(5,7);return m<=2;}
-/* A range that starts inside the spill window (Jan/Feb) and ends outside it straddles two
-   holiday years — e.g. 27 Feb to 2 Mar is one day of last year's and one of this year's.
-   The whole row is charged by its start date, which is right far more often than not, but
-   it is a judgement call, so say so rather than quietly deciding. HR can split the row or
-   set chargeYear. Only Feb->Mar matters: a Dec->Jan range is entirely one year's anyway. */
+/* Under calendar-year charging the judgement call moved to NEW YEAR'S EVE: a range that
+   crosses 31 Dec (e.g. 28 Dec – 3 Jan) has days in two years but is charged whole by its
+   start date. Flag it so HR can split the row or set chargeYear rather than the system
+   quietly deciding. (The old 28-Feb straddle is gone — Feb→Mar is one calendar year.) */
 function holStraddles(h){
   if(!h||h.type==='adjust'||!h.dateFrom||!h.dateTo)return false;
   if(h.chargeYear!=null&&h.chargeYear!=='')return false;   // HR has already ruled on it
-  return inSpillWindow(h.dateFrom)&&!inSpillWindow(h.dateTo)
-    &&h.dateFrom.slice(0,4)===h.dateTo.slice(0,4);
+  return h.dateFrom.slice(0,4)!==h.dateTo.slice(0,4);
 }
 /* Pro-rated holiday allowance from a start date (Belén's ask 15 Jul: "depending when
    somebody starts working I need to calculate how many days they are due — automatically,
@@ -430,7 +422,7 @@ function holAdjust(personId,year){return holRowsFor(personId,year,'adjust').redu
 function holRemaining(personId,year){const p=DB.person(personId);return holAllowance(p)+holAdjust(personId,year)-holUsed(personId,year);}
 /* The Maria lesson (15 Jul 2026): a balance the reader cannot re-derive gets disputed.
    So split the count into days already TAKEN and days BOOKED ahead (approved but still
-   in the future — including next-January bookings, which charge back to this year), and
+   in the future — next-year bookings sit in NEXT year's count, not this one's), and
    print the whole sum wherever a balance appears. Nobody should ever have to ask where
    a number came from again. */
 function holBreakdown(personId,year){
@@ -446,7 +438,7 @@ function holFormulaHtml(personId,year){
     +(b.booked?' − '+b.booked+' booked':'')
     +' = <b>'+b.rem+'</b>';
 }
-function holDeadlineText(year){return 'enjoy them before 28 Feb '+(year+1);}
+function holDeadlineText(year){return 'enjoy them within '+year+' — leftover days only continue as an HR carry-over, and carry-over expires 28 Feb '+(year+1);}
 /* ---- mini calendar ----
    A range of ISO dates tells you nothing about what it LOOKS like. This draws the month(s)
    a request touches so an approver can see the shape at a glance: the days asked for, the
@@ -1374,11 +1366,14 @@ function weeklyAutoRefresh(){
       let tkAcc=0,grAcc=0,svAcc=0,passes=0;
       DB.invoiceAllocs.forEach(a=>{
         if(a.eventId!=f.id)return;const inv=DB.invoice(a.invoice_id);
-        if(!inv||inv.status==='cancelado'||inv.status==='abono')return;
-        const eur=DB.allocEur(a);
-        if(isTicketProd(a.producto)){tkAcc+=eur;passes+=(+a.passes||0);}
-        else if(a.producto==='grabaciones')grAcc+=eur;
-        else if(a.producto==='sitevisits')svAcc+=eur;
+        /* euros follow the pair rule (cancellation + abono = 0, see invCountsMoney);
+           PASSES don't: a cancelled registration's seats are gone, and abonos carry
+           no real seats — only live non-abono invoices contribute passes. */
+        if(!DB.invCountsMoney(inv))return;
+        const eur=DB.allocEur(a),p=DB.lineProdEff(a),seats=(inv.status!=='cancelado'&&inv.status!=='abono');
+        if(isTicketProd(p)){tkAcc+=eur;if(seats)passes+=(+a.passes||0);}
+        else if(p==='grabaciones')grAcc+=eur;
+        else if(p==='sitevisits')svAcc+=eur;
       });
       const rows=DB.weekly.filter(x=>x.eventCode===code);
       /* week anchor: board event date when linked; else extrapolate from this
@@ -1818,8 +1813,8 @@ const COLS={
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
   projects:['id','label','code','kind','sort','active',
     'eventId'], // board-event link for auto-created lines (dispatch_event_lines.sql)
-  /* chargeYear = which holiday year these days come out of. Normally derived from the dates
-     (Jan/Feb -> previous year), stored only when HR overrides it. Tolerant: stripped below
+  /* chargeYear = which holiday year these days come out of. Normally the calendar year of
+     the dates, stored only when HR overrides it. Tolerant: stripped below
      if dispatch_hol_year.sql hasn't been run yet. */
   holidays:['id','personId','dateFrom','dateTo','workDays','note','status','log','type','replaces','chargeYear'],
   timesheets:['id','personId','week','hours'],
@@ -2475,11 +2470,28 @@ const DB={
     if(inv&&inv.en_usd){const usd=+inv.importe_usd||0,eur=+inv.importe_base||0;
       if(usd&&eur)return amt*(eur/usd);}
     return amt;},
-  /* the event's facturado = SUM of its invoice allocations (paid + unpaid; cancelled
-     invoices excluded). null when the event has no lines yet → caller falls back. */
+  /* ---- the accounting rule for credit notes (Belén, 30 Jul 2026) ----
+     A cancellation and its credit note SUM TO ZERO: the cancelled invoice stays IN the
+     money sums (+X) and its abono subtracts it back (−X). The old rule excluded the
+     cancelled invoice AND counted the abono → every cancellation dug the hole twice
+     (−X net instead of 0, i.e. 2X below the truth). A cancelled invoice WITHOUT a live
+     credit note (legacy/manual states) stays excluded — nothing negates it. */
+  hasLiveAbono(inv){return !!inv&&this.invoices.some(x=>x.abono_de==inv.id&&x.status==='abono');},
+  invCountsMoney(inv){if(!inv)return false;return inv.status!=='cancelado'||this.hasLiveAbono(inv);},
+  /* product of an allocation line for per-product breakdowns: an abono's lines say
+     "abono" — resolve them to the product of the invoice they cancel, so the negative
+     lands in the same bucket (tickets/sponsorship) as the positive it nets out. */
+  lineProdEff(a){const inv=this.invoice(a.invoice_id);
+    let p=a.producto||(inv?inv.producto:'')||'';
+    if(p==='abono'&&inv&&inv.abono_de){const orig=this.invoice(inv.abono_de);
+      if(orig)p=orig.producto&&orig.producto!=='abono'?orig.producto:p;}
+    return p;},
+  /* the event's facturado = SUM of its invoice allocations (paid + unpaid; a cancelled
+     invoice counts as long as its credit note does — the pair nets to zero).
+     null when the event has no lines yet → caller falls back. */
   invoicedTotal(finId){let sum=0,any=false;
     this.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=this.invoice(a.invoice_id);
-      if(!inv||inv.status==='cancelado')return;any=true;sum+=this.allocEur(a);});
+      if(!this.invCountsMoney(inv))return;any=true;sum+=this.allocEur(a);});
     return any?sum:null;},
   /* what the money views show: invoice-line total when lines exist, else the typed
      dc_finance.invoiced (fallback for past events / before back-fill) */

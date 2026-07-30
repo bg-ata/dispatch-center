@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=88"></script>
+<script src="store.js?v=89"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -277,8 +277,11 @@ function invMatches(cm,eventId){
     &&DB.invoiceAllocs.some(a=>a.invoice_id==inv.id&&a.eventId==eventId));
 }
 function accountingFor(p){
-  // 1) the explicit invoice ↔ contract link Jesús sets in Facturación — authoritative
-  const direct=DB.invoices.filter(i=>i.spxProposalId==p.id&&i.status!=='cancelado');
+  // 1) the explicit invoice ↔ contract link Jesús sets in Facturación — authoritative.
+  //    Pair rule: a linked invoice that was cancelled by an abono stays in, and the abono
+  //    rides along even when only the original carries the link — the pair nets to zero.
+  const linkedIds={};DB.invoices.forEach(i=>{if(i.spxProposalId==p.id)linkedIds[i.id]=1;});
+  const direct=DB.invoices.filter(i=>(i.spxProposalId==p.id||(i.abono_de&&linkedIds[i.abono_de]&&i.status==='abono'))&&DB.invCountsMoney(i));
   if(direct.length){
     /* AMOUNT-AWARE (Jesús, 24 jul): an SPX contract can be billed across 2+ invoices
        (Verdian: 6K now, the rest in October). The old test — "any linked invoice ⇒
@@ -1160,10 +1163,14 @@ function convCell(conv,editable){
   if(!editable)return pct(conv);
   return '<input class="cvedit" id="hc_conv" type="number" step="0.01" min="0" max="1" value="'+conv+'"> ('+pct(conv)+')';
 }
+/* Both sums follow the pair rule (DB.invCountsMoney: cancellation + abono = 0) and
+   resolve each line's product through DB.lineProdEff so an abono's negative euros land
+   in the same bucket (sponsorship/tickets) as the invoice it cancels. */
 function invoicedSponsorship(finId){
   let total=0,paid=0;
   DB.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=DB.invoice(a.invoice_id);
-    if(!inv||inv.status==='cancelado')return;if(inv.producto!=='sponsorship'&&inv.producto!=='upgrade')return;
+    if(!DB.invCountsMoney(inv))return;const p=DB.lineProdEff(a);
+    if(p!=='sponsorship'&&p!=='upgrade')return;
     const eu=DB.allocEur(a);total+=eu;if(inv.status==='pagado'||inv.fecha_cobro)paid+=eu;});
   return {total,paid};
 }
@@ -1172,7 +1179,7 @@ function invoicedPases(finId){
   DB.invoiceAllocs.forEach(a=>{if(a.eventId!=finId)return;const inv=DB.invoice(a.invoice_id);
     /* isTicketProd, not ==='tickets': a product accounting added itself and ticked
        "counts passes" (Pase Online, for the Talks) is ticket money too. */
-    if(!inv||inv.status==='cancelado')return;if(!isTicketProd(inv.producto))return;
+    if(!DB.invCountsMoney(inv))return;if(!isTicketProd(DB.lineProdEff(a)))return;
     const eu=DB.allocEur(a);total+=eu;if(inv.status==='pagado'||inv.fecha_cobro)paid+=eu;});
   return {total,paid};
 }
