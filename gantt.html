@@ -101,7 +101,7 @@
   <h3 id="m_title">Edit event</h3>
   <div class="frm">
     <label class="full">Event name — the ONE true name: reporting, SPX, invoicing items and hour projects all cascade from it<input type="text" id="m_name"></label>
-    <label>Event code (E0xx)<input type="text" id="m_ecode" placeholder="e.g. E057 — add it when ZOHO assigns it"></label>
+    <label>Event code (E0xx)<input type="text" id="m_ecode" placeholder="e.g. E062 — Jesús assigns it in ZOHO"></label>
     <label>Topic<select id="m_topic"></select></label>
     <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
     <label id="m_durwrap" style="display:none">Duration<span style="display:flex;gap:5px;align-items:center"><input type="number" id="m_dur_n" min="1" step="1" value="2" style="width:56px"><select id="m_dur_u"><option value="half">Half day</option><option value="day">Days</option><option value="week" selected>Weeks</option><option value="month">Months</option><option value="year">Years</option></select></span></label>
@@ -317,8 +317,22 @@ document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);con
   if(r.money)bits.push(r.money+' Money row removed');
   if(r.moneyKept)bits.push(r.moneyKept+' Money row'+(r.moneyKept>1?'s':'')+' LEFT IN PLACE — it has figures or invoices, remove it by hand if you mean to');
   if(bits.length)alert('Event deleted.\n\nAlso: '+bits.join('.\n')+'.');};
-document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim(),
-    ecode:(modalIsExt?null:(m_ecode.value.trim().toUpperCase()||null))}; // editable on purpose — codes often arrive later
+document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
+  /* E-code: the join key that lets Money's week-by-week auto-update find this event
+     (weeklyAutoRefresh in store.js joins ONLY on E0xx codes — a name-style code is
+     useless there, which is how Chile 26 went stale). Editable on purpose — codes
+     often arrive later, from Jesús via ZOHO — but creation now ASKS (Belén, 31 Jul). */
+  if(!modalIsExt){
+    let code=m_ecode.value.trim().toUpperCase();
+    if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062). Fix it, or clear the field and add it when Jesús assigns it.');return;}
+    if(!code&&!editingId){
+      const t=prompt('Event code from ZOHO (E0xx)?\n\nWithout it, Money’s week-by-week can’t update itself for this event.\nJesús assigns the code in ZOHO — if it’s not assigned yet, leave this empty and press OK; you can add it later by editing the event.','');
+      if(t===null)return; // backed out of the question — back to the form, nothing saved
+      code=(''+t).trim().toUpperCase();
+      if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062). Save again and leave the question empty if it’s still pending.');return;}
+    }
+    d.ecode=code||null;
+  }else d.ecode=null;
   if(modalIsExt){
     const sel=Array.prototype.slice.call(document.querySelectorAll('.m_lane:checked')).map(c=>c.value);
     if(!sel.length){alert('Pick at least one timeline — a project needs somewhere to live.');return;}
