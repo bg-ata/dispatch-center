@@ -38,8 +38,7 @@
   .comprow textarea{flex:1;min-width:240px;min-height:96px;resize:vertical}
   .secthead{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--charcoal);margin:16px 0 8px}
   .msg{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 14px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start}
-  .msg.unread{border-left:4px solid var(--orange);cursor:pointer;font-weight:600}
-  .msg.unread:hover{background:#fcfbf9}
+  .msg.unread{border-left:4px solid var(--orange);font-weight:600}
   .msg .kchip{font-size:15px;border-radius:9px;padding:4px 8px;color:#fff;flex:none;line-height:1}
   .msg .txt{flex:1;min-width:0}
   .msg .body{white-space:pre-wrap;word-break:break-word}
@@ -107,41 +106,48 @@
     <div id="list"></div>
   </div>
 </div>
-<script src="store.js?v=97"></script>
+<script src="store.js?v=98"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('inbox');
 function refreshNav(){document.getElementById('nav').innerHTML=navBar('inbox');try{decorateNav();}catch(e){}}
 
 /* ================= the two views ================= */
-const SUBS={notif:'Answers to your requests, team notices and time-off decisions — everything the Dispatch Center wants you to see, in one place.',
+const SUBS={notif:'Answers to your requests, team notices and time-off decisions — everything the Dispatch Center wants you to see, in one place. Opening this page marks what is here as seen, so the 🔔 badge only ever counts what has arrived since.',
+            arch:'Read notifications older than two months. Nothing is deleted — they just stop crowding the inbox.',
             req:'The team request box for the Dispatch Center itself — bugs, clunky bits, change requests and ideas. Everyone can open one and comment; Belén & Carlos set status and priority. Check the list before opening a new one — maybe it’s already here.'};
-function activeView(){return location.hash==='#requests'?'req':'notif';}
-function setView(v){location.hash=(v==='req'?'#requests':'#notifications');}
+const TITLES={notif:'🔔 Notifications',arch:'🗄 Archive',req:'💡 Requests'};
+function activeView(){const h=location.hash;return h==='#requests'?'req':(h==='#archive'?'arch':'notif');}
+function setView(v){location.hash=(v==='req'?'#requests':v==='arch'?'#archive':'#notifications');}
 window.addEventListener('hashchange',()=>render());
 function renderTabs(){
-  const v=activeView();
-  let unread=0,newReq=0;
-  try{unread=inboxMine().filter(m=>!m.isRead).length;}catch(e){}
+  let v=activeView();
+  let unread=0,newReq=0,old=0;
+  try{unread=inboxUnread();}catch(e){}
+  try{old=inboxOld().length;}catch(e){}
   try{if(DB.can('req.triage','edit')&&DB.tickReady())newReq=DB.tickets.filter(t=>t.status==='new').length;}catch(e){}
+  /* the 🗄 folder only exists once something has actually aged into it (rulebook: no empty tab) */
+  if(v==='arch'&&!old)v='notif';
   document.getElementById('viewtabs').innerHTML=
     '<button class="'+(v==='notif'?'on':'')+'" data-v="notif">🔔 Notifications'+(unread?'<span class="tbadge">'+unread+'</span>':'')+'</button>'+
+    (old?'<button class="'+(v==='arch'?'on':'')+'" data-v="arch">🗄 Archive <span class="tbadge" style="background:#9b978d">'+old+'</span></button>':'')+
     '<button class="'+(v==='req'?'on':'')+'" data-v="req">💡 Requests'+(newReq?'<span class="tbadge">'+newReq+'</span>':'')+'</button>';
   document.querySelectorAll('#viewtabs [data-v]').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-  document.getElementById('pageH1').textContent=v==='req'?'💡 Requests':'🔔 Notifications';
-  document.getElementById('pageSub').textContent=SUBS[v==='req'?'req':'notif'];
-  document.getElementById('view-notif').style.display=v==='notif'?'':'none';
+  document.getElementById('pageH1').textContent=TITLES[v];
+  document.getElementById('pageSub').textContent=SUBS[v];
+  document.getElementById('view-notif').style.display=v==='req'?'none':'';
   document.getElementById('view-req').style.display=v==='req'?'':'none';
-  document.title='RENMAD Dispatch Center — '+(v==='req'?'Requests':'Notifications');
+  document.title='RENMAD Dispatch Center — '+TITLES[v].replace(/^\S+\s/,'');
+  return v;
 }
 function render(){
-  renderTabs();
+  const v=renderTabs();
   const warn=document.getElementById('warnbox');
-  if(activeView()==='req'){
+  if(v==='req'){
     if(!DB.tickReady()){warn.innerHTML='<div class="warn">The requests module is not switched on yet — Belén needs to run <b>dispatch_tickets.sql</b> in Supabase. Nothing else is affected.</div>';document.getElementById('list').innerHTML='';return;}
     warn.innerHTML='';renderTickets();
   }else{
     if(!DB.inboxReady()){warn.innerHTML='<div class="warn">Notifications need one database step — run <b>dispatch_me_inbox.sql</b> in the Supabase SQL editor.</div>';return;}
-    warn.innerHTML='';renderInbox();
+    warn.innerHTML='';renderInbox(v==='arch');
   }
 }
 
@@ -189,38 +195,56 @@ function safeLink(u){u=(''+u).trim();
   if(/^[a-z][a-z0-9+.\-]*:/i.test(u))return false;   // any other scheme → block
   return true;                                        // relative path
 }
-function msgHtml(m){
+function msgHtml(m,fresh){
   const k=INBOX_KINDS[m.kind]||INBOX_KINDS.notice;
-  return '<div class="msg'+(m.isRead?'':' unread')+'"'+(m.isRead?'':' data-read="'+m.id+'" title="Click to mark as read"')+'>'
+  return '<div class="msg'+(fresh?' unread':'')+'">'
     +'<span class="kchip" style="background:'+k.color+'" title="'+esc(k.label)+'">'+k.icon+'</span>'
     +'<div class="txt"><div class="body">'+esc(m.text)+'</div>'
     +'<div class="mline">'+esc(m.fromName||'')+' · '+fmtWhen(m.created)
     +(m.link&&safeLink(m.link)?' · <a href="'+esc(m.link)+'">Open →</a>':'')+'</div></div></div>';
 }
-function renderInbox(){
-  renderComposer();
+/* Seeing them IS reading them (Belén, 31 Jul). We mark the list read a beat after it is
+   actually on screen — never while the tab is in the background — but the ones that were
+   new when you arrived keep their orange "New" flag for the rest of the visit, so the page
+   does not blank out under your eyes the moment you look at it. */
+const _seenThisVisit=new Set();
+let _seenTimer=null;
+function scheduleSeen(){
+  clearTimeout(_seenTimer);_seenTimer=null;
+  if(!inboxCurrent().some(m=>!m.isRead))return;
+  if(document.hidden){document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleSeen();},{once:true});return;}
+  _seenTimer=setTimeout(()=>{_seenTimer=null;
+    const ids=inboxCurrent().filter(m=>!m.isRead).map(m=>m.id);
+    ids.forEach(id=>_seenThisVisit.add(String(id)));
+    if(inboxMarkSeen(ids)){renderTabs();refreshNav();}   // badge only; the list stays put
+  },1200);
+}
+function renderInbox(archive){
   const W=document.getElementById('listwrap');
-  const mine=inboxMine();
-  const unread=mine.filter(m=>!m.isRead),earlier=mine.filter(m=>m.isRead);
-  let h='<div class="listbar"><h2>My inbox</h2>'
-    +(unread.length?'<button class="btn" id="markAll">Mark all read</button>':'')+'</div>';
+  const old=inboxOld();
+  if(archive){
+    document.getElementById('composer').innerHTML='';   // 📢 send-a-notice belongs to the inbox, not the archive
+    let h='<div class="listbar"><h2>🗄 Archive</h2><span class="hint" style="margin:0">'+old.length+' notification'+(old.length===1?'':'s')+' older than two months</span></div>';
+    h+=old.length?old.map(m=>msgHtml(m,false)).join(''):'<p class="empty">Nothing has aged out yet.</p>';
+    h+='<p class="hint" style="margin-top:12px"><a href="#notifications" style="color:var(--blue);font-weight:600;text-decoration:none">← Back to the inbox</a></p>';
+    W.innerHTML=h;return;
+  }
+  renderComposer();
+  const mine=inboxCurrent();
+  const isFresh=m=>!m.isRead||_seenThisVisit.has(String(m.id));
+  const fresh=mine.filter(isFresh),earlier=mine.filter(m=>!isFresh(m));
+  let h='<div class="listbar"><h2>My inbox</h2></div>';
   if(!mine.length)h+='<p class="empty">Nothing here — you’re up to date 🎉</p>';
   else{
-    if(unread.length)h+='<div class="secthead" style="color:var(--orange)">Unread</div>'+unread.map(msgHtml).join('');
-    if(earlier.length)h+='<div class="secthead">Earlier</div>'+earlier.map(msgHtml).join('');
+    if(fresh.length)h+='<div class="secthead" style="color:var(--orange)">New</div>'+fresh.map(m=>msgHtml(m,true)).join('');
+    if(earlier.length)h+='<div class="secthead">Earlier</div>'+earlier.map(m=>msgHtml(m,false)).join('');
   }
+  h+='<p class="hint" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">'
+    +'🗄 Read notifications move to the <b>Archive</b> after two months — nothing is ever deleted. '
+    +(old.length?'<a href="#archive" style="color:var(--blue);font-weight:600;text-decoration:none">Open the archive ('+old.length+') →</a>'
+                :'Nothing has aged out yet.')+'</p>';
   W.innerHTML=h;
-  W.querySelectorAll('[data-read]').forEach(el=>el.onclick=e=>{
-    if(e.target.tagName==='A')return; // let "Open →" navigate without eating the click
-    const m=DB.inbox.find(x=>x.id==el.dataset.read);
-    if(m){m.isRead=true;DB.save();}
-    render();refreshNav();
-  });
-  const ma=document.getElementById('markAll');
-  if(ma)ma.onclick=()=>{
-    inboxMine().forEach(m=>m.isRead=true);
-    DB.save();render();refreshNav();
-  };
+  scheduleSeen();
 }
 
 /* ================= 💡 requests (ported verbatim from tickets.html; answer links point here) ================= */

@@ -1166,9 +1166,50 @@ function tcOvertimeWeeks(personId){ // weeks (this + recent) where clocked hours
   const out=[],curMon=monday(new Date());
   for(let m=monday(ymd(TC_START));toISO(m)<=toISO(curMon);m=addDays(m,7)){
     const o=tcWeekOvertime(personId,toISO(m));
-    if(o.over>0.5)out.push({week:toISO(m),over:o.over,worked:o.workedH,allowed:o.allowed});
+    if(o.over>5/60)out.push({week:toISO(m),over:o.over,worked:o.workedH,allowed:o.allowed}); // ±5 min is square (Belén, 31 Jul)
   }
   return out.slice(-8);
+}
+/* ---- the hours BALANCE (Belén, 31 Jul): "the alarm is a nudge to take it lighter
+   another week … it all needs to add up overall" ----
+   Running ledger of (worked − allowed) across COMPLETED weeks. Weeks within ±5 min
+   count as exactly square; weeks with no punches at all are skipped (approved leave
+   already lowers the allowance — an empty week would swamp the ledger).
+   streak = consecutive trailing weeks the ledger stayed >5 min over: at 4+ Belén
+   gets a quiet line in her Needs-you so she can have a word. */
+function tcBalance(personId){
+  const weeks=[];let bal=0;
+  const curMon=monday(new Date());
+  for(let m=monday(ymd(TC_START));toISO(m)<toISO(curMon);m=addDays(m,7)){
+    const iso=toISO(m),o=tcWeekOvertime(personId,iso);
+    if(!(o.workedH>0))continue;
+    const dev=Math.abs(o.over)<=5/60?0:o.over;
+    bal+=dev;
+    weeks.push({week:iso,dev,bal});
+  }
+  let streak=0;
+  for(let i=weeks.length-1;i>=0;i--){if(weeks[i].bal>5/60)streak++;else break;}
+  const prevBal=weeks.length>1?weeks[weeks.length-2].bal:0;
+  return {weeks,balance:bal,streak,rising:weeks.length>1&&(bal-prevBal)>5/60};
+}
+/* "I understand" on the balance nudge — recorded as a message on the person's own
+   thread (visible to them + Belén/HR), tagged so the nudge stays quiet for the rest
+   of the week and comes back only if a new week ends still over. */
+function tcAckMarker(){return '[tc-ack:'+toISO(monday(new Date()))+']';}
+function tcAckedThisWeek(personId){
+  const mk=tcAckMarker();
+  if(DB.pmsgReady&&DB.pmsgReady()&&(DB.pmsgs||[]).some(m=>!m.deleted&&m.personId==personId&&(''+m.text).indexOf(mk)>=0))return true;
+  try{return localStorage.getItem('dcTcAck')===mk;}catch(e){return false;}
+}
+function tcAckBalance(){
+  const me=DB.currentUser;if(!me)return Promise.resolve(false);
+  const b=tcBalance(me.id);
+  const txt='⏱ I understand — I am '+fmtMin(Math.round(b.balance*60))+' over the allowed hours overall and will take it lighter to balance it. '+tcAckMarker();
+  try{localStorage.setItem('dcTcAck',tcAckMarker());}catch(e){}
+  if(!(DB.pmsgReady&&DB.pmsgReady()))return Promise.resolve(true);
+  DB.pmsgs.push({id:DB.newId(),personId:me.id,byId:me.id,byName:me.name,text:txt,
+    created:toISO(new Date())+' '+nowHMS().slice(0,5)});
+  return DB.saveNow();
 }
 /* progress toward THIS week's required hours. target = hours actually expected
    (required − bank holidays − approved vacation/leave); worked includes the live tick. */
@@ -1289,7 +1330,7 @@ function decorateNav(){
   if(DB.inboxReady()){
     const nu=inboxUnread();
     const el=document.getElementById('nav-inbox');
-    if(el&&nu>0)el.innerHTML+=' <span title="Unread notifications" style="background:#FF4A00;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+nu+'</span>';
+    if(el&&nu>0)el.innerHTML+=' <span title="New notifications since you last looked" style="background:#FF4A00;color:#fff;border-radius:9px;font-size:10px;font-weight:700;padding:1px 6px;vertical-align:1px">'+nu+'</span>';
   }
 }
 
@@ -1555,8 +1596,32 @@ function personOpenItemsHtml(personId){
   if(!out.length)return '<div class="hint">Nothing open right now.</div>';
   return '<div style="font-size:12.5px">'+out.map(x=>'<div style="margin-bottom:3px">'+x+'</div>').join('')+'</div>';
 }
+/* ---- what the bell counts, and where the old ones go (Belén, 31 Jul) ----
+   "Once the messages have been seen, can they be moved to read and only new ones be
+   noted? After 2 months they can be moved to a different folder."
+   → SEEN = READ: inbox.html marks them the moment you actually look at the list, so the
+     🔔 badge only ever counts what has arrived SINCE your last look.
+   → OLD = ARCHIVED: a read notification older than INBOX_ARCHIVE_DAYS leaves the inbox
+     for the 🗄 Archive folder. Archiving is COMPUTED from the date — no flag, no
+     migration, nothing to maintain — and an UNREAD one is never hidden, however old. */
+const INBOX_ARCHIVE_DAYS=60;
+function inboxAgeDays(m){
+  const s=((m&&m.created)||'').slice(0,10);if(s.length!==10)return 0;
+  const d=ymd(s);if(!d||isNaN(d))return 0;
+  return Math.round((ymd(toISO(new Date()))-d)/86400000);
+}
+function inboxArchived(m){return !!(m&&m.isRead)&&inboxAgeDays(m)>INBOX_ARCHIVE_DAYS;}
 function inboxMine(){const me=DB.currentUser;return me?DB.inbox.filter(m=>m.personId==me.id):[];}
+function inboxCurrent(){return inboxMine().filter(m=>!inboxArchived(m));} // the inbox itself
+function inboxOld(){return inboxMine().filter(inboxArchived);}           // the 🗄 Archive folder
 function inboxUnread(){return inboxMine().filter(m=>!m.isRead).length;}
+/* mark notifications as seen (ids omitted = all of mine). Returns how many changed. */
+function inboxMarkSeen(ids){
+  const set=ids?new Set(ids.map(String)):null;let n=0;
+  inboxMine().forEach(m=>{if(!m.isRead&&(!set||set.has(String(m.id)))){m.isRead=true;n++;}});
+  if(n)DB.save();
+  return n;
+}
 
 /* ⏰ SPX follow-up alarms: when one of MY live proposals has a next-touchpoint
    (fechaSeguimiento) in the past, drop an alarm in my own inbox — once per
@@ -3121,6 +3186,55 @@ async function dcToken(){
     return (session&&session.access_token)||'';}
   catch(e){return '';}
 }
+/* ---- 🌙 dark mode (Jesús's request, 31 Jul) ----
+   Opt-in per device: the moon/sun button in the nav flips it, localStorage remembers
+   it, default stays light so nobody is surprised. Stage 1 = variable overrides + the
+   white-surface selectors harvested from every page; hardcoded pastel chips stay
+   light on purpose (their text is dark). Charts re-colour via Chart.defaults and a
+   render() nudge. */
+const DC_THEME_KEY='dcTheme';
+function dcTheme(){try{return localStorage.getItem(DC_THEME_KEY)||'light';}catch(e){return 'light';}}
+function dcApplyTheme(){
+  const t=dcTheme();
+  document.documentElement.setAttribute('data-theme',t);
+  try{if(window.Chart){Chart.defaults.color=(t==='dark'?'#b6bbc2':'#666');Chart.defaults.borderColor=(t==='dark'?'rgba(255,255,255,.09)':'rgba(0,0,0,.1)');}}catch(e){}
+  const b=document.getElementById('dcThemeBtn');if(b){b.textContent=(t==='dark'?'☀️':'🌙');b.title=(t==='dark'?'Back to light mode':'Dark mode');}
+}
+function dcThemeToggle(){
+  try{localStorage.setItem(DC_THEME_KEY,dcTheme()==='dark'?'light':'dark');}catch(e){}
+  dcApplyTheme();
+  try{if(typeof render==='function')render();}catch(e){} // charts redraw with the new colours
+}
+(function(){
+  const css=
+  ':root[data-theme=dark]{color-scheme:dark;'+
+    '--bg:#16181b;--card:#1e2226;--ink:#e6e4df;--line:#3b4046;--muted:#a4a9af;--mut:#a4a9af;--grey:#a4a9af;'+
+    '--ch:#d9dce0;--charcoal:#d9dce0;--green:#58b56c;--red:#ff7066;--amber:#e2a43f;--blue:#5fb7e8;--purple:#b48fe0;--violet:#a598e8}'+
+  '[data-theme=dark] body{background:#16181b;color:#e6e4df}'+
+  /* every selector any page paints white (harvested 31 Jul — re-run the scan when new pages land) */
+  '[data-theme=dark] .card,[data-theme=dark] .panel,[data-theme=dark] .sec,[data-theme=dark] .fold,[data-theme=dark] .tile,'+
+  '[data-theme=dark] .tblwrap,[data-theme=dark] .chartbox,[data-theme=dark] #modal .card,[data-theme=dark] .banner,'+
+  '[data-theme=dark] .decidecard,[data-theme=dark] .deal,[data-theme=dark] .cardk,[data-theme=dark] .cmt,[data-theme=dark] .cgpop,'+
+  '[data-theme=dark] .evc-box,[data-theme=dark] .evchip,[data-theme=dark] .evc-sc,[data-theme=dark] .addld,[data-theme=dark] .addsub,'+
+  '[data-theme=dark] .scatter,[data-theme=dark] .frameWrap,[data-theme=dark] .tlwrap,[data-theme=dark] .tlflex,[data-theme=dark] .lightlead .lc'+
+  '{background:#1e2226!important;border-color:#3b4046!important;color:var(--ink,#e6e4df)}'+
+  '[data-theme=dark] .btn.ghost,[data-theme=dark] .hbtn,[data-theme=dark] .zbtn,[data-theme=dark] .lang button,'+
+  '[data-theme=dark] .seg button,[data-theme=dark] .lanetog.exp,[data-theme=dark] .ptabs button,[data-theme=dark] .tdseg button,'+
+  '[data-theme=dark] .viewtabs button,[data-theme=dark] .ytab.on,[data-theme=dark] .chip,[data-theme=dark] .chip.line'+
+  '{background:#262b31!important;border-color:#40464d!important;color:var(--ink,#e6e4df)!important}'+
+  '[data-theme=dark] .seg button.on{background:var(--orange,#FF4A00)!important;color:#fff!important}'+
+  '[data-theme=dark] input,[data-theme=dark] select,[data-theme=dark] textarea'+
+  '{background:#22262b!important;color:#e6e4df!important;border-color:#40464d!important}'+
+  '[data-theme=dark] table{background:#1b1f23}'+
+  '[data-theme=dark] th{background:#242a30!important;color:#cfd3d8!important}'+
+  '[data-theme=dark] td{border-color:#33383e}'+
+  '[data-theme=dark] .nav a{color:#a4a9af}[data-theme=dark] .nav a.on{background:var(--orange,#FF4A00);color:#fff}'+
+  '[data-theme=dark] .brandlet{color:#a4a9af}'+
+  '[data-theme=dark] img.logo,[data-theme=dark] .clientlogo{background:#e6e4df;border-radius:6px;padding:2px}';
+  const st=document.createElement('style');st.id='dcDarkCss';st.textContent=css;
+  (document.head||document.documentElement).appendChild(st);
+  dcApplyTheme();
+})();
 function navBar(active){
   /* .navlinks is display:contents on desktop (renders exactly as before);
      on phones the burger shows and the links drop down as a menu */
@@ -3134,6 +3248,7 @@ function navBar(active){
          '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
          '<a href="crm.html" id="nav-crm" style="white-space:nowrap;display:none" class="'+(active==='crm'?'on':'')+'" title="Leads CRM — private, only Belén sees this tab">📇 CRM</a>'+
+         '<a href="#" id="dcThemeBtn" onclick="dcThemeToggle();return false" style="white-space:nowrap" title="Dark mode">'+(dcTheme()==='dark'?'☀️':'🌙')+'</a>'+
          '<a href="#" onclick="dcQuickOpen();return false" style="white-space:nowrap" title="Quick-jump — Ctrl+K: events, people, invoices, contracts, requests">🔍</a>'+
          '<a href="inbox.html" id="nav-inbox" style="white-space:nowrap" class="'+(active==='inbox'?'on':'')+'" title="Notifications — answers to your requests, team notices, time-off decisions">🔔</a>'+
          '</div><span class="brandlet">RENMAD <b>Dispatch Center</b>'+

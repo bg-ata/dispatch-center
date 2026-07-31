@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=97"></script>
+<script src="store.js?v=98"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
@@ -606,17 +606,37 @@ function renderAlarms(){
     if(back)a.push({t:back+' clock request'+(back===1?'':'s')+' sent back to you — correct '+(back===1?'it':'them')+' and send again',fold:'reportFold'});
     const mp=tcMissingDays(me.id).length;
     if(mp)a.push({t:mp+' day'+(mp===1?'':'s')+' with no clock punches — report what happened',fold:'reportFold'});
-    const ot=tcOvertimeWeeks(me.id).length;
-    if(ot)a.push({t:ot+' week'+(ot===1?'':'s')+' over the allowed hours — please balance it',fold:'monthFold'});
+    /* the hours-balance NUDGE (Belén, 31 Jul): say it is a nudge, say by how much,
+       explain it has to add up overall, and let them answer "I understand" (recorded
+       on their person thread). Comes back each new week that ends still over. */
+    const bal=tcBalance(me.id);
+    if(bal.balance>5/60&&!tcAckedThisWeek(me.id)){
+      a.push({t:'You are <b>'+fmtMin(Math.round(bal.balance*60))+' over</b> your allowed hours overall. '+
+        'This is a nudge, not a telling-off — the hours just need to even out over time, so take it lighter '+
+        (bal.rising?'soon. <b>It grew again last week — please balance it.</b>':'in the coming weeks.'),
+        fold:'monthFold',ack:1});
+    }
     if(DB.isHRAdmin()){const q=openReports().length;if(q)a.push({t:q+' time-clock correction '+(q===1?'report':'reports')+' to handle',href:'hr.html#pending'});}
+    /* Belén's quiet line: anyone 4+ weeks over without balancing → time for a word */
+    if(DB.isHRAdmin()){
+      const worry=DB.people.filter(p=>!isTeamAccount(p)&&!p.deleted&&p.id!=me.id)
+        .map(p=>({p,b:tcBalance(p.id)})).filter(x=>x.b.streak>=4&&x.b.balance>5/60);
+      if(worry.length)a.push({t:'⏱ Over the allowed hours for 4+ weeks without balancing: '+
+        worry.map(x=>'<b>'+esc(x.p.name)+'</b> ('+fmtMin(Math.round(x.b.balance*60))+')').join(', ')+
+        ' — time for a word.',href:'hr.html#clock'});
+    }
   }
   const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
   box.innerHTML='<h3>🔔 Needs you</h3>'+
-    (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+(x.href||'#')+'"'+(x.fold?' data-openfold="'+x.fold+'"':'')+(x.scroll?' data-scrollto="'+x.scroll+'"':'')+'>'+x.t+'</a></div>').join('')
+    (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+(x.href||'#')+'"'+(x.fold?' data-openfold="'+x.fold+'"':'')+(x.scroll?' data-scrollto="'+x.scroll+'"':'')+'>'+x.t+'</a>'+
+      (x.ack?' <button class="btn" style="font-size:11.5px;padding:3px 10px;margin-left:6px" id="tcAckBtn">I understand</button>':'')+'</div>').join('')
       :'<div class="allgood">✓ All caught up — nothing waiting on you.</div>')+
     (myOpenTasks?'<div style="font-size:12.5px;color:var(--muted);margin-top:8px">You have <b><a href="#" data-scrollto="evPanel" style="color:inherit">'+myOpenTasks+' open task'+(myOpenTasks===1?'':'s')+'</a></b>.</div>':'')+
     '<div id="decidebox"></div>';
   box.querySelectorAll('[data-openfold]').forEach(el=>el.onclick=e=>{e.preventDefault();openFold(el.dataset.openfold);});
+  const ackB=document.getElementById('tcAckBtn');
+  if(ackB)ackB.onclick=e=>{e.preventDefault();ackB.disabled=true;ackB.textContent='Noted ✓';
+    Promise.resolve(tcAckBalance()).then(()=>{setTimeout(()=>{try{renderAlarms();}catch(err){}},900);});};
   /* a collapsed panel opens itself before we scroll to it (29 Jul UX round) */
   box.querySelectorAll('[data-scrollto]').forEach(el=>el.onclick=e=>{e.preventDefault();
     const id=el.dataset.scrollto,t2=document.getElementById(id);if(!t2)return;
@@ -1166,20 +1186,43 @@ function dayRecordLine(personId,day){
     +(info.open?' → <b style="color:#C77800">(no clock-out)</b>':'')
     +' &nbsp;=&nbsp; <b>'+fmtMin(info.total)+'</b>'+(info.open&&day<toISO(new Date())?' ⚠':'');
 }
+/* the grey helper (Belén, 31 Jul — the Carlos-in-Chile correction was "a mare because
+   it was hard to calculate myself"): show what the day holds so far and which OUT
+   time rounds it to 7 or 8 hours, so nobody has to do clock arithmetic. */
+function dayFixHints(personId,day,claim){
+  const es=tcEffective(personId,day),info=pairTotals(es);
+  const t2m=t=>{const a=(''+t).slice(0,5).split(':');return (+a[0])*60+(+a[1]||0);};
+  const m2t=m=>{m=((Math.round(m)%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');};
+  const parts=[];
+  if(es.length)parts.push('that day holds <b>'+fmtMin(info.total)+'</b> so far');
+  if(claim&&claim.type==='whole_day'&&claim.from){
+    const f=t2m(claim.from);
+    parts.push('“to” <b>'+m2t(f+420)+'</b> makes it 7 h · <b>'+m2t(f+480)+'</b> makes it 8 h');
+  }else if(info.open){
+    const ins=es.filter(e=>e.kind==='in').sort((a,b)=>(''+b.time).localeCompare(''+a.time));
+    if(ins[0]&&ins[0].time){
+      const start=t2m(ins[0].time);
+      parts.push('clocking out at <b>'+m2t(start+(420-info.total))+'</b> makes the day 7 h · <b>'+m2t(start+(480-info.total))+'</b> makes it 8 h');
+    }
+  }
+  try{const wp=tcWeekProgress(personId,toISO(monday(ymd(day))));
+    parts.push('that week: '+fmtMin(Math.round(wp.worked*60))+' of '+fmtMin(Math.round(wp.target*60))+' expected');}catch(e){}
+  return parts.length?'<div style="color:var(--muted);font-size:12px;margin-top:2px">'+parts.join(' &nbsp;·&nbsp; ')+'</div>':'';
+}
 function renderReportFold(){
   const box=document.getElementById('reportFoldBody');if(!box)return;
   if(!DB.tcReady()){box.innerHTML='<p class="hint" style="margin-top:8px">Not active yet — run dispatch_hr3.sql in Supabase, then reload.</p>';return;}
   if(!window._claimReady){renderReportFoldOld(box);return;}
   const today=toISO(new Date());
   box.innerHTML=
-    '<p class="hint" style="margin-top:8px">Pick the day, say what happened — simple fixes apply immediately (Belén reviews every one); anything unusual goes to her first.</p>'+
+    '<p class="hint" style="margin-top:8px">Pick the day, give the times and say why — <b>your change applies immediately</b> and goes on the record with your reason (Belén sees every one and can come back to you). Only cases with no times go to her by hand.</p>'+
     '<div class="frm">'+
     '<label>Day<input type="date" id="cl_day" value="'+today+'" max="'+today+'"></label>'+
     '<label>What happened<select id="cl_type"><option value="">— pick —</option>'+CLAIM_TYPES.map(t=>'<option value="'+t[0]+'">'+t[1]+'</option>').join('')+'</select></label>'+
     '</div>'+
     '<div id="cl_rec" class="hint" style="margin:2px 0 8px"></div>'+
     '<div class="frm" id="cl_inputs"></div>'+
-    '<div class="frm"><label style="min-width:60%">Anything HR should know (optional)<input id="cl_note" placeholder="e.g. the page crashed"></label></div>'+
+    '<div class="frm"><label style="min-width:60%">Why the change? (required — goes on the record)<input id="cl_note" placeholder="e.g. forgot to clock out — I left at 18:00 for the dentist"></label></div>'+
     '<div id="cl_prev" style="border:1px solid var(--line);border-left:3px solid var(--orange);border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px;display:none"></div>'+
     '<button class="btn primary" id="cl_send">Send</button><span id="cl_msg" style="font-size:12px;color:var(--green);margin-left:8px"></span>'+
     '<div id="myReports" style="margin-top:14px"></div>';
@@ -1231,8 +1274,9 @@ function wireClaim(){
   const day=document.getElementById('cl_day'),type=document.getElementById('cl_type');
   const rec=document.getElementById('cl_rec'),inputs=document.getElementById('cl_inputs'),prev=document.getElementById('cl_prev');
   const refresh=()=>{
-    rec.innerHTML='Your record for that day: &nbsp;'+dayRecordLine(me.id,day.value);
-    const c=readClaim();
+    const c0=readClaim();
+    rec.innerHTML='Your record for that day: &nbsp;'+dayRecordLine(me.id,day.value)+dayFixHints(me.id,day.value,c0);
+    const c=c0;
     if(!c||c.type==='other'||( !c.time&&!c.from&&!c.entryId )){prev.style.display='none';return;}
     const p=planAmendments(me.id,day.value,c);
     prev.style.display='block';
@@ -1245,8 +1289,7 @@ function wireClaim(){
       ? 'you stay clocked in'+(c.type==='forgot_in'||c.type==='wrong_time'?', starting at <b>'+esc((c.time||(openStart&&openStart.time)||'').slice(0,5))+'</b>':'')+' — your hours count from there'
       : 'the day reads <b>'+fmtMin(p.after.total)+'</b>';
     prev.innerHTML='You are claiming: <b>'+esc(p.describe)+'</b><br>Then '+result
-      +(p.simple?' <span style="color:var(--green)">— applies immediately; Belén reviews it</span>'
-                :' <span style="color:#C77800">— Belén approves this one</span>');
+      +' <span style="color:var(--green)">— applies immediately and goes on the record; Belén reviews it and can come back to you</span>';
   };
   const rewire=()=>{inputs.innerHTML=claimInputsHtml(type.value,me?tcEffective(me.id,day.value):[]);
     inputs.querySelectorAll('input,select').forEach(e=>e.onchange=e.oninput=refresh);refresh();};
@@ -1255,6 +1298,9 @@ function wireClaim(){
     const c=readClaim();if(!c){alert('Say what happened first.');return;}
     const note=(document.getElementById('cl_note').value||'').trim();
     if(c.type==='other'&&!(c.text||note)){alert('Tell HR what happened.');return;}
+    /* the WHY is part of the record (Belén, 31 Jul: "plus a message explaining why
+       they are making the change") — no reason, no change */
+    if(c.type!=='other'&&!note){alert('Say why you are making the change — it goes on the record and Belén sees it.');document.getElementById('cl_note').focus();return;}
     const p=planAmendments(me.id,day.value,c);
     if(p.blocked&&CLAIM_HARD_BLOCK[p.blocked]){alert(CLAIM_BLOCK_MSG[p.blocked]||p.blocked);return;}
     const human=(c.type==='other'?(c.text||note):p.describe+(note?' — '+note:''));
@@ -1278,7 +1324,12 @@ function wireClaim(){
     DB.tcreports.push(rep);
     const okRep=await DB.saveNow();               // report FIRST — the punch RLS checks it exists
     let msg='Sent — Belén will make this one.';
-    if(okRep&&!p.blocked&&p.simple){
+    /* 31 Jul (Belén): "they should be able to change whatever they like whenever, as
+       long as it makes sense and it gets recorded. I never should have to do anything."
+       So EVERY plan with times applies at once (not only the one-click-simple ones);
+       the hard blocks (future/nonsense) still stop, and she still reviews + can push
+       back on every one. Only the no-times 'other' report waits for her hands. */
+    if(okRep&&!p.blocked&&c.type!=='other'){
       applyPlan(me.id,day.value,p,rep.id,'self-service: '+human);
       rep.ratify='pending';
       const okAmend=await DB.saveNow();
