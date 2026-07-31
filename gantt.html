@@ -321,16 +321,11 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
   /* E-code: the join key that lets Money's week-by-week auto-update find this event
      (weeklyAutoRefresh in store.js joins ONLY on E0xx codes — a name-style code is
      useless there, which is how Chile 26 went stale). Editable on purpose — codes
-     often arrive later, from Jesús via ZOHO — but creation now ASKS (Belén, 31 Jul). */
+     often arrive later, from Jesús via ZOHO. Format-checked only; the field's own
+     hint carries the message (Belén, 31 Jul: the box is enough). */
   if(!modalIsExt){
-    let code=m_ecode.value.trim().toUpperCase();
-    if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062). Fix it, or clear the field and add it when Jesús assigns it.');return;}
-    if(!code&&!editingId){
-      const t=prompt('Event code from ZOHO (E0xx)?\n\nWithout it, Money’s week-by-week can’t update itself for this event.\nJesús assigns the code in ZOHO — if it’s not assigned yet, leave this empty and press OK; you can add it later by editing the event.','');
-      if(t===null)return; // backed out of the question — back to the form, nothing saved
-      code=(''+t).trim().toUpperCase();
-      if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062). Save again and leave the question empty if it’s still pending.');return;}
-    }
+    const code=m_ecode.value.trim().toUpperCase();
+    if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062).');return;}
     d.ecode=code||null;
   }else d.ecode=null;
   if(modalIsExt){
