@@ -96,7 +96,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=95"></script>
+<script src="store.js?v=96"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -166,13 +166,24 @@ function hasLedger(i){return DB.hasLedger(i);}
 /* status cell: an invoice with a payment ledger shows a derived Paid/Partial badge
    (+ outstanding) instead of the manual dropdown — payments are edited in ✎ */
 function statusCell(i,stSel){
-  if(!hasLedger(i)||i.status==='cancelado'||i.status==='abono')return stSel;
+  if(!hasLedger(i)||i.status==='cancelado'||i.status==='abono')return stSel+statusGlyph(i);
   const rem=remainingOf(i),full=rem<=0.005;
   return '<span class="paybadge '+(full?'pd':'pt')+'" title="'+(full?'Paid in full via the payments ledger':'Partially paid — '+eurF(rem)+' outstanding')+'">'+
     (full?'Pagado ✓':'Parcial')+'</span>'+(full?'':'<div class="hint" style="font-size:11px;margin-top:2px">'+eurF(rem)+' left</div>');
 }
-/* items ordered BY CÓDIGO, shown código-first — Jesús's A5: "(01) Webinars … (70316) Chile 26" */
-function codsSorted(){return DB.codigos.slice().sort((a,b)=>(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));}
+/* ✓/✗ right after the status so paid vs unpaid reads at a glance (Jesús, 31 Jul) */
+function statusGlyph(i){
+  if(i.status==='pagado')return ' <span style="color:#1c7a3e;font-weight:900" title="Pagada">✓</span>';
+  if(i.status==='no_pagado')return ' <span style="color:#D32230;font-weight:900" title="No pagada">✗</span>';
+  return '';
+}
+/* items ordered by EVENT DATE (Belén, 31 Jul: "order them by date please … across the
+   board"); the label stays código-first (Jesús's A5). Items whose event has no date —
+   or no event at all — go last, ordered by código as before. */
+function codsSorted(){
+  const dk=c=>{const f=c.eventId!=null?DB.finance.find(x=>x.id==c.eventId):null;return f?DB.finStartKey(f):Infinity;};
+  return DB.codigos.slice().sort((a,b)=>(dk(a)-dk(b))||(''+(a.codigo||'')).localeCompare(''+(b.codigo||''),undefined,{numeric:true}));
+}
 function codLabel(c){return c.codigo?('('+c.codigo+') '+(c.item||'#'+c.id)):((c.item||'#'+c.id)+' — código pending');}
 /* Credit notes carry their OWN sequence, ONE DRAWER PER YEAR.
    Jesús, 28 jul — the rule, from him: "Los abonos no deben tener sufijos, por eso
@@ -488,7 +499,7 @@ function codigoDupOf(id,codigo){
 /* items offered on an invoice line: live ones, plus whichever is already selected */
 function codsForPicker(sel){return codsSorted().filter(c=>!c.archived||(sel&&c.id==sel));}
 function codigosBodyHtml(msg){
-  const evOpts=sel=>'<option value="">— no event —</option>'+DB.finance.slice().sort((a,b)=>(b.year-a.year)||(a.name||'').localeCompare(b.name||'')).map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join('');
+  const evOpts=sel=>'<option value="">— no event —</option>'+DB.finance.slice().sort((a,b)=>(DB.finStartKey(b)-DB.finStartKey(a))||(a.name||'').localeCompare(b.name||'')).map(f=>'<option value="'+f.id+'" '+(f.id==sel?'selected':'')+'>'+esc(finLabelClean(f))+'</option>').join(''); // date order, newest first (Belén, 31 Jul)
   const dups={};DB.codigos.forEach(c=>{const v=(''+(c.codigo||'')).trim().toLowerCase();if(v)dups[v]=(dups[v]||0)+1;});
   let h='<h3>Artículos y códigos contables</h3>'+
     '<p class="hint" style="margin:0 0 10px">The mini-database of every billable item (events, Webinars, ATA, consultancy…) linked to its código contable; the analítica picks from this list. '+

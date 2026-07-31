@@ -173,7 +173,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=95"></script>
+<script src="store.js?v=96"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -313,7 +313,7 @@ function renderSpxStatus(){
       '<td class="num" style="font-weight:700;color:'+(reach!=null&&reach>=1?'#3E8C28':reach!=null&&reach<0.5?'#A32D2D':'#2B2B2B')+'">'+(reach==null?'—':Math.round(reach*100)+'%')+'</td>'+
       '<td class="num">'+(r.totTarget?money(r.totTarget):'—')+'</td>'+
       '<td class="num">'+(iv==null?'—':money(iv))+'</td>'+
-      '<td><a href="spx.html#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>';
+      '<td><a href="spx.html?ev='+encodeURIComponent(r.key||'')+'#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>';
   };
   const sec=(title,list)=>{
     if(!list.length)return '';
@@ -370,13 +370,19 @@ function finRowHtml(f,canF){
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
   const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
   if(!canF){
-    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+'</td><td>'+esc(f.city||'')+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+'</td><td>'+esc(DB.finTrueCity(f))+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
       '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
   const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
-  return '<tr><td>'+caret+nameRO+ed+'</td><td>'+inp('city')+'</td><td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
+  /* city cascades from the timeline exactly like the name (Belén, 31 Jul: Zaragoza
+     was on the timeline but blank on the 2027 dashboard) — linked rows show the
+     derived city read-only; unlinked past editions keep their input */
+  const cityCell=linked
+    ?'<td><span title="Cascades from the timeline — edit the city there">'+esc(DB.finTrueCity(f))+' <span style="font-size:9px;opacity:.5">🔗</span></span></td>'
+    :'<td>'+inp('city')+'</td>';
+  return '<tr><td>'+caret+nameRO+ed+'</td>'+cityCell+'<td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
     mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
@@ -1064,11 +1070,66 @@ function keyFindings(ms,done){
   }
   return out;
 }
+/* ---- 📈 the last 4 weeks (Belén, 31 Jul: "up top, an analysis of the past 4 weeks,
+   compared to the historical, and any changes in trends detected, useful tips or
+   take-aways") — every line is computed at render time from dc_weekly; nothing is
+   hand-written, so it rewrites itself as weeks are imported. ---- */
+function renderRecent4(ms){
+  const box=document.getElementById('r4Box');if(!box)return;
+  const MS7=7*864e5,now=Date.now();
+  const tOf=r=>{try{const d=ymd(r.date);return d&&!isNaN(d)?d.getTime():null;}catch(e){return null;}};
+  const inWin=(r,a,b)=>{const t=tOf(r);return t!=null&&t>now-a*MS7&&t<=now-b*MS7;};
+  /* portfolio momentum: money signed in the last 4 weeks vs the 4 before */
+  let d4=0,p4=0;
+  DB.weekly.forEach(r=>{if(r.deleted)return;if(inWin(r,4,0))d4+=(+r.totalEur||0);else if(inWin(r,8,4))p4+=(+r.totalEur||0);});
+  const med=medianPace(ms);
+  /* live = the curve has not reached W0 and something happened in the last 8 weeks */
+  const live=ms.filter(e=>!e.rows.some(r=>+r.week>=0)&&e.rows.some(r=>inWin(r,8,0)));
+  const items=[];let nAhead=0,nBehind=0,nPace=0;
+  live.forEach(e=>{
+    let e4=0,ep=0,t4=0,s4=0;
+    e.rows.forEach(r=>{if(inWin(r,4,0)){e4+=(+r.totalEur||0);t4+=(+r.ticketsEur||0);s4+=(+r.sponsorsEur||0);}
+      else if(inWin(r,8,4))ep+=(+r.totalEur||0);});
+    /* pace vs the historical median share at this week (same rule as the funnel check:
+       only meaningful once past events typically had ~12%+ of their money in) */
+    let ahead=null;const lastR=e.lastData;
+    if(lastR&&e.target){const i=WEEKS.indexOf(+lastR.week);const m=i>=0?med[i]:null;
+      if(m!=null&&m>0.12)ahead=((+lastR.soFarEur||0)/e.target)/m;}
+    if(ahead!=null){nPace++;if(ahead>=1.15)nAhead++;else if(ahead<=0.7)nBehind++;}
+    /* leads movement across the same window */
+    let leadNow=null,leadThen=null;
+    e.rows.forEach(r=>{if(r.eventLeads==null)return;const t=tOf(r);if(t==null)return;
+      if(t<=now-4*MS7){if(leadThen==null||t>leadThen.t)leadThen={t,v:+r.eventLeads};}
+      if(leadNow==null||t>leadNow.t)leadNow={t,v:+r.eventLeads};});
+    const leadPct=(leadThen&&leadNow&&leadThen.v>0&&leadNow.v>leadThen.v)?Math.round(100*(leadNow.v-leadThen.v)/leadThen.v):null;
+    /* one tip per event, most actionable first */
+    let tip='';
+    if(ahead!=null&&ahead>=1.25)tip='🚀 Selling faster than usual for this point — time to invest in marketing and push the word of mouth: fill the room while the momentum is real.';
+    else if(ahead!=null&&ahead<=0.6)tip='⏰ Behind the typical campaign at this week — a proposals / telesales push now beats one closer to the event.';
+    else if(t4>3000&&t4>2*s4)tip='🎟 Tickets are doing the pulling lately while sponsorship trails — worth a sponsor-side push or repackaging.';
+    else if(s4>3000&&t4===0)tip='🎟 Sponsors moving but no ticket money in 4 weeks — check the attendee funnel.';
+    else if(leadPct!=null&&leadPct>=20)tip='👍 Engaged leads up '+leadPct+'% in 4 weeks — in this franchise money follows €/lead, make sure sales works the list.';
+    const arrow=ep>0?(e4>ep*1.3?' <span style="color:#3E8C28;font-weight:700">▲</span>':e4<ep*0.7?' <span style="color:#D32230;font-weight:700">▼</span>':' <span style="color:#7c7c78">≈</span>'):'';
+    const chip=ahead==null?'':(' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:9px;background:'+(ahead>=1.15?'#dff3e4;color:#1c7a3e':ahead<=0.7?'#F8D7D7;color:#A32D2D':'#eee;color:#555')+'">'+(ahead>=1.15?'ahead':ahead<=0.7?'behind':'on pace')+' · '+Math.round(ahead*100)+'% of typical</span>');
+    items.push({e4,html:'<li style="margin:3px 0"><b>'+esc(e.name)+'</b> — '+eur(e4)+' in 4 wks'+arrow+chip+(tip?'<br><span style="font-size:12px;color:#4a4a46">'+tip+'</span>':'')+'</li>'});
+  });
+  items.sort((a,b)=>b.e4-a.e4);
+  const momPct=p4>0?Math.round(100*(d4-p4)/p4):null;
+  const head='The portfolio signed <b>'+eur(d4)+'</b> in the last 4 weeks'+
+    (p4>0?(' vs '+eur(p4)+' in the 4 before — <b style="color:'+(d4>=p4?'#1c7a3e':'#A32D2D')+'">'+(momPct>=0?'+':'')+momPct+'%</b> momentum'):'')+'.'+
+    (nPace?' Of '+nPace+' live campaigns with a readable pace: <b>'+nAhead+' ahead</b> · '+(nPace-nAhead-nBehind)+' on pace · <b>'+nBehind+' behind</b>.':'');
+  box.innerHTML='<div class="panel" style="border-left:4px solid var(--orange)"><h3>📈 The last 4 weeks — what changed</h3>'+
+    '<p class="hint">The past 4 weeks against the historical rhythm — computed live from the weekly history, it rewrites itself as new weeks land.</p>'+
+    '<p style="margin:4px 0 8px">'+head+'</p>'+
+    (items.length?('<ul class="keyf" style="margin:0">'+items.map(x=>x.html).join('')+'</ul>'):'<p class="hint">No live campaign has weekly movement in the window.</p>')+
+    '</div>';
+}
 function renderInsights(){
   if(!DB.can('money.insights','see')){location.hash='year';renderYear();return;} // defense in depth — tab is hidden for members anyway
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   const done=doneOf(ms);
   document.getElementById('content').innerHTML=
+    '<div id="r4Box"></div>'+
     '<div id="taBox"></div>'+
     '<div class="panel"><h3>What the data says</h3><p class="hint">Computed live from '+done.length+' completed events since 2021 — it updates itself as new weeks are imported.</p><ul class="keyf">'+keyFindings(ms,done).map(t=>'<li>'+t+'</li>').join('')+'</ul></div>'+
     '<div class="two">'+
@@ -1092,6 +1153,7 @@ function renderInsights(){
     '<div class="panel"><h3>What a lead is worth — by franchise</h3><p class="hint">Final € per 💰 engaged lead, per family and year. Flat lead counts with a rising line = better commercial conversion, not better marketing reach.</p><div class="chartbox sm"><canvas id="eurlead"></canvas></div></div>'+
     '</div>'+
     '<div class="panel"><h3>Funnel check — live events</h3><p class="hint">Two independent projections: <b>pace</b> = money so far ÷ the share past events typically had at this week (only shown from about W-10, earlier it is guesswork) · <b>leads</b> = engaged leads so far × what a lead ends up being worth in this franchise (a floor — leads keep coming until the event).</p><div class="wstbl"><table id="livetbl"></table></div></div>';
+  renderRecent4(ms);
   renderTargetAccuracy(done);
   drawMix(ms);drawFam(done);drawSign(done);drawSignEvo(done);drawPace(done);
   drawWindows(done);drawForecast(done);drawEurDeleg(done);drawLeadTime(done);drawSeason(done);
@@ -1392,7 +1454,11 @@ boot(()=>{render();});
 window.addEventListener('hashchange',render);
 /* full render, whatever tab: the background refresh must clear stale "module not
    active" banners too — renderYear alone left the warn box untouched (30 Jul) */
-window.addEventListener('dc-remote',()=>render());
+/* a colleague's invoice/board edit re-derives dc_weekly in THEIR browser, but dc_weekly
+   is deliberately out of realtime — so on any remote change, also pull a fresh weekly
+   copy (rate-limited inside reloadWeekly) before re-rendering (Belén, 31 Jul: "the week
+   by week numbers are NOT updating … automatic immediate updates across the board") */
+window.addEventListener('dc-remote',()=>{render();DB.reloadWeekly().then(fresh=>{if(fresh)render();}).catch(()=>{});});
 </script>
 </body>
 </html>

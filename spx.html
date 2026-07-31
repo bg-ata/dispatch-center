@@ -128,7 +128,7 @@
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
 
-<script src="store.js?v=95"></script>
+<script src="store.js?v=96"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -242,15 +242,21 @@ function evFinanceId(key,name){
 }
 function evStats(key){let sent=0,total=0;liveProps().forEach(p=>{if(DB.spxLinesFor(p.id).some(l=>lineEvKey(l)===key)){total++;if(p.salesStatus==='Sent')sent++;}});return {sent,total};}
 /* The SPX event list. Registry (dc_spx_events) drives it when present — active =
-   current, inactive = "Before". Else fall back to events found in the proposals. */
+   current, inactive = "Before". Else fall back to events found in the proposals.
+   ORDER = when the event happens (Belén, 31 Jul: "order them by date please. Same in
+   SPX and across the board") — via DB.finStartKey on the linked Money row; events
+   with no Money link sort last, tie-broken by the old sort column. */
+function evDateKey(e){if(e==null||e.financeId==null)return Infinity;
+  const f=DB.finance.find(x=>x.id==e.financeId);return f?DB.finStartKey(f):Infinity;}
 function spxEvents(){
-  if(hasReg())return regEvents().slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0)).map(e=>{const s=evStats(e.eventKey);return {key:e.eventKey,name:e.name,financeId:e.financeId,active:e.active!==false,sent:s.sent,total:s.total,reg:e};});
+  if(hasReg())return regEvents().slice().sort((a,b)=>(evDateKey(a)-evDateKey(b))||((+a.sort||0)-(+b.sort||0)))
+    .map(e=>{const s=evStats(e.eventKey);return {key:e.eventKey,name:e.name,financeId:e.financeId,active:e.active!==false,sent:s.sent,total:s.total,reg:e};});
   const map={};
   liveProps().forEach(p=>DB.spxLinesFor(p.id).forEach(l=>{const k=lineEvKey(l);if(k==='?')return;
     if(!map[k])map[k]={key:k,name:lineEvName(l),sent:0,total:0,active:true};
     map[k].total++;if(p.salesStatus==='Sent')map[k].sent++;}));
   const out=Object.values(map);out.forEach(e=>{e.financeId=evFinanceId(e.key,e.name);});
-  return out.sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  return out.sort((a,b)=>(evDateKey(a)-evDateKey(b))||(''+a.name).localeCompare(''+b.name));
 }
 function evCurrent(e){return hasReg()?!!e.active:e.sent>0;}
 function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(evCurrent(e))s[e.key]=1;});return s;}
@@ -906,9 +912,15 @@ function specsPctCell(w,editable){
 }
 /* ================= DASHBOARD TAB (Belén #8 — the at-a-glance summary) ================= */
 function renderDashboard(app){
-  const evsAll=spxEvents();
-  const cur=evsAll.filter(evCurrent).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
-  const past=evsAll.filter(e=>!evCurrent(e)).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const evsAll=spxEvents();   // already date-ordered
+  const cur=evsAll.filter(evCurrent);
+  const past=evsAll.filter(e=>!evCurrent(e));
+  /* ?ev=<key> deep link — the "board →" buttons on Money → Sponsorship land on THEIR
+     event, not whatever the select defaulted to (Belén, 31 Jul: every button opened
+     Almacenamiento 2027). Applied once, then the select is free. */
+  if(!window._urlEvApplied){window._urlEvApplied=true;
+    try{const q=new URLSearchParams(location.search).get('ev');
+      if(q&&evsAll.some(e=>e.key===q))HC=q;}catch(e){}}
   if(HC==null||!evsAll.some(e=>e.key===HC))HC=(cur[0]&&cur[0].key)||(past[0]&&past[0].key)||null;
   let optsHtml=cur.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+'</option>').join('');
   if(past.length)optsHtml+='<option disabled>──── finished ────</option>'+past.map(e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+' · (finished)</option>').join('');
@@ -961,9 +973,9 @@ function hcRow2(label,specs,tickets,total,editable,specsF,ticketsF){
   return '<tr><td>'+esc(label)+'</td><td class="num">'+c(specs,specsF)+'</td><td class="num">'+c(tickets,ticketsF)+'</td><td class="num">'+money(total)+'</td></tr>';
 }
 function renderHealth(app){
-  const evsAll=spxEvents();
-  const cur=evsAll.filter(evCurrent).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
-  const past=evsAll.filter(e=>!evCurrent(e)).sort((a,b)=>(''+a.name).localeCompare(''+b.name));
+  const evsAll=spxEvents();   // already date-ordered
+  const cur=evsAll.filter(evCurrent);
+  const past=evsAll.filter(e=>!evCurrent(e));
   if(HC==null||!evsAll.some(e=>e.key===HC))HC=(cur[0]&&cur[0].key)||(past[0]&&past[0].key)||null;
   const optE=e=>'<option value="'+esc(e.key)+'"'+(HC===e.key?' selected':'')+'>'+esc(e.name)+'</option>';
   let optsHtml=cur.map(optE).join('');
@@ -1537,9 +1549,9 @@ function deleteLine(lineId){
 function openManageEvents(){
   if(!DB.canSalesLead()){alert('Only the sales lead or Belén can manage events.');return;}
   const notReady=(USE_SUPABASE&&!hasReg());
-  const reg=regEvents().slice().sort((a,b)=>(+a.sort||0)-(+b.sort||0));
+  const reg=regEvents().slice().sort((a,b)=>(evDateKey(a)-evDateKey(b))||((+a.sort||0)-(+b.sort||0))); // date order (Belén, 31 Jul)
   const finSelect=(e)=>'<select data-mev-fin="'+e.id+'" style="padding:5px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— not in Money —</option>'+
-    DB.finance.slice().sort((a,b)=>(b.year-a.year)||(''+a.name).localeCompare(''+b.name)).map(f=>'<option value="'+f.id+'"'+(e.financeId==f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>';
+    DB.finance.slice().sort((a,b)=>(DB.finStartKey(b)-DB.finStartKey(a))||(''+a.name).localeCompare(''+b.name)).map(f=>'<option value="'+f.id+'"'+(e.financeId==f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>';
   const rowHtml=e=>'<div class="sec" style="padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input data-mev-name="'+e.id+'" value="'+esc(e.name)+'" style="flex:1;font-weight:700;padding:6px;border:1px solid var(--line);border-radius:7px">'
     +'<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-mev-active="'+e.id+'"'+(e.active!==false?' checked':'')+'> current</label></div>'

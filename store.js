@@ -2421,6 +2421,25 @@ const DB={
   financeReady(){return !USE_SUPABASE||_finReady;},
   get weekly(){return this.data.weekly||[];},
   weeklyReady(){return !USE_SUPABASE||_weeklyReady;},
+  /* re-pull dc_weekly on demand (Belén, 31 Jul: "the week by week numbers are NOT
+     updating"). dc_weekly is deliberately OUT of realtime (bulk table), so another
+     user's auto-refresh is invisible to an open dashboard until reload — this fetches
+     a fresh copy instead. Skips while an edit is in flight (the shadow diff would
+     push stale rows back) and rate-limits itself to one pull per 45 s. */
+  _weeklyPulledAt:0,
+  async reloadWeekly(){
+    if(!USE_SUPABASE||!sb||!_weeklyReady)return false;
+    if(_saveTimer||_syncing||_syncFails)return false;
+    if(Date.now()-this._weeklyPulledAt<45000)return false;
+    this._weeklyPulledAt=Date.now();
+    try{
+      const rows=await paged('dc_weekly');
+      if(_saveTimer||_syncing||_syncFails)return false; // an edit started mid-fetch — keep local
+      this.data.weekly=rows;
+      _shadow.weekly={};rows.forEach(r=>{_shadow.weekly[r.id]=JSON.stringify(pickRow(r,'weekly'));});
+      return true;
+    }catch(e){console.warn('weekly reload:',e.message||e);return false;}
+  },
   get projects(){return this.data.projects||[];},
   get holidays(){return this.data.holidays||[];},
   get timesheets(){return this.data.timesheets||[];},
@@ -2566,6 +2585,27 @@ const DB={
     const base=(ev?this.evMasterName(ev):(''+(f.name||'?'))).trim();
     const hasYear=/\b(19|20)\d{2}\b/.test(base)||/\s\d{2}$/.test(base);
     return base+((f.year&&!hasYear)?(' '+f.year):'');},
+  /* a Money row's CITY — same cascade as the name (Belén, 31 Jul: "Zaragoza is on the
+     timeline but not on the 2027 dashboard"): linked row → the timeline event's city,
+     unlinked (past editions) → its own stored value */
+  finTrueCity(f){if(!f)return '';
+    const ev=f.eventId?this.event(f.eventId):null;
+    return ((ev&&ev.city)||f.city||'');},
+  /* sortable "when does this event happen" key for a Money row, in ms — linked timeline
+     date first, else the free-text `when` month + year, else end-of-year, else far future.
+     ONE ordering for every event list (Belén, 31 Jul: "order them by date please. Same in
+     SPX and across the board"). */
+  finStartKey(f){
+    if(!f)return Infinity;
+    const ev=f.eventId?this.event(f.eventId):null;
+    if(ev&&ev.date){const d=ymd(ev.date);if(d&&!isNaN(d))return d.getTime();}
+    const y=+f.year||0;
+    if(!y)return Infinity;
+    const M={jan:0,ene:0,feb:1,mar:2,apr:3,abr:3,may:4,jun:5,jul:6,aug:7,ago:7,sep:8,oct:9,nov:10,dic:11,dec:11};
+    const m=/([a-z]{3})/i.exec(''+(f.when||''));
+    const mo=m?M[m[1].toLowerCase()]:null;
+    const day=(/(\d{1,2})/.exec(''+(f.when||''))||[])[1];
+    return new Date(y,mo!=null?mo:11,mo!=null?(+day||1):31).getTime();},
   /* ---------- event → allocation-line cascade (Belén, 2026-07-17) ----------
      The moment an event exists, its two "allocation" lines exist too:
      an invoicing ITEM in dc_codigos and an hour-allocation PROJECT in
@@ -2577,8 +2617,35 @@ const DB={
      year, so the caller can append the year once (no "…27 27") — Belén, 22 Jul. */
   evCleanName(ev){return (''+(ev.name||'')).replace(/^E\d+\s*/i,'').replace(/^RENMAD\s+/i,'').replace(/\s+(20)?\d{2}$/,'').trim();},
   ensureEventLines(){
-    const out={items:0,projects:0,adopted:0};
+    const out={items:0,projects:0,adopted:0,money:0,spx:0};
     const curYear=new Date().getFullYear();
+    /* ---- Money rows: one per board EVENT of this year or later (Belén, 31 Jul:
+       Chile 2027 was on the timeline but invisible to the 2027 dashboard, SPX and
+       invoicing — "adding a new event should cascade through"). RLS: dc_finance
+       inserts need dc_can_finance(), so this stage acts only for finance holders —
+       gate MUST match RLS or the sync would retry a refused insert forever.
+       v95 rule: every whitelisted column is set explicitly (the diff-sync sends
+       null for whitelisted-but-unset, and NOT NULL columns refuse the row). */
+    if(this.canFinance()&&this.financeReady()){
+      const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      this.events.forEach(ev=>{
+        const d=ev.date?ymd(ev.date):null;
+        if(!d||isNaN(d)||d.getFullYear()<curYear)return;
+        if(evKind(ev)==='external')return;               // projects are not sellable events
+        if(this.finance.some(f=>!f.deleted&&f.eventId==ev.id))return;
+        const days=Math.max(1,+ev.days||1);
+        const end=new Date(d.getTime()+(days-1)*864e5);
+        const when=days<2?(d.getDate()+' '+MON[d.getMonth()])
+          :(d.getMonth()===end.getMonth()
+            ?(d.getDate()+'-'+end.getDate()+' '+MON[d.getMonth()])
+            :(d.getDate()+' '+MON[d.getMonth()]+'-'+end.getDate()+' '+MON[end.getMonth()]));
+        this.finance.push({id:this.newId(),eventId:ev.id,name:this.evCleanName(ev),edition:null,
+          year:d.getFullYear(),semester:(d.getMonth()<6?1:2),city:ev.city||null,when:when,
+          pm:null,sales:null,target:null,stretch:null,invoiced:null,spex:null,
+          notes:'auto — created with the event'});
+        out.money++;
+      });
+    }
     /* invoicing items: one per Money row (dc_finance) of this year or later */
     if(this.canBill()&&this.billReady()){
       this.finance.forEach(f=>{
@@ -2612,6 +2679,32 @@ const DB={
         this.projects.push({id:this.newId(),label:'02. '+clean+' '+yy,code:null,kind:null,sort,active:true,eventId:ev.id});
         out.projects++;
       });
+    }
+    /* ---- SPX registry rows: one per Money row of this year or later, so a new
+       event reaches the sales board and the proposal pickers without anyone asking
+       (Belén, 31 Jul). RLS: dc_spx_events inserts need dc_can_sales_lead() — the
+       gate mirrors it (Cintia / Belén). Every whitelisted column set explicitly. */
+    if(this.canSalesLead&&this.canSalesLead()&&(!USE_SUPABASE||_spxEvReady)){
+      const regs=this.spxEventReg||[];
+      this.finance.forEach(f=>{
+        if(f.deleted||(+f.year||0)<curYear)return;
+        if(regs.some(s=>!s.deleted&&s.financeId==f.id))return;
+        /* an intentionally-UNLINKED registry event already naming this franchise means
+           the link was left off on purpose (E052 Useful.AI: linking the 2027 Money row
+           would write 2027 into the 2026 curve) — never mint a duplicate for it */
+        if(regs.some(s=>!s.deleted&&s.financeId==null&&famFold(s.name)===famFold(this.finTrueLabel(f))))return;
+        const evRow=f.eventId?this.event(f.eventId):null;
+        let key=evRow?this.evCode(evRow):null;
+        if(!key){key=((this.evCleanName(evRow||{name:f.name})||'EV').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12)+(''+f.year).slice(-2));}
+        while(regs.some(s=>(''+s.eventKey).toUpperCase()===key))key+='X';
+        const row={id:this.newId(),eventKey:key,name:this.finTrueLabel(f),financeId:f.id,
+          sponsorshipTarget:null,sponsorshipStretch:null,pasesTarget:null,pasesStretch:null,
+          convByStatus:{Sent:0.35,Confirmed:0.7},active:true,
+          sort:Math.max(0,...regs.map(s=>+s.sort||0))+1};
+        regs.push(row);
+        out.spx++;
+      });
+      this.data.spxEventReg=regs;
     }
     this.syncEventCodes();
     return out;
@@ -2905,7 +2998,7 @@ async function boot(renderFn){
   }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
-  try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted))DB.save();}catch(e){} // event → item/project cascade (writes only for Belén/Jesús-level logins)
+  try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted||r.money||r.spx))DB.save();}catch(e){} // event → Money/item/project/SPX cascade (writes only for finance/billing/sales-lead logins)
   try{const nc=document.getElementById('nav-crm');if(nc&&DB.can('crm.leads','see'))nc.style.display='';}catch(e){} // CRM tab: Belén (grantable per-cell in the 🔐 panel)
   /* HR is no longer its own nav tab — it lives inside 👥 Team (gated there by DB.canSeeHR) */
   renderFn();

@@ -97,7 +97,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=95"></script>
+<script src="store.js?v=96"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -227,6 +227,11 @@ function renderHolidays(){
     '<button class="btn primary" id="b_add">Add as approved</button><span id="b_msg" style="font-size:12px;color:var(--green)"></span></div>'+
     '<div class="padd" style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px"><label>Cancel an approved holiday<select id="x_hol" style="max-width:340px"></select></label>'+
     '<button class="btn no" id="x_go">Cancel it</button><span id="x_msg" style="font-size:12px;color:var(--green)"></span></div>'+
+    '<h4>Edit an approved holiday</h4><p class="hint">Someone gives days back or moves a booking (Belén, 31 Jul — e.g. Sheetal returning 3 days): pick the booking, set the new dates, done. The balance recomputes at once, the change is logged on the request, and the person sees the note in 🙋 Me.</p>'+
+    '<div class="padd"><label>Booking<select id="e_hol" style="max-width:340px"></select></label>'+
+    '<label>New from<input type="date" id="e_from"></label><label>New to<input type="date" id="e_to"></label>'+
+    '<label>Note<input id="e_note" placeholder="why it changed" style="width:170px"></label>'+
+    '<button class="btn primary" id="e_go">Save change</button><span id="e_msg" style="font-size:12px;color:var(--green)"></span></div>'+
     '<h4>Place someone on leave</h4><p class="hint">Sick / maternity / paternity leave. During it the person doesn’t have to clock in or allocate hours — the app stops expecting either. This does <b>not</b> use their 23-day holiday allowance.</p>'+
     '<div class="padd"><label>Person<select id="lv_who"></select></label>'+
     '<label>Type<select id="lv_type"><option value="sick">Sick leave</option><option value="maternity">Maternity</option><option value="paternity">Paternity</option></select></label>'+
@@ -277,6 +282,36 @@ function renderBackfill(){
         const m=document.getElementById('x_msg');if(!m)return;
         m.textContent=ok?'Cancelled ✓':'⚠ Not saved yet — retrying in the background.';
         if(ok)setTimeout(()=>{if(m)m.textContent='';},3000);
+        renderBackfill();renderBalances();
+      });
+    };
+  }
+  /* HR admin: EDIT an approved booking in place (server guard: only HR-admins may
+     change person/dates/days — dc_holidays_guard short-circuits for dc_is_hradmin()).
+     The old range is preserved in the log line, so the audit trail survives the edit. */
+  const eh=document.getElementById('e_hol');
+  if(eh){
+    const opts=DB.holidays.filter(h=>h.status==='approved').sort((a,b)=>b.dateFrom.localeCompare(a.dateFrom));
+    eh.innerHTML=opts.length?opts.map(h=>'<option value="'+h.id+'">'+esc(DB.personName(h.personId))+' — '+fmtRange(h)+' ('+h.workDays+'d'+(h.type&&h.type!=='vacation'?', '+(TYPE_LABEL[h.type]||h.type).toLowerCase():'')+')</option>').join(''):'<option value="">— none approved —</option>';
+    const prefill=()=>{const h=DB.holidays.find(x=>x.id==eh.value);if(!h)return;
+      document.getElementById('e_from').value=h.dateFrom;document.getElementById('e_to').value=h.dateTo;};
+    eh.onchange=prefill;if(opts.length)prefill();
+    document.getElementById('e_go').onclick=()=>{
+      const h=DB.holidays.find(x=>x.id==eh.value);if(!h)return;
+      const f=document.getElementById('e_from').value,t=document.getElementById('e_to').value;
+      if(!f||!t||t<f){alert('Pick a valid date range.');return;}
+      const wd=(h.type==='adjust')?h.workDays:workingDaysBetween(f,t);
+      if(wd<=0){alert('No working days in that range.');return;}
+      if(f===h.dateFrom&&t===h.dateTo){alert('Those are already its dates.');return;}
+      const before=fmtRange(h)+' ('+h.workDays+'d)';
+      const note=document.getElementById('e_note').value.trim();
+      h.dateFrom=f;h.dateTo=t;h.workDays=wd;
+      h.log=(h.log||[]).concat([{by:DB.currentUser.name,at:new Date().toISOString(),
+        action:'edited by HR: '+before+' → '+fmtRange(h)+' ('+wd+'d)',note:note||undefined}]);
+      DB.saveNow().then(ok=>{
+        const m=document.getElementById('e_msg');if(!m)return;
+        m.textContent=ok?'Changed ✓ ('+before+' → '+wd+'d)':'⚠ Not saved yet — retrying in the background.';
+        if(ok)setTimeout(()=>{if(m)m.textContent='';},4000);
         renderBackfill();renderBalances();
       });
     };
