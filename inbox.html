@@ -123,7 +123,7 @@ function renderTabs(){
   let v=activeView();
   let unread=0,newReq=0,old=0;
   try{unread=inboxUnread();}catch(e){}
-  try{old=inboxOld().length;}catch(e){}
+  try{old=inboxAway().length;}catch(e){}   // "as this visit sees it" — see _seenThisVisit below
   try{if(DB.can('req.triage','edit')&&DB.tickReady())newReq=DB.tickets.filter(t=>t.status==='new').length;}catch(e){}
   /* the 🗄 folder only exists once something has actually aged into it (rulebook: no empty tab) */
   if(v==='arch'&&!old)v='notif';
@@ -209,19 +209,25 @@ function msgHtml(m,fresh){
    does not blank out under your eyes the moment you look at it. */
 const _seenThisVisit=new Set();
 let _seenTimer=null;
+const _new=m=>_seenThisVisit.has(String(m.id));
+/* the two folders as this VISIT sees them: anything that was new when you arrived stays in
+   the inbox until you leave, even if reading it just aged it past the two-month line —
+   nothing may vanish from under your eyes in the second you look at it. */
+function inboxHere(){return inboxMine().filter(m=>!inboxArchived(m)||_new(m));}
+function inboxAway(){return inboxMine().filter(m=>inboxArchived(m)&&!_new(m));}
 function scheduleSeen(){
   clearTimeout(_seenTimer);_seenTimer=null;
-  if(!inboxCurrent().some(m=>!m.isRead))return;
+  if(!inboxHere().some(m=>!m.isRead))return;
   if(document.hidden){document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleSeen();},{once:true});return;}
   _seenTimer=setTimeout(()=>{_seenTimer=null;
-    const ids=inboxCurrent().filter(m=>!m.isRead).map(m=>m.id);
+    const ids=inboxHere().filter(m=>!m.isRead).map(m=>m.id);
     ids.forEach(id=>_seenThisVisit.add(String(id)));
     if(inboxMarkSeen(ids)){renderTabs();refreshNav();}   // badge only; the list stays put
   },1200);
 }
 function renderInbox(archive){
   const W=document.getElementById('listwrap');
-  const old=inboxOld();
+  const old=inboxAway();
   if(archive){
     document.getElementById('composer').innerHTML='';   // 📢 send-a-notice belongs to the inbox, not the archive
     let h='<div class="listbar"><h2>🗄 Archive</h2><span class="hint" style="margin:0">'+old.length+' notification'+(old.length===1?'':'s')+' older than two months</span></div>';
@@ -230,8 +236,8 @@ function renderInbox(archive){
     W.innerHTML=h;return;
   }
   renderComposer();
-  const mine=inboxCurrent();
-  const isFresh=m=>!m.isRead||_seenThisVisit.has(String(m.id));
+  const mine=inboxHere();
+  const isFresh=m=>!m.isRead||_new(m);
   const fresh=mine.filter(isFresh),earlier=mine.filter(m=>!isFresh(m));
   let h='<div class="listbar"><h2>My inbox</h2></div>';
   if(!mine.length)h+='<p class="empty">Nothing here — you’re up to date 🎉</p>';
