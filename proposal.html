@@ -167,7 +167,7 @@
   <div class="hint" id="msg"></div>
 </div>
 
-<script src="store.js?v=96"></script>
+<script src="store.js?v=97"></script>
 <script src="pb_bundle.js?v=12"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
@@ -184,6 +184,21 @@ const MODE_HINT={events:"Full sponsorship deck for one or several RENMAD events 
   webinar:"Standalone Webinar Program deck — no event packages; just salesperson + optional client brand. (Deck only, not logged to SPX.)"};
 // RENMAD Talks encuentros are real, pickable events — proposable alone or bundled
 // into a multi-event deck. They carry their OWN Talks packages (type:"talks").
+/* An event retired off the timeline stops being offerable here. Deleting an event
+   sets its SPX registry row to active:false (DB.retireEventLines) — that is the one
+   list the Dispatch keeps of what is sellable, so the builder reads it rather than
+   trusting its own built-in copy (Belén, 31 Jul: the cancelled Talks Biometano was
+   still in the picker). Keys are folded because the builder writes chile_27 where
+   the registry writes CHILE27. Fails OPEN: no registry loaded, nothing hidden. */
+const keyFold=k=>(''+(k||'')).toUpperCase().replace(/[^A-Z0-9]/g,'');
+function retiredKeys(){
+  const s=new Set();
+  try{(DB.spxEventReg||[]).forEach(r=>{
+    if(!r.deleted&&r.active===false&&r.eventKey)s.add(keyFold(r.eventKey));});}catch(e){}
+  return s;
+}
+function isRetired(e,retired){return retired.has(keyFold(e.spx_key||e.key));}
+
 function injectTalksEvents(){
   PB.families=PB.families||{}; if(!PB.families.talks)PB.families.talks="RENMAD Talks";
   /* dates corrected 30 Jul 2026 — they were stale AND Biometano/Datacenters were swapped.
@@ -194,8 +209,10 @@ function injectTalksEvents(){
      else it cascaded: Money, hours, SPX registry, invoicing items, both decks. */
   const meta={E059:{color:"E84830",short:"Talks · BESS Invest",en:"29 Sep 2026",iso:"2026-09-29"},
               E061:{color:"29ACE3",short:"Talks · Datacenters Off-Grid",en:"13 Oct 2026",iso:"2026-10-13"}};
+  const retired=retiredKeys();
   (PB.talksEvents||[]).forEach(te=>{
     if(PB.events.some(e=>e.key===te.key))return;
+    if(isRetired(te,retired))return;
     const m=meta[te.key]||{color:"FF4A00",short:te.name,en:te.date_es};
     PB.events.push({key:te.key,name:te.name,family:"talks",type:"talks",portfolio:false,members:null,
       color:m.color,city:{en:"Madrid, Spain",es:"Madrid, España"},date:{en:m.en,es:te.date_es},short:m.short,iso:m.iso});
@@ -232,7 +249,8 @@ function sortEventLists(){
 function initBuilder(){
   document.getElementById('nav').innerHTML=navBar('tools');
   injectTalksEvents();
-  realEvents=PB.events.filter(e=>!e.portfolio);
+  const retiredNow=retiredKeys();
+  realEvents=PB.events.filter(e=>!e.portfolio&&!isRetired(e,retiredNow));
   sortEventLists();
   /* The picker starts on whoever is signed in. When the person signed in is NOT one of the
      salespeople (Belén, or a new starter not added to the list yet) it silently stayed on

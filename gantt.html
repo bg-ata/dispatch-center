@@ -121,7 +121,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=96"></script>
+<script src="store.js?v=97"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -300,7 +300,23 @@ function openModal(id){editingId=id;
 document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
-document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();};
+/* Deleting an event also RETIRES everything ensureEventLines minted for it —
+   Money row, hour project, invoicing item, SPX registry row — so a cancelled
+   event stops showing on the dashboard, in the pickers and in the proposal
+   builder (Belén, 31 Jul: the cancelled Talks Biometano was still everywhere).
+   Retire, never destroy: the hour project keeps its logged hours, and a Money
+   row that already billed something is left for a human. */
+document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;
+  let r={projects:0,items:0,spx:0,money:0,moneyKept:0};
+  try{r=DB.retireEventLines(editingId);}catch(err){console.warn('retire event lines:',err.message||err);}
+  DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();
+  const bits=[];
+  if(r.projects)bits.push(r.projects+' hour line'+(r.projects>1?'s':'')+' retired (hours kept)');
+  if(r.items)bits.push(r.items+' invoicing item'+(r.items>1?'s':'')+' archived');
+  if(r.spx)bits.push(r.spx+' SPX event'+(r.spx>1?'s':'')+' taken off the board and the builder');
+  if(r.money)bits.push(r.money+' Money row removed');
+  if(r.moneyKept)bits.push(r.moneyKept+' Money row'+(r.moneyKept>1?'s':'')+' LEFT IN PLACE — it has figures or invoices, remove it by hand if you mean to');
+  if(bits.length)alert('Event deleted.\n\nAlso: '+bits.join('.\n')+'.');};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim(),
     ecode:(modalIsExt?null:(m_ecode.value.trim().toUpperCase()||null))}; // editable on purpose — codes often arrive later
   if(modalIsExt){

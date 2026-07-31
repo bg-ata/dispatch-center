@@ -2709,6 +2709,52 @@ const DB={
     this.syncEventCodes();
     return out;
   },
+  /* ---------- event delete → RETIRE its lines (Belén, 31 Jul 2026) ----------
+     The mirror of ensureEventLines. Deleting an event off the timeline used to
+     leave every line it had minted behind: the RENMAD Talks Biometano encuentro
+     was cancelled and still showed on the Money dashboard, in the invoicing
+     picker, on the SPX board and in the proposal builder.
+     RETIRE, never destroy — her rule, and the hours prove why: that event
+     already had 18.5 h logged against its project. So:
+       · hour project   → active=false   (retired; logged hours keep their label)
+       · invoicing item → archived=true  (out of the picker, still on old invoices)
+       · SPX registry   → active=false   (off the current board, and out of the
+                                          proposal builder's picker)
+       · Money row      → deleted, but ONLY when it carries no numbers and no
+                          invoice lines. A cancelled event that already billed
+                          something keeps its row: that money really happened.
+     Call it BEFORE dropping the event from DB.data.events (it reads f.eventId).
+     Returns what it touched so the caller can tell the user. */
+  retireEventLines(evId){
+    const out={projects:0,items:0,spx:0,money:0,moneyKept:0};
+    if(evId==null)return out;
+    /* every stage is gated like its ensureEventLines twin, i.e. like RLS: a write
+       the database will refuse is a write the diff-sync retries forever (v95). */
+    const canFin=this.canFinance()&&this.financeReady();
+    const canBill=this.canBill()&&this.billReady();
+    const canSpx=this.canSalesLead&&this.canSalesLead()&&(!USE_SUPABASE||_spxEvReady);
+    const fins=this.finance.filter(f=>!f.deleted&&f.eventId==evId);
+    fins.forEach(f=>{
+      if(canBill)this.codigos.filter(c=>!c.deleted&&c.eventId==f.id&&c.archived!==true)
+        .forEach(c=>{c.archived=true;out.items++;});
+      if(canSpx)(this.spxEventReg||[]).filter(s=>!s.deleted&&s.financeId==f.id&&s.active!==false)
+        .forEach(s=>{s.active=false;out.spx++;});
+      if(!canFin){out.moneyKept++;return;}
+      const hasFigures=['target','stretch','invoiced','spex']
+        .some(k=>f[k]!=null&&f[k]!=='');
+      /* "eventId" on an allocation line is the dc_finance id, not the board event
+         (store.js COLS note). Without the invoicing tables loaded we cannot tell
+         whether money was billed, so the row stays — never guess with revenue. */
+      const hasInvoices=!canBill||(this.data.invalloc||[]).some(a=>!a.deleted&&a.eventId==f.id);
+      if(hasFigures||hasInvoices){out.moneyKept++;return;}
+      this.data.finance=this.finance.filter(x=>x.id!==f.id);
+      out.money++;
+    });
+    if(this.canManageProjects())this.projects
+      .filter(p=>!p.deleted&&p.eventId==evId&&p.active!==false)
+      .forEach(p=>{p.active=false;out.projects++;});
+    return out;
+  },
   /* one fill covers both registers: a código set on an event's invoicing item
      flows to its blank hour-project code, and vice versa. Only ever fills
      BLANKS — a code someone typed is never overwritten. */
