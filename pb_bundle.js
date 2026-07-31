@@ -1990,12 +1990,6 @@ window.PB = {
    "date_es": "29 sep 2026"
   },
   {
-   "key": "E060",
-   "spx_key": "E060",
-   "name": "RENMAD Talks · Biometano 2026",
-   "date_es": "10 nov 2026"
-  },
-  {
    "key": "E061",
    "spx_key": "E061",
    "name": "RENMAD Talks · Datacenters Off-Grid 2026",
@@ -3552,7 +3546,7 @@ window.PB = {
       const m = NAME_MATCH[ev.key]; if (!m) return;
       try {
         const row = matchName(rows, m);
-        if (row && row.date) { ev.date = fmtDates(row.date, row.days || 1); synced.push(ev.key); }
+        if (row && row.date) { ev.date = fmtDates(row.date, row.days || 1); ev.iso = row.date; synced.push(ev.key); } // iso kept for date-ordering the picker
       } catch (e) {}
     });
     return { ok: true, synced: synced, rows: rows.length };
@@ -3568,10 +3562,10 @@ window.PB = {
    Port of proposal_builder/talks_deck.py to a static, dependency-free browser
    build. Same slide SEQUENCE and copy, rendered in the browser. SPANISH only.
 
-   RENMAD Talks = the boutique half-day format: three ATA×PwC executive
-   encuentros (BESS Invest 22 sep · Biometano 6 oct · Datacenters Off-Grid
-   10 nov 2026). Brand colour = carmesí #B52030 (NOT ATA orange, NOT the big
-   decks' per-event colours). PwC is the co-host, at its Madrid HQ.
+   RENMAD Talks = the boutique half-day format: the ATA×PwC España executive
+   encuentros (BESS Invest 29 sep · Datacenters Off-Grid 13 oct 2026; the
+   Biometano one was cancelled on 31 Jul 2026). Brand colour = carmesí #B52030 (NOT ATA orange, NOT the big
+   decks' per-event colours). PwC España is the co-host, at its Madrid HQ.
 
    Exposes:  window.PBTALKS = { buildTalksDeck(opts) }  ->  PptxGenJS deck object
 
@@ -3601,60 +3595,37 @@ window.PB = {
   var SW = 13.333, SH = 7.5;
 
   // ---- embedded copy (fallback when window.PB.* is absent) -----------------
-  // The three encuentros. Deck-specific rich copy is ALWAYS embedded here.
+  // The encuentros. Deck-specific rich copy is ALWAYS embedded here.
   var EVENTS3 = [
     {
-      id: "E059", tag: "ALMACENAMIENTO", date_s: "MARTES 22 SEPTIEMBRE", name: "BESS Invest",
-      hours: "9:00 – 14:30 · Sede de PwC, Madrid",
-      kick: "MARTES 22 SEPTIEMBRE 2026 · 9:00 – 14:30 · SEDE DE PWC, MADRID",
+      id: "E059", tag: "ALMACENAMIENTO", date_s: "MARTES 29 SEPTIEMBRE", name: "BESS Invest",
+      hours: "10:00 – 15:30 · Sede de PwC, Madrid",
+      kick: "MARTES 29 SEPTIEMBRE 2026 · 10:00 – 15:30 · SEDE DE PWC, MADRID",
       sub: "Financiación y modelos de negocio para liderar el boom del BESS en 2027",
       pitch: "El almacenamiento español ya es una clase de activo. La aprobación del mercado de capacidad " +
              "(~9.000 M€) estrena el primer ingreso bancable del BESS, la potencia instalada se ha disparado " +
-             "tras el cero eléctrico de 2025 y el pipeline apunta a 14 GW en 2030. Siete sesiones sobre lo que " +
+             "tras el cero eléctrico de 2025 y el pipeline apunta a 14 GW en 2030. Una mañana sobre lo que " +
              "financia — o hunde — un proyecto BESS en 2027.",
       aud: "Inversores y fondos · desarrolladores e IPPs · operadores · tecnólogos · asesores legales y financieros",
       ses: "Mercado de capacidad · compra-venta de proyectos · merchant y saturación · grid-forming · optimizer · tolling y deuda",
       agenda: [
-        ["9:00", "Bienvenida e inauguración (ATA + PwC)", "—"],
-        ["9:15", "Suelo firme · mercado de capacidad", "Fireside chat"],
-        ["9:35", "Se vende · compra-venta de proyectos", "Panel"],
-        ["10:05", "Márgenes a dieta · merchant y saturación", "Panel"],
-        ["10:55", "Del vaivén al aplomo · grid-forming", "Panel"],
-        ["11:45", "Café networking · encuestas en directo", "Pausa"],
-        ["12:15", "El hardware almacena, el software gana · optimizer", "Ponencia"],
-        ["12:35", "El peaje de la tranquilidad · tolling y deuda", "Masterclass"],
-        ["13:25", "Agenda cargada · cierre y hoja de ruta 2027", "Cierre"],
-        ["13:45", "Networking lunch", "—"]
+        ["10:00", "Bienvenida e inauguración (ATA + PwC España)", "—"],
+        ["10:15", "Suelo firme · mercado de capacidad", "Fireside chat"],
+        ["10:45", "Se vende · compra-venta de proyectos", "Presentación"],
+        ["11:05", "Márgenes a dieta · merchant y saturación", "Panel"],
+        ["11:50", "Café networking · encuestas en directo", "Pausa"],
+        ["12:05", "Del vaivén al aplomo · grid-forming", "Panel"],
+        ["12:50", "El hardware almacena, el software gana · optimizer", "Ponencia"],
+        ["13:10", "El peaje de la tranquilidad · tolling y deuda", "Masterclass"],
+        ["13:55", "Agenda cargada · cierre y hoja de ruta 2027", "Cierre"],
+        ["14:15", "Networking lunch", "—"]
       ],
-      note: "Inicio 9:00 · un único descanso a media mañana · cierre con networking lunch en la sede de PwC."
+      note: "Inicio 10:00 · un único descanso a media mañana · cierre con networking lunch en la sede de PwC."
     },
     {
-      id: "E060", tag: "GASES RENOVABLES", date_s: "MARTES 6 OCTUBRE", name: "Biometano",
+      id: "E061", tag: "DATACENTERS & IA", date_s: "MARTES 13 OCTUBRE", name: "Datacenters Off-Grid",
       hours: "9:15 – 13:30 · Sede de PwC, Madrid",
-      kick: "MARTES 6 OCTUBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
-      sub: "Del residuo al negocio: cuota obligatoria, digestato y financiación del gas verde",
-      pitch: "España estrena demanda garantizada por ley: el RDL 7/2026 abre la puerta a cuotas obligatorias " +
-             "de biometano con senda creciente hasta 2035. El digestato pasa de residuo a producto de valor y " +
-             "la financiación por fin fluye, con más de 3.300 M€ comprometidos en 2024-2025 y 50+ plantas en " +
-             "desarrollo. Una mañana para pasar del residuo al negocio.",
-      aud: "Promotores de plantas · gasistas y comercializadoras · agroindustria · banca y fondos · asesores",
-      ses: "Cuota obligatoria · digestato de valor · garantías de origen · sustrato · financiación de plantas",
-      agenda: [
-        ["9:15", "Bienvenida e inauguración (ATA + PwC)", "—"],
-        ["9:30", "Obligados a crecer · cuota obligatoria", "Panel"],
-        ["10:20", "El oro marrón · digestato de valor", "Panel estrella"],
-        ["11:10", "Certificar para cobrar · garantías de origen", "Ponencia"],
-        ["11:30", "Pausa activa con café · encuestas en directo", "Pausa"],
-        ["11:45", "Sin materia, no hay gas · sustrato", "Ponencia"],
-        ["12:05", "Del residuo al balance · financiación", "Masterclass"],
-        ["12:55", "Networking lunch", "—"]
-      ],
-      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking lunch en la sede de PwC."
-    },
-    {
-      id: "E061", tag: "DATACENTERS & IA", date_s: "MARTES 10 NOVIEMBRE", name: "Datacenters Off-Grid",
-      hours: "9:15 – 13:30 · Sede de PwC, Madrid",
-      kick: "MARTES 10 NOVIEMBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
+      kick: "MARTES 13 OCTUBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
       sub: "Off-grid, energía firme y financiación para el boom de los datacenters de IA",
       pitch: "Construir un datacenter lleva 12-18 meses; conectarlo a la red, entre 5 y 7 años. Con hasta la " +
              "mitad del pipeline español en riesgo por falta de punto de conexión, generar la energía in situ " +
@@ -3663,14 +3634,15 @@ window.PB = {
       aud: "Hyperscalers y operadores de DC · promotores energéticos · fondos de infraestructura · utilities · asesores",
       ses: "Off-grid y cola de conexión · campus a gigavatio · energía firme 24/7 · España, hub del dato · financiación",
       agenda: [
-        ["9:15", "Bienvenida e inauguración (ATA + PwC)", "—"],
+        ["9:15", "Bienvenida e inauguración (ATA + PwC España)", "—"],
         ["9:30", "La cola que asfixia a la nube · off-grid", "Panel"],
         ["10:20", "El valle de los datos · campus a gigavatio", "Panel estrella"],
         ["11:10", "El reto de los 24/7 · energía firme", "Ponencia"],
         ["11:30", "Pausa activa con café · encuestas en directo", "Pausa"],
-        ["11:45", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
-        ["12:05", "Energía propia, riesgo propio · financiación", "Masterclass"],
-        ["12:55", "Networking lunch", "—"]
+        ["12:00", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
+        ["12:20", "Energía propia, riesgo propio · financiación", "Masterclass"],
+        ["13:10", "Modelos de negocio y hoja de ruta", "Cierre"],
+        ["13:30", "Networking lunch", "—"]
       ],
       note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking lunch en la sede de PwC."
     }
@@ -3751,7 +3723,7 @@ window.PB = {
     ["Alcance directo", "Contacto cara a cara con decisores y responsables de presupuesto, en una sala reducida donde ninguna marca pasa desapercibida."],
     ["Posicionamiento de marca", "Su logo presente en toda la comunicación del encuentro: agenda, web y email marketing de la convocatoria."],
     ["Generación de oportunidades", "Una audiencia cualificada y pre-agendada para abrir conversaciones comerciales in situ."],
-    ["Liderazgo de conversación", "Paneles y presentaciones que le posicionan como referente en su vertical, junto al co-host PwC."]
+    ["Liderazgo de conversación", "Paneles y presentaciones que le posicionan como referente en su vertical, junto al co-host PwC España."]
   ];
 
   var SALESPEOPLE_FALLBACK = {
@@ -3865,11 +3837,11 @@ window.PB = {
       logoMark(s, 0.6, 0.5, 2.5, true);
       tx(s, 0.6, 1.72, 12.0, 0.35, "OPORTUNIDADES DE PATROCINIO · 2026", 13, BLUSH_TX, true, HEAD,
         "left", "top", { charSpacing: 2.6 });
-      tx(s, 0.6, 2.12, 12.2, 1.55, "Tres encuentros ejecutivos.\nMedia jornada. Un único tema, a fondo.",
+      tx(s, 0.6, 2.12, 12.2, 1.55, "Dos encuentros ejecutivos.\nMedia jornada. Un único tema, a fondo.",
         32, WHITE, true, HEAD, "left", "top", { lineSpacingMultiple: 1.05 });
       // cover_band.png -> carmesí band stand-in
       rc(s, 0, 3.95, SW, 0.9, RED);
-      tx(s, 0.6, 5.02, 12.2, 0.4, "Madrid · Septiembre – Noviembre 2026 · Co-host: PwC", 14, SOFT, false, BODY);
+      tx(s, 0.6, 5.02, 12.2, 0.4, "Madrid · Septiembre – Octubre 2026 · Co-host: PwC España", 14, SOFT, false, BODY);
     })();
 
     // ===== 2 · QUÉ ES RENMAD TALKS =========================================
@@ -3880,7 +3852,7 @@ window.PB = {
       tx(s, 0.6, 1.7, 11.9, 1.25,
         "RENMAD Talks es el nuevo formato de encuentros ejecutivos de RENMAD: media jornada, una sala " +
         "curada y un único tema, a fondo. La misma marca de los eventos RENMAD, en formato boutique — " +
-        "co-organizado con PwC como co-host, en su sede de Madrid.",
+        "co-organizado con PwC España como co-host, en su sede de Madrid.",
         13.5, MID, false, BODY, "left", "top", { lineSpacingMultiple: 1.25 });
       var cards = [
         ["½ JORNADA", "Una mañana de martes, de 9:00 a primera hora de la tarde. Alta densidad de decisión, cero paja."],
@@ -3896,7 +3868,7 @@ window.PB = {
       });
       s.addText([
         { text: "Co-host: ", options: { color: MID, bold: false } },
-        { text: "PwC", options: { color: CHARCOAL, bold: true } },
+        { text: "PwC España", options: { color: CHARCOAL, bold: true } },
         { text: "   ·   Sede de PwC, Madrid   ·   Encuentros en español", options: { color: MID, bold: false } }
       ], { x: 0.6, y: 5.85, w: 11.9, h: 0.7, fontFace: BODY, fontSize: 13, valign: "top" });
       footer(s);
@@ -3919,12 +3891,13 @@ window.PB = {
       footer(s);
     })();
 
-    // ===== 4 · LAS TRES CITAS ==============================================
+    // ===== 4 · LAS CITAS ====================================================
     (function () {
       var s = pptx.addSlide(); s.background = { color: GREY_BG };
       kicker(s, 0.6, 0.55, "OPORTUNIDADES 2026");
-      tx(s, 0.6, 0.92, 12.1, 0.7, "Tres citas, tres tecnologías", 28, CHARCOAL, true, HEAD);
-      var cw = 3.85, gap = 0.28, x0 = 0.6, cy = 1.95, ch = 4.35;
+      tx(s, 0.6, 0.92, 12.1, 0.7, "Dos citas, dos tecnologías", 28, CHARCOAL, true, HEAD);
+      var gap = 0.28, x0 = 0.6, cy = 1.95, ch = 4.35;
+      var cw = (12.15 - gap * (events.length - 1)) / Math.max(1, events.length); // fills the row at 2 or 3
       events.forEach(function (ev, i) {
         var x = x0 + i * (cw + gap);
         rc(s, x, cy, cw, ch, WHITE, { line: CARD_LN, lw: 0.75, rad: 0.035 });
@@ -3936,7 +3909,7 @@ window.PB = {
         tx(s, x + 0.3, cy + 3.6, cw - 0.6, 0.5, ev.hours, 11, CHARCOAL);
       });
       tx(s, 0.6, 6.55, 12.1, 0.35,
-        "Cada encuentro se patrocina por separado — los paquetes son idénticos en los tres.", 12, MID);
+        "Cada encuentro se patrocina por separado — los paquetes son idénticos en todos.", 12, MID);
       footer(s);
     })();
 
@@ -4069,7 +4042,7 @@ window.PB = {
         { text: sp.email, options: { color: SOFT, bold: false, fontFace: BODY, hyperlink: { url: "mailto:" + sp.email } } }
       ], { x: 0.6, y: 4.75, w: 7.4, h: 1.3, fontFace: BODY, fontSize: 16, valign: "top", paraSpaceAfter: 6 });
       logoMark(s, 0.6, 6.35, 1.6, true);
-      tx(s, 5.6, 6.75, 2.55, 0.35, "Co-host: PwC", 12, SOFT, false, BODY, "right");
+      tx(s, 5.6, 6.75, 2.55, 0.35, "Co-host: PwC España", 12, SOFT, false, BODY, "right");
     })();
 
     return pptx;

@@ -167,8 +167,8 @@
   <div class="hint" id="msg"></div>
 </div>
 
-<script src="store.js?v=95"></script>
-<script src="pb_bundle.js?v=10"></script>
+<script src="store.js?v=96"></script>
+<script src="pb_bundle.js?v=12"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
 const ACCOUNT_TYPES=["New Account","Transferred account","Existing Account"];
@@ -188,16 +188,17 @@ function injectTalksEvents(){
   PB.families=PB.families||{}; if(!PB.families.talks)PB.families.talks="RENMAD Talks";
   /* dates corrected 30 Jul 2026 — they were stale AND Biometano/Datacenters were swapped.
      Confirmed with Belén 28 Jul (BESS verified off the live ticket page):
-     BESS 29 Sep · Datacenters 13 Oct · Biometano 10 Nov. Same fix in spx_data.py +
-     pb_bundle.js (talksEvents), which is where the Spanish dates come from. */
-  const meta={E059:{color:"E84830",short:"Talks · BESS Invest",en:"29 Sep 2026"},
-              E060:{color:"4C3079",short:"Talks · Biometano",en:"10 Nov 2026"},
-              E061:{color:"29ACE3",short:"Talks · Datacenters Off-Grid",en:"13 Oct 2026"}};
+     BESS 29 Sep · Datacenters 13 Oct. Same list in spx_data.py + pb_bundle.js
+     (talksEvents), which is where the Spanish dates come from.
+     E060 Biometano (10 Nov) was CANCELLED 31 Jul 2026 — dropped here and everywhere
+     else it cascaded: Money, hours, SPX registry, invoicing items, both decks. */
+  const meta={E059:{color:"E84830",short:"Talks · BESS Invest",en:"29 Sep 2026",iso:"2026-09-29"},
+              E061:{color:"29ACE3",short:"Talks · Datacenters Off-Grid",en:"13 Oct 2026",iso:"2026-10-13"}};
   (PB.talksEvents||[]).forEach(te=>{
     if(PB.events.some(e=>e.key===te.key))return;
     const m=meta[te.key]||{color:"FF4A00",short:te.name,en:te.date_es};
     PB.events.push({key:te.key,name:te.name,family:"talks",type:"talks",portfolio:false,members:null,
-      color:m.color,city:{en:"Madrid, Spain",es:"Madrid, España"},date:{en:m.en,es:te.date_es},short:m.short});
+      color:m.color,city:{en:"Madrid, Spain",es:"Madrid, España"},date:{en:m.en,es:te.date_es},short:m.short,iso:m.iso});
   });
 }
 let LANG="en", BRAND=null, SP="cintia", MODE="events", SCOPE="events", CLIENTLOGO=null;
@@ -213,11 +214,26 @@ const SCOPE_HINT={events:"",
 let realEvents=[], y26=[], y27=[]; const selEvents=new Set();
 const money=(n)=>(window.RENMAD?RENMAD.money(n):("€"+n));
 
+/* picker order = when the event happens (Belén, 31 Jul: "order them by date … across
+   the board"). ev.iso arrives from the Dispatch timeline sync (applyDates) or the Talks
+   metadata; without it the display date string is parsed; unparseable keeps list order. */
+function evIsoKey(e,i){
+  if(e.iso){const d=new Date(e.iso);if(!isNaN(d))return d.getTime();}
+  const s=(e.date&&e.date.en)||'';
+  const y=/(20\d{2})/.exec(s),MN={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+  const m=/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.exec(s),d=/(\d{1,2})/.exec(s);
+  if(y&&m)return new Date(+y[1],MN[m[1].toLowerCase()],d?+d[1]:1).getTime();
+  return 9e15+i; // keep original position at the very end
+}
+function sortEventLists(){
+  realEvents=realEvents.map((e,i)=>({e,k:evIsoKey(e,i)})).sort((a,b)=>a.k-b.k).map(x=>x.e);
+  y26=realEvents.filter(e=>e.name.includes("2026")); y27=realEvents.filter(e=>e.name.includes("2027"));
+}
 function initBuilder(){
   document.getElementById('nav').innerHTML=navBar('tools');
   injectTalksEvents();
   realEvents=PB.events.filter(e=>!e.portfolio);
-  y26=realEvents.filter(e=>e.name.includes("2026")); y27=realEvents.filter(e=>e.name.includes("2027"));
+  sortEventLists();
   /* The picker starts on whoever is signed in. When the person signed in is NOT one of the
      salespeople (Belén, or a new starter not added to the list yet) it silently stayed on
      Cintia and her details went out on a client deck — so say so instead of hiding it. */
@@ -283,6 +299,7 @@ function initBuilder(){
     let st; try{ st=await PBTIMELINE.applyDates(PB.events); }catch(e){ st={ok:false}; }
     dm.innerHTML=(st&&st.ok)?('📅 <span class="ok">'+st.synced.length+' event dates live from the Dispatch timeline</span>')
       :'📅 Using built-in dates (timeline unavailable this session).';
+    sortEventLists(); // live dates may reorder the picker
     setLang('en'); setMode('events');
   })();
 }
