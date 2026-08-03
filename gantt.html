@@ -101,7 +101,11 @@
   <h3 id="m_title">Edit event</h3>
   <div class="frm">
     <label class="full">Event name — the ONE true name: reporting, SPX, invoicing items and hour projects all cascade from it<input type="text" id="m_name"></label>
-    <label>Marketing code (E0xx)<input type="text" id="m_ecode" placeholder="tags the event in ActiveCampaign"></label>
+    <!-- the placeholder names the CONSEQUENCE, not just the field (Belén, 3 Aug): creating
+         Datacenters Italia 26 without its code left the event unable to join the reporting,
+         so the cascade minted a second Money row and a second accounting item. In the field,
+         never a pop-up. -->
+    <label>Marketing code (E0xx)<input type="text" id="m_ecode" placeholder="E0xx — without it the reporting cannot join this event"></label>
     <label>Accounting code<input type="text" id="m_acode" placeholder="Jesús's code — a different system"></label>
     <label>Topic<select id="m_topic"></select></label>
     <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
