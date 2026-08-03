@@ -1379,21 +1379,44 @@ function spxStatusAll(){
   return Object.values(rows).sort((a,b)=>a.sort-b.sort);
 }
 
-/* ---- automatic weekly rows (Belén, 29 Jul night: "Why do I need to click anything.
-   Can you just add it when the invoice is added by Jesús?") ----
-   Recomputes the CURRENT week's dc_weekly row per selling event from the SPX board +
-   the invoice lines. Runs by itself after any save that touches invoicing or the SPX
-   board (see the syncNow hook) and when a finance user opens Money — the ⟳ button
-   remains only as a manual "recalculate now".
+/* ---- the weekly series, rebuilt from source (Belén, 3 Aug 2026) ----
+   WHAT WENT WRONG, so nobody rebuilds it the old way:
+   the week's movement used to be worked out by SUBTRACTION — the live accumulated
+   total minus every week already on record. The July Excel import filled only the
+   ACCUMULATED columns (spxAcc / ticketsAcc / soFarEur) and left the per-week movement
+   columns empty, so the subtraction had nothing to subtract and each event's entire
+   back-history landed in one single week. That is how "signed this week" came to read
+   63.593 € on a week that really took 13.318,40 €.
+
+   Every week is now computed from what is DATED IN THAT WEEK:
+     invoiced — invoice allocations, by the invoice's own fecha
+     signed   — Won proposal lines, by the contract's signedAt
+   Nothing is derived from what was written before, so a wrong week can never be baked
+   in, and re-running REPAIRS the history instead of compounding it. It is idempotent:
+   run it a hundred times and the numbers do not move.
+
+   TWO LINES, deliberately (her ask, 3 Aug): sponsorship is routinely signed months
+   before it may be invoiced, so the invoiced figures alone hide real money.
+     soFarEur  = what is INVOICED         → "where we officially are"
+     signedAcc = signed contracts + tickets → "where we really are"
+   The gap between them is exactly the money that was invisible before.
+
+   Runs by itself after any save that touches invoicing or the SPX board (the syncNow
+   hook) and when a finance user opens Money; the ⟳ button is only "recalculate now".
    RLS: dc_weekly writes need dc_can_finance(), so it only acts for finance holders
    (Jesús, Belén). A salesperson's Won deal is picked up at the next finance touchpoint.
    Change-detected: writes ONLY when a value differs, which also breaks the save loop
    (refresh -> save -> sync -> hook -> refresh -> no change -> stop).
    Leads/telesales columns are never touched — marketing is not in the platform. */
+/* the money columns this engine owns. Everything else on a weekly row (leads,
+   telesales, the name/year) is hand-kept and must survive a rebuild untouched. */
+const WK_OWNED=['sponsorsEur','sponsorsN','ticketsEur','delegatesN','grabacionesEur',
+  'siteVisitsEur','signedEur','spxAcc','ticketsAcc','signedAcc','totalEur','soFarEur'];
 function weeklyAutoRefresh(){
   const res={updated:[],skipped:[],changed:false};
   try{
     if(!DB.canFinance()||!DB.weeklyReady()||!DB.spxReady()||!DB.billReady())return res;
+    const nowMon=monday(new Date()),WEEKMS=7*864e5;
     spxStatusAll().filter(r=>r.active&&r.financeId!=null).forEach(r=>{
       const f=DB.finance.find(x=>x.id==r.financeId);if(!f)return;
       /* the weekly history's eventCode = the registry key when it is an E-code
@@ -1404,48 +1427,120 @@ function weeklyAutoRefresh(){
       let code=/^E\d+$/i.test(''+r.key)?(''+r.key).toUpperCase():null;
       if(!code&&evRow){const c=DB.evCode(evRow);if(c&&/^E\d+$/i.test(c))code=c;}
       if(!code){res.skipped.push(r.name+' — registry key is not an E-code and no board event is linked');return;}
-      let tkAcc=0,grAcc=0,svAcc=0,passes=0;
+
+      /* ---- W0 anchor. The board event's date owns it; failing that, read it back
+         off the grid (a dated row's own week number says where W0 sits). Deriving
+         every row's date FROM the anchor is what stops a moved event date growing a
+         second row under a new anchor — that is how E059/E061 ended up doubled. */
+      let rows=DB.weekly.filter(x=>x.eventCode===code);
+      let ev0=null;
+      if(evRow&&evRow.date)ev0=monday(ymd(evRow.date));
+      if(!ev0){let last=null;rows.forEach(x=>{if(x.date&&x.week!=null&&(!last||+x.week>+last.week))last=x;});
+        if(last)ev0=addDays(monday(ymd(last.date)),-7*(+last.week));}
+      if(!ev0){res.skipped.push(r.name+' — no event date and no dated weekly row to anchor W0');return;}
+      const curWk=Math.round((nowMon-ev0)/WEEKMS);
+
+      /* one row per week: if a past collision left twins, keep the fuller one */
+      const byWeek={};
+      rows.slice().forEach(x=>{
+        if(x.week==null)return;const w=+x.week,k=WK_OWNED.reduce((a,c)=>a+(x[c]!=null?1:0),0);
+        if(!byWeek[w]){byWeek[w]={row:x,score:k};return;}
+        const loser=(k>byWeek[w].score)?byWeek[w].row:x;
+        if(k>byWeek[w].score)byWeek[w]={row:x,score:k};
+        const i=DB.weekly.indexOf(loser);if(i>=0)DB.weekly.splice(i,1);   // → sync marks it deleted
+        res.changed=true;
+      });
+      rows=DB.weekly.filter(x=>x.eventCode===code);
+
+      /* ---- bucket every euro into the week it is DATED in ---- */
+      const wk={},B=w=>(wk[w]=wk[w]||{sponsorsEur:0,sponsorsN:0,ticketsEur:0,delegatesN:0,
+        grabacionesEur:0,siteVisitsEur:0,signedEur:0});
+      const weekOf=iso=>{const s=(''+iso).slice(0,10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(s)?Math.round((monday(ymd(s))-ev0)/WEEKMS):null;};
       DB.invoiceAllocs.forEach(a=>{
-        if(a.eventId!=f.id)return;const inv=DB.invoice(a.invoice_id);
+        if(a.eventId!=f.id)return;
+        const inv=DB.invoice(a.invoice_id);
         /* euros follow the pair rule (cancellation + abono = 0, see invCountsMoney);
            PASSES don't: a cancelled registration's seats are gone, and abonos carry
            no real seats — only live non-abono invoices contribute passes. */
         if(!DB.invCountsMoney(inv))return;
-        const eur=DB.allocEur(a),p=DB.lineProdEff(a),seats=(inv.status!=='cancelado'&&inv.status!=='abono');
-        if(isTicketProd(p)){tkAcc+=eur;if(seats)passes+=(+a.passes||0);}
-        else if(p==='grabaciones')grAcc+=eur;
-        else if(p==='sitevisits')svAcc+=eur;
+        const w=inv?weekOf(inv.fecha):null;if(w==null)return;
+        const b=B(w),eur=DB.allocEur(a),p=DB.lineProdEff(a),
+              seats=(inv.status!=='cancelado'&&inv.status!=='abono');
+        if(isTicketProd(p)){b.ticketsEur+=eur;if(seats)b.delegatesN+=(+a.passes||0);}
+        else if(p==='grabaciones')b.grabacionesEur+=eur;
+        else if(p==='sitevisits')b.siteVisitsEur+=eur;
+        else b.sponsorsEur+=eur;                       // anything else is sponsorship
       });
-      const rows=DB.weekly.filter(x=>x.eventCode===code);
-      /* week anchor: board event date when linked; else extrapolate from this
-         edition's latest dated weekly row (its W-number + weeks elapsed since) */
-      const nowMon=monday(new Date());
-      let wk=null;
-      if(evRow&&evRow.date)wk=Math.round((nowMon-monday(ymd(evRow.date)))/(7*864e5));
-      if(wk==null){let last=null;rows.forEach(x=>{if(x.date&&x.week!=null&&(!last||+x.week>+last.week))last=x;});
-        if(last)wk=Math.min(0,(+last.week)+Math.round((nowMon-monday(ymd(last.date)))/(7*864e5)));}
-      if(wk==null){res.skipped.push(r.name+' — no board-event date and no dated weekly row to anchor the week number');return;}
-      const prev=rows.filter(x=>x.week<wk),sum=k=>prev.reduce((a,x)=>a+(+x[k]||0),0);
-      let row=rows.find(x=>x.week==wk);const isNew=!row;
-      const vals={
-        sponsorsEur:Math.max(0,r.won-sum('sponsorsEur')),sponsorsN:Math.max(0,r.wonN-sum('sponsorsN')),spxAcc:r.won,
-        ticketsEur:Math.max(0,tkAcc-sum('ticketsEur')),ticketsAcc:tkAcc,
-        delegatesN:Math.max(0,passes-sum('delegatesN')),
-        grabacionesEur:Math.max(0,grAcc-sum('grabacionesEur')),siteVisitsEur:Math.max(0,svAcc-sum('siteVisitsEur'))};
-      vals.totalEur=vals.sponsorsEur+vals.ticketsEur+vals.grabacionesEur+vals.siteVisitsEur+((row&&+row.telesalesEur)||0);
-      vals.soFarEur=r.won+tkAcc+grAcc+svAcc+prev.reduce((a,x)=>a+(+x.telesalesEur||0),0)+((row&&+row.telesalesEur)||0);
-      if(f.target!=null)vals.target=+f.target;
-      if(f.stretch!=null)vals.stretch=+f.stretch;
-      const dirty=isNew||Object.keys(vals).some(k=>(+((row||{})[k])||0)!==(+vals[k]||0));
-      if(!dirty)return;
-      if(isNew){row={id:DB.newId(),eventCode:code,
-        name:(rows[0]&&rows[0].name)||(f.name+' '+(f.year||'')).trim(),   // keep the history's own naming
-        year:(rows[0]&&rows[0].year)||f.year||null,
-        date:toISO(nowMon),week:wk,topicLeads:null,eventLeads:null,telesalesN:null,telesalesEur:null};
-        DB.weekly.push(row);}
-      Object.assign(row,vals);
-      res.changed=true;
-      res.updated.push(code+' W'+wk+(isNew?' · new row':' · updated'));
+      /* signed contracts: the Won pile, placed on the week the contract was signed.
+         signedAt is filled by the Won pop-up; older deals fall back to the dates
+         they do have, so the signed line has history from day one. */
+      const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
+      (DB.spxProps||[]).forEach(p=>{
+        if(p.active===false||p.superseded)return;
+        if(!(p.stage==='Won'||p.salesStatus==='Confirmed'))return;
+        const w=weekOf(p.signedAt||p.fechaEnvio||p.createdAt||'');if(w==null)return;
+        let counted=false;
+        (DB.spxLinesFor(p.id)||[]).forEach(l=>{
+          const hit=(nk(l.eventKey)&&nk(l.eventKey)===nk(r.key))||(l.eventId!=null&&l.eventId==r.financeId);
+          if(!hit)return;
+          B(w).signedEur+=(+l.valueEur||0);
+          if(!counted){B(w).sponsorsN++;counted=true;}   // contracts signed that week
+        });
+      });
+
+      /* ---- walk the weeks in order, accumulating as we go ---- */
+      const known=Object.keys(wk).map(Number).concat(rows.map(x=>+x.week).filter(w=>!isNaN(w)),[curWk]);
+      const lo=Math.min.apply(null,known),hi=Math.max.apply(null,known);
+      let spx=0,tik=0,gra=0,sv=0,tele=0,sig=0,n=0;
+      for(let w=lo;w<=hi;w++){
+        let row=rows.find(x=>+x.week===w);
+        const wantDate=toISO(addDays(ev0,7*w));
+        if(w>curWk){
+          /* nothing has happened yet. A scaffold row must not carry last month's
+             numbers forward or the curve jumps back up after today — which is
+             exactly what the July import left behind. */
+          if(row){
+            if(WK_OWNED.some(k=>row[k]!=null)){WK_OWNED.forEach(k=>{row[k]=null;});res.changed=true;n++;}
+            if(row.date!==wantDate){row.date=wantDate;res.changed=true;}
+          }
+          continue;
+        }
+        const b=wk[w]||B(w);
+        const has=b.sponsorsEur||b.ticketsEur||b.grabacionesEur||b.siteVisitsEur||b.signedEur||b.delegatesN;
+        tele+=((row&&+row.telesalesEur)||0);
+        spx+=b.sponsorsEur;tik+=b.ticketsEur;gra+=b.grabacionesEur;sv+=b.siteVisitsEur;sig+=b.signedEur;
+        if(!row&&!has&&w!==curWk)continue;             // don't invent empty weeks
+        const vals={
+          sponsorsEur:b.sponsorsEur,sponsorsN:b.sponsorsN,
+          ticketsEur:b.ticketsEur,delegatesN:b.delegatesN,
+          grabacionesEur:b.grabacionesEur,siteVisitsEur:b.siteVisitsEur,
+          signedEur:b.signedEur,
+          spxAcc:spx,ticketsAcc:tik,
+          totalEur:b.sponsorsEur+b.ticketsEur+b.grabacionesEur+b.siteVisitsEur+((row&&+row.telesalesEur)||0),
+          soFarEur:spx+tik+gra+sv+tele,                          // official: invoiced
+          /* real: signed contracts + everything already billed. MAX, not sum, on the
+             sponsorship side — a sponsorship that has been invoiced is self-evidently
+             signed, and plenty of pre-board deals were invoiced without ever being
+             marked Won. Adding the two would double-count them; taking the larger
+             keeps the promise that the real line is never below the official one,
+             so the gap between them only ever means "signed, not yet billable". */
+          signedAcc:Math.max(sig,spx)+tik+gra+sv+tele};
+        if(f.target!=null)vals.target=+f.target;
+        if(f.stretch!=null)vals.stretch=+f.stretch;
+        const isNew=!row;
+        if(isNew){row={id:DB.newId(),eventCode:code,
+          name:(rows[0]&&rows[0].name)||(f.name+' '+(f.year||'')).trim(),  // keep the history's own naming
+          year:(rows[0]&&rows[0].year)||f.year||null,
+          date:wantDate,week:w,topicLeads:null,eventLeads:null,telesalesN:null,telesalesEur:null};
+          DB.weekly.push(row);rows.push(row);}
+        const dirty=isNew||row.date!==wantDate||Object.keys(vals).some(k=>(+(row[k])||0)!==(+vals[k]||0));
+        if(!dirty)continue;
+        row.date=wantDate;
+        Object.assign(row,vals);
+        res.changed=true;n++;
+      }
+      if(n)res.updated.push(code+' · '+n+' week'+(n===1?'':'s')+' recomputed');
     });
   }catch(e){console.warn('weekly auto-refresh:',e.message||e);}
   return res;
@@ -1475,9 +1570,14 @@ function evPaceCard(f){
   const finished=[];
   Object.keys(codes).forEach(c=>{
     const rs=rowsOf(c);if(!rs.length)return;
-    /* finished = the curve REACHED W0 (weekly rows are always past-dated, so
-       "last date < today" would count live events as done — the 30 Jul lesson) */
-    if(!rs.some(r=>+r.week>=0))return;
+    /* finished = the curve reached W0 AND that week has actually HAPPENED.
+       (3 Aug fix: the imported grid pre-creates the whole W-24…W+1 scaffold, so
+       every live event already owns a W0 row and was being counted as finished —
+       which put live half-sold events into the benchmark median and dragged the
+       "typical event" line down. The 30 Jul lesson still holds: don't use
+       "last date < today", use the W0 row's own date.) */
+    const today0=new Date().toISOString().slice(0,10);
+    if(!rs.some(r=>+r.week>=0&&r.date&&r.date<=today0))return;
     const fin=Math.max(0,...rs.map(r=>+r.soFarEur||0));
     if(fin>0)finished.push({code:c,rows:rs,final:fin,name:rs[0].name||c,year:rs[0].year});
   });
@@ -1914,12 +2014,14 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
 const COLS={
-  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages','ecode'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = official event code, migration event_ecode 30 Jul
+  events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages','ecode',
+    'acode'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = MARKETING code (E0xx, ActiveCampaign); acode = Jesús's ACCOUNTING code — different systems, both needed for time allocation (3 Aug)
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace','perms'], // startDate/workPlace/perms tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
-  weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch'],
+  weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch',
+    'signedEur','signedAcc'], // signed-but-not-yet-invoiced money (migration signed_money_won_details_accounting_code, 3 Aug)
   projects:['id','label','code','kind','sort','active',
     'eventId'], // board-event link for auto-created lines (dispatch_event_lines.sql)
   /* chargeYear = which holiday year these days come out of. Normally the calendar year of
@@ -1957,7 +2059,8 @@ const COLS={
      Server-managed (updated_at/by, deleted) never pushed; createdAt/createdBy are set on
      insert (by the Proposal Builder or the app) and echoed unchanged on edits. */
   spxProps:['id','createdAt','createdBy','responsable','responsableName','responsableEmail','company','companyId','source','origen','salesStatus','contents','valueEur','valueEdited','fechaEnvio','fechaSeguimiento','notas','contacts','fileName','sentLink','isGeneral','mode','active','superseded','supersededBy',
-    'accountType','stage','productPackage','packageTier','reasonForLoss'], // Zoho-mirrored fields (dispatch_spx_zoho.sql) — salesStatus stays derived from stage
+    'accountType','stage','productPackage','packageTier','reasonForLoss',
+    'signedAt','branding','attendeesN','speakersN','stand','brandedItems','wonNotes'], // Zoho-mirrored fields (dispatch_spx_zoho.sql) — salesStatus stays derived from stage; the Won pop-up's answers (3 Aug) live here and feed the event's SPX tab
   spxLines:['id','parentId','eventId','eventKey','eventName','valueEur','valueEdited','contents'],
   spxTargets:['id','eventId','sponsorshipTarget','sponsorshipStretch','pasesTarget','pasesStretch','convByStatus'],
   /* one SPX contract billed across several invoices (Jesús, 24 jul): the contract is
@@ -2642,6 +2745,54 @@ const DB={
      starts life. Falls back to a legacy "E0xx " name prefix while any remain. */
   evCode(ev){if(!ev)return null;const c=(''+(ev.ecode||'')).trim();if(c)return c.toUpperCase();
     const m=/^E\d+\b/.exec(ev.name||'');return m?m[0].toUpperCase():null;},
+  /* ---- the MARKETING code (E0xx). Jesús assigns it in ZOHO; it tags everything in
+     ActiveCampaign AND it is the join every report runs on, so a duplicate is not a
+     cosmetic slip — on 3 Aug E059 and E061 were each on two events and the reporting
+     was silently writing two rows per week for them. Hence a guard and a suggestion.
+     Jesús's ACCOUNTING code is a different system entirely and lives in ev.acode. */
+  ecodesInUse(exceptId){const out={};
+    (this.events||[]).forEach(e=>{if(e.kind==='external'||e.id==exceptId)return;
+      const c=this.evCode(e);if(c&&/^E\d+$/i.test(c))out[c.toUpperCase()]=e;});
+    (this.spxEventReg||[]).forEach(g=>{if(g.deleted)return;
+      const k=(''+(g.eventKey||'')).toUpperCase();if(/^E\d+$/.test(k)&&!out[k])out[k]=g;});
+    (this.weekly||[]).forEach(w=>{const k=(''+(w.eventCode||'')).toUpperCase();
+      if(/^E\d+$/.test(k)&&!out[k])out[k]={name:w.name,_history:true};});
+    return out;},
+  ecodeOwner(code,exceptId){const c=(''+(code||'')).trim().toUpperCase();
+    if(!/^E\d+$/.test(c))return null;const o=this.ecodesInUse(exceptId)[c];
+    return o?(o.name||o.eventKey||'another event'):null;},
+  nextEcode(){const used=this.ecodesInUse(null);let hi=0;
+    Object.keys(used).forEach(k=>{const n=parseInt(k.slice(1),10);if(n>hi)hi=n;});
+    return 'E'+String(hi+1).padStart(3,'0');},
+  /* ---- what sales has SOLD on an event, for the people who have to deliver it ----
+     (Belén, 3 Aug: "a list in each event that allows logistics and sales to exchange
+     information easily so there is no mistake as to what needs to be done")
+     One row per won contract with the answers the Won pop-up collects. Walks
+     timeline event → Money row → SPX registry → the event's own lines, so it works
+     whether the line was keyed by eventKey or by financeId. */
+  wonDealsForEvent(evId){
+    if(!this.spxReady||!this.spxReady()||evId==null)return [];
+    const fins=(this.finance||[]).filter(f=>!f.deleted&&f.eventId==evId).map(f=>f.id);
+    if(!fins.length)return [];
+    const keys={};(this.spxEventReg||[]).forEach(g=>{
+      if(!g.deleted&&fins.indexOf(g.financeId)>=0)keys[(''+g.eventKey).trim().toLowerCase()]=1;});
+    const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
+    const out=[];
+    (this.spxProps||[]).forEach(p=>{
+      if(p.active===false||p.superseded)return;
+      if(!(p.stage==='Won'||p.salesStatus==='Confirmed'))return;
+      let eur=0,hit=false;
+      (this.spxLinesFor(p.id)||[]).forEach(l=>{
+        if(!(keys[nk(l.eventKey)]||(l.eventId!=null&&fins.indexOf(+l.eventId)>=0)))return;
+        hit=true;eur+=(+l.valueEur||0);});
+      if(!hit)return;
+      out.push({id:p.id,company:p.company||'—',owner:p.responsableName||p.responsable||'',
+        eur:eur,signedAt:p.signedAt||null,contents:p.contents||'',
+        branding:p.branding||'',attendeesN:p.attendeesN,speakersN:p.speakersN,
+        stand:p.stand,brandedItems:p.brandedItems||'',notes:p.wonNotes||'',
+        complete:!!(p.branding&&p.attendeesN!=null&&p.speakersN!=null&&p.stand!=null&&p.brandedItems)});
+    });
+    return out.sort((a,b)=>(b.eur||0)-(a.eur||0));},
   evMasterName(ev){return (''+((ev&&ev.name)||'')).replace(/^E\d+\s*/i,'').trim();},
   /* a Money row's display label — cascades from its linked timeline event; a row
      with no link (past editions) keeps its own stored name */

@@ -29,6 +29,23 @@
   .btn:hover{filter:brightness(.97)}
   .chartbox{position:relative;height:340px}
   .chartbox.sm{height:260px}
+  /* the seven control-document charts (Belén, 3 Aug) — two up on a desktop, one up
+     on a narrow screen; every colour via var() so dark mode follows for free */
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px 18px}
+  .cbox{min-width:0}
+  .ctit{font-size:12.5px;font-weight:700;color:var(--charcoal);margin:0 0 1px}
+  .csub{font-size:11px;color:var(--muted);margin:0 0 4px}
+  .chartbox.xs{height:212px}
+  /* a legend that sits BESIDE the chart instead of inside it, so target and stretch
+     stop competing for attention with the events actually being compared */
+  .sidewrap{display:flex;gap:14px;align-items:stretch}
+  .sidewrap .chartbox{flex:1 1 auto;min-width:0}
+  .sidelg{flex:0 0 152px;align-self:center;font-size:11.5px;border-left:1px solid var(--line);padding-left:12px}
+  .sidelg .t{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:7px}
+  .sidelg .r{margin-bottom:8px;color:var(--ink);line-height:1.35}
+  .sidelg .k{display:inline-block;width:20px;border-top:2px dashed;vertical-align:middle;margin-right:6px}
+  .sidelg .v{display:block;font-weight:700;color:var(--charcoal);font-size:12.5px;margin-left:26px}
+  @media(max-width:700px){.sidewrap{display:block}.sidelg{border-left:0;padding-left:0;margin-top:10px}}
   .warn{background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;font-size:13px;padding:12px 16px;border-radius:10px;margin-bottom:12px}
   /* level-1 pills: Reporting / Invoicing */
   .tabs1{display:inline-flex;gap:2px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px;margin:12px 0 0}
@@ -173,7 +190,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=98"></script>
+<script src="store.js?v=99"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -237,6 +254,24 @@ function noChartNote(){if(document.getElementById('nochartnote'))return;
   const w=document.getElementById('warnbox')||document.body;
   w.insertAdjacentHTML('beforeend','<div id="nochartnote" style="color:var(--muted);font-size:12px;margin:4px 0">Charts unavailable — chart library could not load.</div>');}
 function mkChart(id,cfg){if(!window.Chart){noChartNote();return null;}if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id),cfg);}
+/* ---- reference lines vs series (Belén, 3 Aug) ----
+   "I want the target and stretch noted with a legend on the side (and not inside the
+   cloud option); have the cloud of the legend ONLY for the events being compared."
+   Target and Stretch are flat reference lines, not events, so they were making the
+   legend say four things when only two of them were events. A dataset labelled
+   "__t Something" still draws, but is kept OUT of the chart legend and shown in a
+   side legend instead — leaving the legend to mean exactly "the events compared". */
+function noRefLines(item){return !/^__t /.test(item.text||'');}
+function refLabel(s){return (''+(s||'')).replace(/^__t /,'');}
+function sideLegend(id,items){
+  const el=document.getElementById(id);if(!el)return;
+  const rows=(items||[]).filter(Boolean);
+  if(!rows.length){el.innerHTML='';el.style.display='none';return;}
+  el.style.display='';
+  el.innerHTML='<div class="t">Reference</div>'+rows.map(r=>
+    '<div class="r"><span class="k" style="border-color:'+r.color+'"></span>'+esc(r.label)+
+    (r.value?'<span class="v">'+esc(r.value)+'</span>':'')+'</div>').join('');
+}
 /* esc() comes from store.js (full &<>"' escaping) — no local override. */
 /* dd/mm/yyyy for DISPLAY only — stored values and option/input values stay ISO */
 function ddmmyyyy(iso){if(!iso)return'';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso)}
@@ -590,21 +625,27 @@ let repDate=null;
 function repWeekDates(){const today=new Date().toISOString().slice(0,10);
   return [...new Set(DB.weekly.filter(r=>r.date&&r.date<=today).map(r=>r.date))].sort().reverse().slice(0,12);}
 function reportData(d){
-  const wk=DB.weekly.filter(r=>r.date===d&&weekMoney(r)>0).sort((a,b)=>weekMoney(b)-weekMoney(a));
+  const wk=DB.weekly.filter(r=>r.date===d&&(weekMoney(r)>0||+r.signedEur>0)).sort((a,b)=>weekMoney(b)-weekMoney(a));
   const total=wk.reduce((a,r)=>a+weekMoney(r),0);
+  const signed=wk.reduce((a,r)=>a+(+r.signedEur||0),0);
   const ms=meta();
   const ongoing=ms.filter(e=>!e.completed&&(e.final>0||e.target)).map(e=>{
     const wr=e.rows.find(r=>r.date===d),w0=e.rows.find(r=>r.week===0);
+    /* the event's real position = the latest signed accumulation it has on record */
+    let sgn=0;e.rows.forEach(r=>{if(r.signedAcc!=null&&+r.signedAcc>sgn)sgn=+r.signedAcc;});
     return{name:e.name,when:w0?w0.date:e.lastDate,week:wr?wr.week:null,
-      wEur:wr?weekMoney(wr):0,soFar:e.final,target:e.target,
+      wEur:wr?weekMoney(wr):0,wSigned:wr?(+wr.signedEur||0):0,
+      soFar:e.final,signedSoFar:sgn,target:e.target,
       pct:e.target?Math.round(100*e.final/e.target):null,
+      spct:(e.target&&sgn)?Math.round(100*sgn/e.target):null,
       res:finResult({invoiced:e.final,stretch:e.stretch,year:e.year})};
   }).sort((a,b)=>(a.when||'').localeCompare(b.when||''));
-  return{wk,total,ongoing,ms};
+  return{wk,total,signed,ongoing,ms};
 }
 function autoHighlights(d){
-  const {wk,total,ongoing,ms}=reportData(d),hl=[];
-  hl.push('Signed this week: '+eur(total)+(wk.length?' across '+wk.length+' event'+(wk.length===1?'':'s')+'.':'.'));
+  const {wk,total,signed,ongoing,ms}=reportData(d),hl=[];
+  hl.push('Invoiced this week: '+eur(total)+(wk.length?' across '+wk.length+' event'+(wk.length===1?'':'s')+'.':'.'));
+  if(signed)hl.push('Signed this week: '+eur(signed)+' in new contracts — money that is committed but not all of it billable yet.');
   if(wk.length){const top=wk[0];
     const svc=SERVICES.filter(([k])=>+top[k]>0).map(([k,l])=>l.toLowerCase()+' '+eur(+top[k])).join(', ');
     hl.push(top.name+' leads the week with '+eur(weekMoney(top))+(svc?' ('+svc+').':'.'));}
@@ -622,7 +663,7 @@ function autoHighlights(d){
   return hl;
 }
 function reportHtml(d,hlLines){
-  const {wk,total,ongoing}=reportData(d);
+  const {wk,total,signed,ongoing}=reportData(d);
   const num=v=>v==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v)+' €';
   const th='padding:6px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;text-align:left;background:#2B2B2B;color:#fff';
   const thn=th+';text-align:right';
@@ -632,28 +673,37 @@ function reportHtml(d,hlLines){
   h+='<div style="font-size:17px;font-weight:700;color:#2B2B2B;border-left:4px solid #FF4A00;padding-left:10px;margin-bottom:2px">RENMAD events — weekly financial summary</div>';
   h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 12px;padding-left:14px">Week of '+ddmmyyyy(d)+'</div>';
   h+='<div style="font-size:24px;font-weight:800;color:#2B2B2B;margin:0 0 2px">'+num(total)+'</div>';
-  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 14px">signed this week across '+wk.length+' event'+(wk.length===1?'':'s')+'</div>';
+  h+='<div style="font-size:12.5px;color:#7c7c78;margin:0 0 '+(signed?'4px':'14px')+'">invoiced this week across '+wk.length+' event'+(wk.length===1?'':'s')+'</div>';
+  if(signed)h+='<div style="font-size:12.5px;color:#3E8C28;margin:0 0 14px"><b>'+num(signed)+'</b> signed in new contracts this week — committed, not all of it billable yet</div>';
   if(hlLines.length){h+='<div style="font-size:13px;font-weight:700;color:#2B2B2B;margin:0 0 6px">Highlights</div><ul style="margin:0 0 16px;padding-left:20px">'
     +hlLines.map(l=>'<li style="font-size:13px;color:#3a3a3a;margin-bottom:4px">'+l+'</li>').join('')+'</ul>';}
   h+='<div style="font-size:13px;font-weight:700;color:#2B2B2B;margin:0 0 6px">Ongoing events</div>';
   h+='<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%">';
-  h+='<tr><th style="'+th+'">Event</th><th style="'+th+'">Event date</th><th style="'+thn+'">This week</th><th style="'+thn+'">Total so far</th><th style="'+thn+'">Target</th><th style="'+thn+'">% of target</th><th style="'+th+'">Status</th></tr>';
+  h+='<tr><th style="'+th+'">Event</th><th style="'+th+'">Event date</th><th style="'+thn+'">This week</th><th style="'+thn+'">Invoiced</th><th style="'+thn+'">Signed</th><th style="'+thn+'">Target</th><th style="'+thn+'">% of target</th><th style="'+th+'">Status</th></tr>';
   ongoing.forEach(o=>{
     const st=o.res?('<span style="color:'+o.res.color+';font-weight:700">'+o.res.label+'</span>'):'<span style="color:#b4b1a8">pending</span>';
+    /* two money columns, deliberately: invoiced is where we officially are, signed
+       is where we really are — the second is usually the bigger, truer number */
     h+='<tr><td style="'+td+';font-weight:600;color:#2B2B2B">'+o.name+'</td><td style="'+td+'">'+ddmmyyyy(o.when)+'</td>'
       +'<td style="'+tdn+(o.wEur?';color:#FF4A00;font-weight:700':'')+'">'+(o.wEur?num(o.wEur):'—')+'</td>'
-      +'<td style="'+tdn+'">'+num(o.soFar)+'</td><td style="'+tdn+'">'+num(o.target)+'</td>'
-      +'<td style="'+tdn+'">'+(o.pct!=null?o.pct+' %':'—')+'</td><td style="'+td+'">'+st+'</td></tr>';});
-  if(!ongoing.length)h+='<tr><td colspan="7" style="'+td+';font-style:italic;color:#7c7c78">No ongoing events with figures.</td></tr>';
+      +'<td style="'+tdn+'">'+num(o.soFar)+'</td>'
+      +'<td style="'+tdn+(o.signedSoFar>o.soFar?';color:#3E8C28;font-weight:700':'')+'">'+(o.signedSoFar?num(o.signedSoFar):'—')+'</td>'
+      +'<td style="'+tdn+'">'+num(o.target)+'</td>'
+      +'<td style="'+tdn+'">'+(o.pct!=null?o.pct+' %'+(o.spct!=null&&o.spct!==o.pct?' <span style="color:#3E8C28">('+o.spct+' % signed)</span>':''):'—')+'</td><td style="'+td+'">'+st+'</td></tr>';});
+  if(!ongoing.length)h+='<tr><td colspan="8" style="'+td+';font-style:italic;color:#7c7c78">No ongoing events with figures.</td></tr>';
   h+='</table>';
   h+='<div style="font-size:11px;color:#a9a79f;margin-top:12px">Full detail in the <a href="https://bg-ata.github.io/dispatch-center/dashboard.html" style="color:#FF4A00">Dispatch Center € Dashboard</a>.</div></div>';
   return h;
 }
 function reportPlain(d,hlLines){
-  const {wk,total,ongoing}=reportData(d);
+  const {wk,total,signed,ongoing}=reportData(d);
   let t='RENMAD events — weekly financial summary · week of '+ddmmyyyy(d)+'\n\n';
-  t+='Signed this week: '+eur(total)+' ('+wk.length+' events)\n\nHighlights:\n'+hlLines.map(l=>' • '+l).join('\n')+'\n\nOngoing events:\n';
-  ongoing.forEach(o=>{t+=' - '+o.name+' ('+ddmmyyyy(o.when)+'): this week '+(o.wEur?eur(o.wEur):'—')+' · so far '+eur(o.soFar)+' / target '+eur(o.target)+(o.pct!=null?' ('+o.pct+' %)':'')+'\n';});
+  t+='Invoiced this week: '+eur(total)+' ('+wk.length+' events)\n';
+  if(signed)t+='Signed this week: '+eur(signed)+' in new contracts\n';
+  t+='\nHighlights:\n'+hlLines.map(l=>' • '+l).join('\n')+'\n\nOngoing events:\n';
+  ongoing.forEach(o=>{t+=' - '+o.name+' ('+ddmmyyyy(o.when)+'): this week '+(o.wEur?eur(o.wEur):'—')+
+    ' · invoiced '+eur(o.soFar)+(o.signedSoFar?' · signed '+eur(o.signedSoFar):'')+
+    ' / target '+eur(o.target)+(o.pct!=null?' ('+o.pct+' %)':'')+'\n';});
   return t;
 }
 function openReport(){
@@ -714,29 +764,34 @@ function renderWeek(){
   const withMoney=dates.filter(d=>DB.weekly.some(r=>r.date===d&&weekMoney(r)>0));
   if(!weekDate)weekDate=withMoney[0]||dates[0];
   const canF=DB.canFinance();
-  const rows=DB.weekly.filter(r=>r.date===weekDate&&weekMoney(r)>0);
+  const rows=DB.weekly.filter(r=>r.date===weekDate&&(weekMoney(r)>0||+r.signedEur>0));
   const total=rows.reduce((a,r)=>a+weekMoney(r),0);
+  const signed=rows.reduce((a,r)=>a+(+r.signedEur||0),0);
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Week of <select id="wkSel" style="font-size:13px"></select></h3>'+
-    '<p class="hint">Only what came in THIS week — which events, which services — and where each event stands with the new takings.</p>'+
-    '<div class="bigeur">'+eur(total)+'</div><p class="hint">signed across '+rows.length+' event'+(rows.length===1?'':'s')+' this week</p>'+
+    '<p class="hint">Only what moved THIS week — which events, which services — and where each event stands with the new takings.</p>'+
+    '<div class="bigeur">'+eur(total)+'</div><p class="hint">invoiced across '+rows.length+' event'+(rows.length===1?'':'s')+' this week'+
+    (signed?' &nbsp;·&nbsp; <b style="color:#3E8C28">'+eur(signed)+'</b> signed in new contracts (not all of it billable yet)':'')+'</p>'+
     '<div class="wstbl"><table id="wstbl"></table></div></div>'+
     weekAnalysis()+
     (canF?'<div class="panel"><h3>Update the data</h3><p class="hint">Drop the weekly control Excel — only changed weeks are written. Or <button class="btn" id="wkExport" style="font-size:12px;padding:3px 9px">⬇ Export the current data</button> in the same layout, so it re-imports cleanly.</p><div id="drop">📥 Drop "Events Weekly - Control Project.xlsx" here (or click to choose)</div><div id="impmsg"></div><input id="file" type="file" accept=".xlsx" style="display:none"></div>':'');
   const sel=document.getElementById('wkSel');
   sel.innerHTML=dates.slice(0,26).map(d=>'<option '+(d===weekDate?'selected':'')+' value="'+d+'">'+ddmmyyyy(d)+(withMoney.includes(d)?'':' · quiet')+'</option>').join('');
   sel.onchange=()=>{weekDate=sel.value;renderWeek();};
-  let h='<tr><th>Event</th><th>Week</th>'+SERVICES.map(s=>'<th class="num">'+s[1]+'</th>').join('')+'<th class="num">Week total</th><th>Status with new takings</th></tr>';
-  if(!rows.length)h+='<tr><td colspan="9" class="wsempty">A quiet week — no money recorded.</td></tr>';
-  rows.sort((a,b)=>weekMoney(b)-weekMoney(a)).forEach(r=>{
+  let h='<tr><th>Event</th><th>Week</th>'+SERVICES.map(s=>'<th class="num">'+s[1]+'</th>').join('')+
+    '<th class="num">Week total</th><th class="num">Signed</th><th>Status with new takings</th></tr>';
+  if(!rows.length)h+='<tr><td colspan="11" class="wsempty">A quiet week — nothing invoiced and nothing signed.</td></tr>';
+  rows.sort((a,b)=>(weekMoney(b)+(+b.signedEur||0))-(weekMoney(a)+(+a.signedEur||0))).forEach(r=>{
     const st=finResult({invoiced:r.soFarEur,stretch:r.stretch,year:r.year});
     const pct=(r.target&&r.soFarEur!=null)?Math.round(100*r.soFarEur/r.target)+' % of target':'no target';
     h+='<tr><td class="evname">'+(r.name||r.eventCode)+'</td><td>W'+(r.week<0?r.week:'+'+r.week)+'</td>'+
       SERVICES.map(([k,l,cnt])=>'<td class="num">'+(+r[k]?(eur(+r[k])+(cnt&&r[cnt]?' <span style="color:#b4b1a8;font-size:11px">('+r[cnt]+')</span>':'')):'')+'</td>').join('')+
       '<td class="num"><b>'+eur(weekMoney(r))+'</b></td>'+
+      '<td class="num"'+(+r.signedEur?' style="color:#3E8C28;font-weight:700"':'')+'>'+(+r.signedEur?eur(+r.signedEur):'')+'</td>'+
       '<td>'+eur(r.soFarEur)+' so far · '+pct+' '+chipHtml(st)+'</td></tr>';
   });
-  h+='<tr class="total"><td>TOTAL</td><td></td>'+SERVICES.map(([k])=>'<td class="num">'+(rows.reduce((a,r)=>a+(+r[k]||0),0)?eur(rows.reduce((a,r)=>a+(+r[k]||0),0)):'')+'</td>').join('')+'<td class="num">'+eur(total)+'</td><td></td></tr>';
+  h+='<tr class="total"><td>TOTAL</td><td></td>'+SERVICES.map(([k])=>'<td class="num">'+(rows.reduce((a,r)=>a+(+r[k]||0),0)?eur(rows.reduce((a,r)=>a+(+r[k]||0),0)):'')+'</td>').join('')+
+    '<td class="num">'+eur(total)+'</td><td class="num">'+(signed?eur(signed):'')+'</td><td></td></tr>';
   document.getElementById('wstbl').innerHTML=h;
   wireImport();
 }
@@ -752,14 +807,88 @@ function renderDetail(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   ensureHero(ms);
   const ev=ms.find(e=>e.code===heroCode);
+  const prev=prevEdition(ms,ev);
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Where it should be — '+heroSelHtml(ms,'heroSel')+'</h3>'+
-    '<p class="hint" id="benchHint"></p><div class="chartbox"><canvas id="wkchart"></canvas></div></div>'+
+    '<p class="hint" id="benchHint"></p>'+
+    '<div class="sidewrap"><div class="chartbox"><canvas id="wkchart"></canvas></div>'+
+    '<div class="sidelg" id="wkLg"></div></div></div>'+
+    '<div class="panel"><h3>The seven charts'+(prev?' — against '+esc(prev.name):'')+'</h3>'+
+    '<p class="hint">'+(prev
+      ? 'Your control document, live: each week of '+esc(ev.name)+' beside '+esc(prev.name)+' at the same point in its own countdown.'
+      : 'Your control document, live. No previous edition of this event is in the data yet, so there is nothing to compare against — the bars are this edition alone.')+
+    '</p><div class="cgrid" id="cgrid"></div></div>'+
     '<div class="panel"><h3>Week by week — the numbers</h3>'+
     '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     detailAnalysis(ms,ev);
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderDetail();};
-  drawWeekChart(ms,ev);drawWeekTable(ev);
+  drawWeekChart(ms,ev);drawWkCharts(ev,prev);drawWeekTable(ev);
+}
+/* the previous edition of the same event (Datacenters Italia 26 → …25). Same
+   family name, earlier year, and it must actually have figures to compare. */
+function prevEdition(ms,ev){
+  if(!ev)return null;
+  let best=null;
+  ms.forEach(e=>{
+    if(e.code===ev.code||e.fam!==ev.fam)return;
+    if(ev.year&&e.year&&+e.year>=+ev.year)return;
+    if(!(e.final>0||e.rows.some(r=>+r.topicLeads>0||+r.eventLeads>0)))return;
+    if(!best||(+e.year||0)>(+best.year||0))best=e;
+  });
+  return best;
+}
+/* ---- the seven charts from her control document ----
+   (Belén, 3 Aug: "I really need that the week by week also has the following charts
+   attached, as it was the case in the original document")
+   Same x-axis as everything else — the W-countdown — so an edition held in a
+   different month still lines up with its predecessor week for week.
+   The Acumulado chart carries BOTH money lines: invoiced (official) and signed
+   (real), because sponsorship is signed long before it can be invoiced. */
+function drawWkCharts(ev,prev){
+  const box=document.getElementById('cgrid');if(!box)return;
+  const CUR='#FF4A00',PRV='#9a978e',SIG='#3E8C28';
+  const series=(e,k)=>WEEKS.map(w=>{const r=e?e.rows.find(x=>+x.week===w):null;
+    return (r&&r[k]!=null&&r[k]!=='')?+r[k]:null;});
+  const CH=[
+    {id:'c_tik', t:'Tickets (Euros)',      s:'sold each week',            k:'ticketsEur', type:'bar'},
+    {id:'c_spo', t:'Sponsors (Euros)',     s:'invoiced each week',        k:'sponsorsEur',type:'bar'},
+    {id:'c_tka', t:'Tickets Acc. (Euros)', s:'tickets, piling up',        k:'ticketsAcc', type:'bar'},
+    {id:'c_spa', t:'SPX Acc. (Euros)',     s:'sponsorship, piling up',    k:'spxAcc',     type:'bar'},
+    {id:'c_int', t:'👍 Interesados',        s:'topic leads',               k:'topicLeads', type:'line',money:false},
+    {id:'c_age', t:'💰 Agenda',             s:'event leads',               k:'eventLeads', type:'line',money:false},
+    {id:'c_acc', t:'Acumulado (Euros)',    s:'official vs real',          k:'soFarEur',   type:'line',both:true}
+  ];
+  box.innerHTML=CH.map(c=>'<div class="cbox"><div class="ctit">'+c.t+'</div>'+
+    '<div class="csub">'+c.s+'</div><div class="chartbox xs"><canvas id="'+c.id+'"></canvas></div></div>').join('');
+  const fmtV=money=>(money===false
+    ?(v=>new Intl.NumberFormat('es-ES').format(v))
+    :(v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)));
+  CH.forEach(c=>{
+    const money=c.money!==false;
+    const ds=[];
+    if(c.both){
+      /* the point of the whole exercise: where we officially are, and where we really are */
+      ds.push({label:ev.name+' — invoiced',data:series(ev,'soFarEur'),
+        borderColor:CUR,backgroundColor:CUR,borderWidth:3,pointRadius:0,tension:.25,spanGaps:true});
+      if(ev.rows.some(r=>r.signedAcc!=null))
+        ds.push({label:ev.name+' — signed',data:series(ev,'signedAcc'),
+          borderColor:SIG,backgroundColor:SIG,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,3]});
+      if(prev)ds.push({label:prev.name,data:series(prev,'soFarEur'),
+        borderColor:PRV,backgroundColor:PRV,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});
+    }else{
+      if(prev)ds.push({label:prev.name,data:series(prev,c.k),
+        borderColor:PRV,backgroundColor:c.type==='bar'?PRV:PRV,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});
+      ds.push({label:ev.name,data:series(ev,c.k),
+        borderColor:CUR,backgroundColor:CUR,borderWidth:c.type==='bar'?1:2.5,pointRadius:0,tension:.25,spanGaps:true});
+    }
+    mkChart(c.id,{type:c.type,data:{labels:WLAB,datasets:ds},
+      options:{maintainAspectRatio:false,animation:false,
+        interaction:{mode:'index',intersect:false},
+        plugins:{legend:{labels:{boxWidth:11,font:{size:10},padding:8}},
+          tooltip:{callbacks:{label:x=>x.dataset.label+': '+(money?eur(x.parsed.y):new Intl.NumberFormat('es-ES').format(x.parsed.y))}}},
+        scales:{y:{beginAtZero:true,ticks:{font:{size:9},callback:fmtV(c.money)}},
+          x:{ticks:{font:{size:8},maxRotation:0,autoSkip:true,maxTicksLimit:13}}}}});
+  });
 }
 /* the benchmark: how events USUALLY behave (median trajectory of completed events),
    scaled to THIS event's target — so people see where they should be to hit / beat target */
@@ -768,10 +897,23 @@ function drawWeekChart(ms,ev){
   const actual=curve(ev);
   const benchT=ev.target?shape.map(s=>s==null?null:+(ev.target*s).toFixed(0)):null;
   const benchS=ev.stretch?shape.map(s=>s==null?null:+(ev.stretch*s).toFixed(0)):null;
-  const ds=[{label:ev.name+' — actual',data:actual,borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25,spanGaps:true}];
+  const signed=WEEKS.map(w=>{const r=ev.rows.find(x=>+x.week===w);
+    return (r&&r.signedAcc!=null&&r.signedAcc!=='')?+r.signedAcc:null;});
+  const hasSigned=signed.some(v=>v!=null);
+  const ds=[{label:ev.name+' — invoiced',data:actual,borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,tension:.25,spanGaps:true}];
+  /* signed contracts sit ABOVE invoiced whenever money is committed but not yet
+     billable — the gap is the money the old figures hid (Belén, 3 Aug) */
+  if(hasSigned)ds.push({label:ev.name+' — signed',data:signed,borderColor:'#3E8C28',backgroundColor:'#3E8C28',borderWidth:2,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,3]});
   if(benchT)ds.push({label:'Benchmark to target',data:benchT,borderColor:'#8A8F98',borderWidth:2,pointRadius:0,tension:.25,borderDash:[7,4],spanGaps:true});
-  if(benchS)ds.push({label:'Benchmark to stretch',data:benchS,borderColor:'#3E8C28',borderWidth:1.5,pointRadius:0,tension:.25,borderDash:[2,3],spanGaps:true});
-  if(ev.target)ds.push({label:'Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  if(benchS)ds.push({label:'Benchmark to stretch',data:benchS,borderColor:'#B0B6BE',borderWidth:1.5,pointRadius:0,tension:.25,borderDash:[2,3],spanGaps:true});
+  /* Target and Stretch are FLAT reference lines, not series — they go in the side
+     legend so they stop competing with the real lines inside the chart */
+  if(ev.target)ds.push({label:'__t Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  if(ev.stretch)ds.push({label:'__t Stretch',data:WEEKS.map(()=>ev.stretch),borderColor:'#3E8C28',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  sideLegend('wkLg',[
+    ev.target?{label:'Target',value:eur(ev.target),color:'#2B2B2B'}:null,
+    ev.stretch?{label:'Stretch',value:eur(ev.stretch),color:'#3E8C28'}:null
+  ]);
   const lines=[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}];
   const today=new Date().toISOString().slice(0,10);
   const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
@@ -784,8 +926,8 @@ function drawWeekChart(ms,ev){
   else hint.textContent='Set a target for this event (Year status → add figures) to see the benchmark line.';
   mkChart('wkchart',{type:'line',data:{labels:WLAB,datasets:ds},options:{maintainAspectRatio:false,animation:false,
     interaction:{mode:'index',intersect:false},
-    plugins:{legend:{labels:{boxWidth:14,font:{size:11}}},vlines:{lines:lines},
-      tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    plugins:{legend:{labels:{boxWidth:14,font:{size:11},filter:noRefLines}},vlines:{lines:lines},
+      tooltip:{callbacks:{label:c=>refLabel(c.dataset.label)+': '+eur(c.parsed.y)}}},
     scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
 function drawWeekTable(ev){
@@ -824,7 +966,9 @@ function renderCompare(){
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Pacing — '+heroSelHtml(ms,'heroSel')+' &nbsp;<select id="cmpSel" style="font-size:12px;color:#7c7c78"></select></h3>'+
     '<div class="cmpbar" id="cmpbar"></div>'+
-    '<p class="hint" id="heroHint"></p><div class="chartbox"><canvas id="hero"></canvas></div>'+
+    '<p class="hint" id="heroHint"></p>'+
+    '<div class="sidewrap"><div class="chartbox"><canvas id="hero"></canvas></div>'+
+    '<div class="sidelg" id="heroLg"></div></div>'+
     '<h3 style="margin-top:16px">Money composition <span class="seg" id="compSeg"></span></h3><p class="hint" id="compHint"></p>'+
     '<div class="chartbox sm"><canvas id="comp"></canvas></div></div>'+
     compareAnalysis(ms,ms.find(e=>e.code===heroCode));
@@ -846,8 +990,15 @@ function drawHero(ms){
   sibs.forEach((s,i)=>ds.push({label:s.name,data:curve(s),borderColor:greys[i%2],backgroundColor:greys[i%2],borderWidth:1.6,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,4]}));
   cmpCodes.forEach((c,i)=>{const s=ms.find(e=>e.code===c);if(!s)return;
     ds.push({label:s.name,data:curve(s),borderColor:PAL[i%PAL.length],backgroundColor:PAL[i%PAL.length],borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});});
-  if(ev.target)ds.push({label:'Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
-  if(ev.stretch)ds.push({label:'Stretch',data:WEEKS.map(()=>ev.stretch),borderColor:'#3E8C28',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  /* Target and Stretch belong to the HERO event only — they are flat reference lines,
+     not events, so they move to the side legend and the chart legend is left saying
+     exactly one thing: which events are being compared (Belén, 3 Aug) */
+  if(ev.target)ds.push({label:'__t Target',data:WEEKS.map(()=>ev.target),borderColor:'#2B2B2B',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  if(ev.stretch)ds.push({label:'__t Stretch',data:WEEKS.map(()=>ev.stretch),borderColor:'#3E8C28',borderWidth:1,pointRadius:0,borderDash:[2,3]});
+  sideLegend('heroLg',[
+    ev.target?{label:'Target',value:eur(ev.target),color:'#2B2B2B'}:null,
+    ev.stretch?{label:'Stretch',value:eur(ev.stretch),color:'#3E8C28'}:null
+  ]);
   const lines=[{at:-16,label:'LD',color:'#C9B3E8'},{at:-12,label:'SE',color:'#B39BD8'},{at:-8,label:'EB',color:'#9D82C8'},{at:-4,label:'LC',color:'#8E5BC9'}];
   const today=new Date().toISOString().slice(0,10);
   const cur=ev.rows.find(r=>r.date&&r.date<=today&&addDays(ymd(r.date),7).toISOString().slice(0,10)>today);
@@ -860,8 +1011,8 @@ function drawHero(ms){
   document.getElementById('heroHint').textContent=hint.join('  ·  ')||('Final: '+eur(ev.final));
   mkChart('hero',{type:'line',data:{labels:WLAB,datasets:ds},options:{maintainAspectRatio:false,animation:false,
     interaction:{mode:'index',intersect:false},
-    plugins:{legend:{labels:{boxWidth:14,font:{size:11}}},vlines:{lines:lines},
-      tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},
+    plugins:{legend:{labels:{boxWidth:14,font:{size:11},filter:noRefLines}},vlines:{lines:lines},
+      tooltip:{callbacks:{label:c=>refLabel(c.dataset.label)+': '+eur(c.parsed.y)}}},
     scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}},x:{ticks:{font:{size:9},maxRotation:0,autoSkip:true}}}}});
 }
 function drawComposition(ms){

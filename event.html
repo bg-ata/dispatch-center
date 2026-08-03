@@ -94,11 +94,12 @@
   td input,td select{font-size:12px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;width:100%}
   td .del{border:none;background:none;color:#c9c6bd;font-size:14px;cursor:pointer}
   .empty{color:var(--muted);font-size:12px;font-style:italic;padding:4px 2px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 </style>
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=98"></script>
+<script src="store.js?v=99"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
@@ -227,7 +228,10 @@ function render(){
     (function(){const f=DB.financeFor(ev.id);if(!f)return'';const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});const r=finResult(fx);
       return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
       (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
-    '<div class="etabs"><button class="on" data-et="time">Timeline</button>'+(evKind(ev)!=='external'?'<button data-et="eur">€ Results</button><button data-et="imp">Impact</button><button data-et="del">Delegates</button>':'')+'</div>'+
+    '<div class="etabs"><button class="on" data-et="time">Timeline</button>'+(evKind(ev)!=='external'?'<button data-et="eur">€ Results</button>'+
+      /* rulebook: no tab ships empty — the SPX tab appears once something is sold */
+      (wonDeals().length?'<button data-et="spx">💼 SPX</button>':'')+
+      '<button data-et="imp">Impact</button><button data-et="del">Delegates</button>':'')+'</div>'+
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
@@ -237,7 +241,7 @@ function render(){
       '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
       '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
-    '</div><div id="sec-eur" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>';
+    '</div><div id="sec-eur" style="display:none"></div><div id="sec-spx" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>';
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
     curTab=b.dataset.et;
     /* hash-routed (29 Jul UX round) — keeps ?id= intact, makes tabs linkable */
@@ -245,9 +249,11 @@ function render(){
     document.querySelectorAll('[data-et]').forEach(x=>x.classList.toggle('on',x===b));
     document.getElementById('sec-time').style.display=b.dataset.et==='time'?'':'none';
     document.getElementById('sec-eur').style.display=b.dataset.et==='eur'?'':'none';
+    document.getElementById('sec-spx').style.display=b.dataset.et==='spx'?'':'none';
     document.getElementById('sec-imp').style.display=b.dataset.et==='imp'?'':'none';
     document.getElementById('sec-del').style.display=b.dataset.et==='del'?'':'none';
     if(b.dataset.et==='eur')renderEuroTab();
+    if(b.dataset.et==='spx')renderSpxTab();
     if(b.dataset.et==='imp')renderImpactTab();
     if(b.dataset.et==='del')renderDelegatesTab();
   });
@@ -256,10 +262,59 @@ function render(){
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
   // deep link: #eur/#imp/#del opens that tab directly (29 Jul UX round)
   const hh=location.hash.replace('#','');
-  if(curTab==='time'&&['eur','imp','del'].includes(hh))curTab=hh;
+  if(curTab==='time'&&['eur','spx','imp','del'].includes(hh))curTab=hh;
   // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
   if(curTab!=='time'){const b=document.querySelector('[data-et="'+curTab+'"]');if(b)b.click();}
 }
+
+/* ---- 💼 SPX tab: what sales has sold, for the people who have to deliver it ----
+   (Belén, 3 Aug 2026: "I want this info extrapolated into an SPX tab inside each of
+   the events — so make sure the events' amounts are all clear… a list in each event
+   that allows logistics and sales to exchange information easily so there is no
+   mistake as to what needs to be done.")
+   One row per signed contract, with the answers the Won dialog collects on the SPX
+   board. Read-only here on purpose: the deal is the record and spx.html is where it
+   is edited, so the two can never disagree (rulebook: one concept, one home, N views). */
+function wonDeals(){try{return DB.wonDealsForEvent(ev.id)||[];}catch(e){return [];}}
+function renderSpxTab(){
+  const S=document.getElementById('sec-spx');
+  const deals=wonDeals();
+  if(!deals.length){S.innerHTML='<div class="panel"><span class="empty">Nothing signed for this event yet.</span></div>';return;}
+  const money=v=>v==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v)+' €';
+  const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
+  const gaps=deals.filter(d=>!d.complete).length;
+  const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
+  const spk=deals.reduce((a,d)=>a+(+d.speakersN||0),0);
+  const stands=deals.filter(d=>d.stand).length;
+  const yn=v=>v==null?'<span class="empty">—</span>':(v?'<b>Yes</b>':'No');
+  const txt=v=>v?esc(v):'<span class="empty">—</span>';
+  let h='<div class="panel"><h3>Signed sponsors <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
+    ' · '+money(tot)+' committed</span></h3>'+
+    '<p class="hint">What sales has sold and what logistics has to deliver. Totals below are what the event owes its sponsors: '+
+    '<b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'. '+
+    'Edit any row on the <a href="spx.html">SPX board</a>.</p>';
+  if(gaps)h+='<p class="hint" style="color:var(--orange)"><b>'+gaps+' contract'+(gaps===1?' is':'s are')+
+    ' missing delivery details.</b> Sales fills them in on the board — until then logistics is working blind on '+(gaps===1?'it':'them')+'.</p>';
+  h+='<div style="overflow-x:auto"><table>'+
+    '<tr><th>Sponsor</th><th class="num">Amount</th><th>Signed</th><th>Branding</th><th class="num">Att.</th><th class="num">Spk.</th><th>Stand</th><th>Branded items</th><th>Notes</th><th>Sales</th></tr>';
+  deals.forEach(d=>{
+    h+='<tr'+(d.complete?'':' style="background:#FFF6EF"')+'>'+
+      '<td><b>'+esc(d.company)+'</b></td>'+
+      '<td class="num">'+money(d.eur)+'</td>'+
+      '<td>'+(d.signedAt?esc(ddmmyyyy(d.signedAt)):'<span class="empty">—</span>')+'</td>'+
+      '<td>'+txt(d.branding)+'</td>'+
+      '<td class="num">'+(d.attendeesN==null?'<span class="empty">—</span>':d.attendeesN)+'</td>'+
+      '<td class="num">'+(d.speakersN==null?'<span class="empty">—</span>':d.speakersN)+'</td>'+
+      '<td>'+yn(d.stand)+'</td>'+
+      '<td>'+txt(d.brandedItems)+'</td>'+
+      '<td>'+txt(d.notes)+'</td>'+
+      '<td>'+esc(d.owner||'')+'</td></tr>';
+  });
+  h+='<tr style="font-weight:700;border-top:2px solid var(--line)"><td>TOTAL</td><td class="num">'+money(tot)+
+    '</td><td></td><td></td><td class="num">'+att+'</td><td class="num">'+spk+'</td><td>'+stands+'</td><td></td><td></td><td></td></tr>';
+  S.innerHTML=h+'</table></div></div>';
+}
+function ddmmyyyy(iso){const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 
 /* ---- € Results tab: this event's finance summary + weekly money ---- */
 function evCode(){return DB.evCode(ev);} // ecode field first, legacy name prefix as fallback

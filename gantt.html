@@ -101,7 +101,8 @@
   <h3 id="m_title">Edit event</h3>
   <div class="frm">
     <label class="full">Event name — the ONE true name: reporting, SPX, invoicing items and hour projects all cascade from it<input type="text" id="m_name"></label>
-    <label>Event code (E0xx)<input type="text" id="m_ecode" placeholder="e.g. E062 — Jesús assigns it in ZOHO"></label>
+    <label>Marketing code (E0xx)<input type="text" id="m_ecode" placeholder="tags the event in ActiveCampaign"></label>
+    <label>Accounting code<input type="text" id="m_acode" placeholder="Jesús's code — a different system"></label>
     <label>Topic<select id="m_topic"></select></label>
     <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
     <label id="m_durwrap" style="display:none">Duration<span style="display:flex;gap:5px;align-items:center"><input type="number" id="m_dur_n" min="1" step="1" value="2" style="width:56px"><select id="m_dur_u"><option value="half">Half day</option><option value="day">Days</option><option value="week" selected>Weeks</option><option value="month">Months</option><option value="year">Years</option></select></span></label>
@@ -121,7 +122,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=98"></script>
+<script src="store.js?v=99"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -284,8 +285,16 @@ function openModal(id){editingId=id;
   const defDate=modalIsExt?toISO(addDays(monday(new Date()),8*7)):'2027-09-01';
   const ev=id?DB.event(id):{name:'',topic:'Renewables / AI',pm:'',lead:'',sales:'',city:'',country:'Spain',date:defDate,days:2};
   document.getElementById('m_title').textContent=(id?'Edit ':'Add ')+(modalIsExt?'project':'event');
-  m_name.value=ev.name;m_ecode.value=ev.ecode||'';fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
+  m_name.value=ev.name;m_ecode.value=ev.ecode||'';
+  document.getElementById('m_acode').value=ev.acode||'';
+  fillSel('m_topic',TOPICS,ev.topic);fillSel('m_country',COUNTRIES,ev.country);
   document.getElementById('m_ecode').parentElement.style.display=modalIsExt?'none':''; // projects have no event code
+  document.getElementById('m_acode').parentElement.style.display=modalIsExt?'none':'';
+  /* a NEW event opens with the next free E-code already filled in (Belén, 3 Aug:
+     "when a new event is added, could you suggest the next one up?"). Suggestion
+     only — Jesús still owns the real number in ZOHO, so it stays editable and the
+     duplicate guard below is what actually protects the reporting. */
+  if(!editingId&&!modalIsExt&&!m_ecode.value)m_ecode.value=DB.nextEcode();
   m_days.value=ev.days||2;m_date.value=ev.date;m_city.value=ev.city||'';m_pm.value=ev.pm||'';m_lead.value=ev.lead||'';m_sales.value=ev.sales||'';
   /* RENMAD events = 1/2-day length; external projects = free duration (half a day → years) */
   document.getElementById('m_lenwrap').style.display=modalIsExt?'none':'';
@@ -326,8 +335,19 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
   if(!modalIsExt){
     const code=m_ecode.value.trim().toUpperCase();
     if(code&&!/^E\d+$/.test(code)){alert('"'+code+'" doesn’t look like an event code — ZOHO codes are E + digits (e.g. E062).');return;}
+    /* THE DUPLICATE GUARD. On 3 Aug E059 and E061 were each sitting on two events;
+       because every report joins on this code, the weekly engine was writing two
+       rows a week for them and the money split across phantom editions. Nothing
+       stopped it being typed twice, so now something does. */
+    if(code){
+      const owner=DB.ecodeOwner(code,editingId||null);
+      if(owner){alert(code+' is already the marketing code for “'+owner+'”.\n\nAn E-code can only belong to one event — it is what tags ActiveCampaign and what every report joins on, so a duplicate splits the event\'s money in two.\n\nNext free code: '+DB.nextEcode());return;}
+    }
     d.ecode=code||null;
-  }else d.ecode=null;
+    /* Jesús's accounting code is a SEPARATE system from the marketing E-code —
+       time allocation needs both, so it is stored, not derived (Belén, 3 Aug). */
+    d.acode=document.getElementById('m_acode').value.trim()||null;
+  }else{d.ecode=null;d.acode=null;}
   if(modalIsExt){
     const sel=Array.prototype.slice.call(document.querySelectorAll('.m_lane:checked')).map(c=>c.value);
     if(!sel.length){alert('Pick at least one timeline — a project needs somewhere to live.');return;}

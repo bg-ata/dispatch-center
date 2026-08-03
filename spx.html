@@ -111,6 +111,23 @@
   .btn{padding:7px 13px;border:1px solid var(--line);background:#fff;border-radius:8px;font:inherit;cursor:pointer;color:var(--ink)}
   .btn.p{background:var(--orange);color:#fff;border-color:var(--orange);font-weight:600}
   .ro-note{font-size:12px;color:var(--muted);font-style:italic}
+  /* ---- the Won dialog (Belén, 3 Aug) ----
+     Deliberately a MODAL and not a nag: it fires once, at the one moment the answers
+     are actually known, and everything it asks is something logistics cannot deliver
+     the stand without. Each hint sits IN its field, never in a second pop-up. */
+  #wov{position:fixed;inset:0;background:rgba(20,25,28,.5);z-index:9995;display:none;
+       align-items:center;justify-content:center;padding:18px} #wov.on{display:flex}
+  .wdlg{background:var(--bg);border-radius:14px;width:520px;max-width:96vw;max-height:92vh;
+        overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .wdlg .wh{background:var(--charcoal);color:#fff;padding:16px 20px;border-radius:14px 14px 0 0}
+  .wdlg .wh h3{margin:0;font-size:18px} .wdlg .wh p{margin:3px 0 0;font-size:12.5px;color:#c3ccd0}
+  .wdlg .wb{padding:15px 20px}
+  .wdlg .wf{padding:12px 20px 16px;display:flex;gap:9px;justify-content:flex-end;align-items:center}
+  .wdlg .req{color:var(--orange)}
+  .werr{color:var(--red);font-size:12px;margin-right:auto;display:none}
+  .werr.on{display:block}
+  .wrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:520px){.wrow{grid-template-columns:1fr}}
   .lnk{background:none;border:none;color:var(--blue);cursor:pointer;font:inherit;font-size:12px;text-decoration:underline;padding:0}
 </style>
 </head>
@@ -127,8 +144,44 @@
   <div id="app"></div>
 </div>
 <div id="ov" onclick="if(event.target===this)closePanel()"><div class="panel" id="panel"></div></div>
+<div id="wov"><div class="wdlg">
+  <div class="wh"><h3>Contract signed 🎉</h3><p id="w_sub"></p></div>
+  <div class="wb">
+    <div class="sec">
+      <h5>The contract</h5>
+      <div class="wrow">
+        <div class="fld"><label>Date signed <span class="req">*</span></label><input id="w_date" type="date"></div>
+        <div class="fld" id="w_legalwrap"><label>Full legal name (razón social)</label>
+          <input id="w_legal" placeholder="exactly as it appears on the contract — invoicing bills this"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h5>What we have sold them</h5>
+      <p class="ro-note" style="margin:-4px 0 10px">Logistics works from this list, so fill it in as you close the deal — not later.</p>
+      <div class="fld"><label>Branding <span class="req">*</span></label>
+        <input id="w_brand" placeholder="e.g. logo on the main stage screen + lanyards"></div>
+      <div class="wrow">
+        <div class="fld"><label>Attendees included <span class="req">*</span></label>
+          <input id="w_att" type="number" min="0" step="1" placeholder="how many passes"></div>
+        <div class="fld"><label>Speakers included <span class="req">*</span></label>
+          <input id="w_spk" type="number" min="0" step="1" placeholder="how many slots"></div>
+      </div>
+      <div class="wrow">
+        <div class="fld"><label>Stand <span class="req">*</span></label>
+          <select id="w_stand"><option value="">choose…</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div class="fld"><label>Branded items <span class="req">*</span></label>
+          <input id="w_items" placeholder="e.g. lanyards, notebooks, tote bags"></div>
+      </div>
+      <div class="fld"><label>Notes for logistics</label>
+        <textarea id="w_notes" placeholder="anything the team needs to know — deadlines, artwork, special requests"></textarea></div>
+    </div>
+  </div>
+  <div class="wf"><span class="werr" id="w_err"></span>
+    <button class="btn" id="w_later">Fill in later</button>
+    <button class="btn p" id="w_save">Save</button></div>
+</div></div>
 
-<script src="store.js?v=98"></script>
+<script src="store.js?v=99"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -778,31 +831,86 @@ function doLinkEvent(lineId){
    which accountingFor() reads first. The crosswalk table stays as silent fallback. */
 /* when a deal turns Firmado, capture the contract's razón social so it matches its invoice.
    Cancel = the status still changes, nothing is written to the ledger. */
+/* ---- one dialog at the moment a deal is Won (Belén, 3 Aug 2026) ----
+   It replaced a bare prompt() for the razón social. Two pop-ups stacking on one
+   click would have been worse than the thing it fixes, so the legal name now rides
+   in the same form as the delivery details.
+   WHY these questions: "I need to be able to have a list in each event that allows
+   logistics and sales to exchange information easily so there is no mistake as to
+   what needs to be done." The answers land on the proposal and surface on the
+   event's own SPX tab (event.html), which is the list she means.
+   The date signed is not decoration — it is what puts the money on the right week
+   of the signed line, so it defaults to today and can be corrected. */
+let _wonProp=null;
 function askLegalOnSigned(p,prevStatus){
   if(!p||p.salesStatus!=='Confirmed'||prevStatus==='Confirmed')return;
+  _wonProp=p;
+  const legalOK=(DB.canSalesLead&&DB.canSalesLead())||(DB.canFinance&&DB.canFinance());
+  const cm=legalOK?canonicalFor(p.company):null;
+  document.getElementById('w_sub').textContent=(p.company||'This deal')+' — a few things logistics will need.';
+  document.getElementById('w_date').value=p.signedAt||new Date().toISOString().slice(0,10);
   /* dc_company_map RLS only accepts writes from the sales lead / finance — for anyone
-     else the prompt's answer was silently REFUSED by the server (red save banner after
-     a legit Won). Until the policy is widened, only ask people whose answer will save. */
-  if(!((DB.canSalesLead&&DB.canSalesLead())||(DB.canFinance&&DB.canFinance())))return;
-  const cm=canonicalFor(p.company);
-  const pre=cm?(cm.invoiceClientKey||(Array.isArray(cm.legalAliases)&&cm.legalAliases[0])||''):'';
-  const ans=prompt('Contract signed 🎉 — type the client\'s FULL LEGAL NAME (razón social) exactly as it appears on the contract. Required: it is what invoicing uses to bill the deal.',pre);
-  if(ans==null)return;
-  const legal=ans.trim();if(!legal)return;
-  const me=DB.currentUser;
-  if(cm){
-    if(!Array.isArray(cm.legalAliases))cm.legalAliases=cm.legalAliases?[cm.legalAliases]:[];
-    if(!cm.legalAliases.some(a=>normCompany(a)===normCompany(legal)))cm.legalAliases.push(legal);
-    cm.confirmedBy=(me&&me.email)||'';cm.confirmedAt=new Date().toISOString();
-  }else{
-    const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
-    const row={id:DB.newId(),canonicalName:p.company,marketingAliases:[p.company],legalAliases:[legal],
-      emailDomains:dom?[dom]:[],invoiceClientKey:legal,confirmedBy:(me&&me.email)||'',confirmedAt:new Date().toISOString(),status:'confirmed'};
-    DB.companyMap.push(row);
-    const n=normCompany(p.company);
-    liveProps().forEach(q=>{if(normCompany(q.company)===n)q.companyId=row.id;});
-  }
+     else the answer was silently REFUSED by the server (red save banner after a legit
+     Won). Until the policy is widened, only ask people whose answer will save. */
+  document.getElementById('w_legalwrap').style.display=legalOK?'':'none';
+  document.getElementById('w_legal').value=cm?(cm.invoiceClientKey||(Array.isArray(cm.legalAliases)&&cm.legalAliases[0])||''):'';
+  document.getElementById('w_brand').value=p.branding||'';
+  document.getElementById('w_att').value=(p.attendeesN==null?'':p.attendeesN);
+  document.getElementById('w_spk').value=(p.speakersN==null?'':p.speakersN);
+  document.getElementById('w_stand').value=(p.stand==null?'':(p.stand?'yes':'no'));
+  document.getElementById('w_items').value=p.brandedItems||'';
+  document.getElementById('w_notes').value=p.wonNotes||'';
+  document.getElementById('w_err').classList.remove('on');
+  document.getElementById('wov').classList.add('on');
+  setTimeout(()=>{const b=document.getElementById('w_brand');if(b)b.focus();},60);
 }
+function closeWon(){document.getElementById('wov').classList.remove('on');_wonProp=null;}
+function saveWon(){
+  const p=_wonProp;if(!p)return closeWon();
+  const val=id=>document.getElementById(id).value.trim();
+  const miss=[];
+  const date=val('w_date'),brand=val('w_brand'),att=val('w_att'),spk=val('w_spk'),
+        stand=val('w_stand'),items=val('w_items');
+  if(!date)miss.push('the date signed');
+  if(!brand)miss.push('branding');
+  if(att==='')miss.push('attendees');
+  if(spk==='')miss.push('speakers');
+  if(!stand)miss.push('stand');
+  if(!items)miss.push('branded items');
+  if(miss.length){
+    const e=document.getElementById('w_err');
+    e.textContent='Still needed: '+miss.join(', ')+'.';e.classList.add('on');return;
+  }
+  p.signedAt=date;p.branding=brand;p.attendeesN=+att;p.speakersN=+spk;
+  p.stand=(stand==='yes');p.brandedItems=items;p.wonNotes=val('w_notes');
+  const legal=val('w_legal');
+  if(legal&&((DB.canSalesLead&&DB.canSalesLead())||(DB.canFinance&&DB.canFinance()))){
+    const cm=canonicalFor(p.company),me=DB.currentUser;
+    if(cm){
+      if(!Array.isArray(cm.legalAliases))cm.legalAliases=cm.legalAliases?[cm.legalAliases]:[];
+      if(!cm.legalAliases.some(a=>normCompany(a)===normCompany(legal)))cm.legalAliases.push(legal);
+      cm.confirmedBy=(me&&me.email)||'';cm.confirmedAt=new Date().toISOString();
+    }else{
+      const dom=domainOf((p.contacts&&p.contacts[0]&&p.contacts[0].email)||'');
+      const row={id:DB.newId(),canonicalName:p.company,marketingAliases:[p.company],legalAliases:[legal],
+        emailDomains:dom?[dom]:[],invoiceClientKey:legal,confirmedBy:(me&&me.email)||'',confirmedAt:new Date().toISOString(),status:'confirmed'};
+      DB.companyMap.push(row);
+      const n=normCompany(p.company);
+      liveProps().forEach(q=>{if(normCompany(q.company)===n)q.companyId=row.id;});
+    }
+  }
+  closeWon();DB.save();render();
+}
+/* "Fill in later" still records the DATE — without it the contract cannot be placed
+   on the signed line at all, which is the whole point of collecting this. */
+function laterWon(){
+  const p=_wonProp;
+  if(p&&!p.signedAt)p.signedAt=document.getElementById('w_date').value||new Date().toISOString().slice(0,10);
+  closeWon();DB.save();render();
+}
+document.getElementById('w_save').onclick=saveWon;
+document.getElementById('w_later').onclick=laterWon;
+document.getElementById('wov').onclick=e=>{if(e.target===document.getElementById('wov'))laterWon();};
 
 /* ================= HEALTH-CHECK TAB ================= */
 /* best-effort event date: a matched Projects (dc_events) row, else the free-text
@@ -1366,6 +1474,26 @@ function openPanel(id){
       +(p.notas?'<div class="kv" style="margin-top:8px"><span class="k">Notas</span></div><div class="ro-note">'+esc(p.notas)+'</div>':'')
       +'<p class="ro-note" style="margin-top:10px">Read-only — this is '+esc(p.responsableName||'someone else')+'\'s proposal. The sales lead and Belén can edit any.</p></div>';
   }
+  /* ---- what we sold them, on a Won deal (Belén, 3 Aug) ----
+     Lives here as well as on the event's SPX tab: the deal is the record, the event
+     tab is the list logistics reads. Editing reopens the same dialog rather than
+     duplicating six fields and their validation in a second place. */
+  if(p.salesStatus==='Confirmed'){
+    const yn=v=>v==null?'<span class="ro-note">—</span>':(v?'Yes':'No');
+    const num=v=>v==null?'<span class="ro-note">—</span>':esc(''+v);
+    const txt=v=>v?esc(v):'<span class="ro-note">not filled in yet</span>';
+    const done=!!(p.branding&&p.attendeesN!=null&&p.speakersN!=null&&p.stand!=null&&p.brandedItems);
+    b+='<div class="sec"><h5>What we sold them '+(done?'':'· <span style="color:var(--orange)">incomplete</span>')+'</h5>'
+      +'<div class="kv"><span class="k">Date signed</span><span>'+(p.signedAt?dmy(p.signedAt):'<span class="ro-note">—</span>')+'</span></div>'
+      +'<div class="kv"><span class="k">Branding</span><span style="text-align:right;max-width:62%">'+txt(p.branding)+'</span></div>'
+      +'<div class="kv"><span class="k">Attendees</span><span>'+num(p.attendeesN)+'</span></div>'
+      +'<div class="kv"><span class="k">Speakers</span><span>'+num(p.speakersN)+'</span></div>'
+      +'<div class="kv"><span class="k">Stand</span><span>'+yn(p.stand)+'</span></div>'
+      +'<div class="kv"><span class="k">Branded items</span><span style="text-align:right;max-width:62%">'+txt(p.brandedItems)+'</span></div>'
+      +(p.wonNotes?'<div class="kv" style="margin-top:6px"><span class="k">Notes</span></div><div class="ro-note">'+esc(p.wonNotes)+'</div>':'')
+      +(editable?'<div style="margin-top:9px"><button class="btn" data-wonedit="'+p.id+'">✎ '+(done?'Edit':'Fill in')+' what we sold them</button></div>':'')
+      +'</div>';
+  }
   // contacts — up to 3 people per proposal, editable in place by whoever can edit the proposal
   if(editable){
     b+='<div class="sec"><h5>Contacts</h5>';
@@ -1382,6 +1510,12 @@ function openPanel(id){
     b+='<div class="sec"><h5>Contacts</h5>'+((p.contacts&&p.contacts.length)?p.contacts.map((c,i)=>'<div class="kv"><span>'+(i===0?'<span style="color:#FF4A00" title="Main contact — direct communications here">★</span> ':'')+esc(((c.first||'')+' '+(c.last||'')).trim()||'—')+'</span><span class="k">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</span></div>').join(''):'<div class="ro-note">none</div>')+'</div>';
   }
   panelShell(p.company||'Proposal',esc(p.responsableName||p.responsable||'')+(p.fileName?' · '+esc(p.fileName):''),b);
+  /* re-open the Won dialog to correct the delivery details — same form, same rules,
+     so there is only one place that decides what "complete" means */
+  document.querySelectorAll('#panel [data-wonedit]').forEach(btn=>btn.onclick=()=>{
+    const q=DB.spxProps.find(x=>x.id==btn.dataset.wonedit);
+    if(q)askLegalOnSigned(q,null);
+  });
 }
 function fld(label,f,v,type){return '<div class="fld"><label>'+esc(label)+'</label><input data-pf="'+f+'" type="'+type+'" value="'+esc(v==null?'':v)+'"></div>';}
 /* picklist field — blank allowed ("to fill in by hand"); an off-list legacy value stays selectable so saving never wipes it */
