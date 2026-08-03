@@ -206,7 +206,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=102"></script>
+<script src="store.js?v=103"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -374,6 +374,72 @@ function autoFillWeek(){
 /* ================= TAB: SPONSORSHIP (SPX status quo replicated into Money — Belén 29 Jul:
    "shows us where we are at". Read-only rollup of the board; the board itself stays the
    place where sales work. Data via spxStatusAll() in store.js. ================= */
+/* which events are expanded (survives the re-render a save triggers) */
+let _spxOpen={};
+/* ---- one signed contract, as logistics and accounting each need to see it ----
+   (Belén, 3 Aug 2026: "a collapsible list when you click on any of the events… the same
+   info that is in the SPX events, a list of all the won, invoiced and paid contracts and
+   the information that logistics needs.")
+   Same source as the event page's 💼 SPX tab (DB.wonDealsForSpxKey → DB.spxAccounting),
+   so this window and the board can never tell different stories. Read-only: the deal is
+   edited on the board, which is where the ✎ links go. */
+const SPX_ACC={paid:{t:'✓ paid',c:'#3E8C28',b:'#E6F5E6'},invoiced:{t:'✓ invoiced',c:'#185FA5',b:'#E8F0FA'},
+  partpaid:{t:'part paid',c:'#C77800',b:'#FFF3E0'},partial:{t:'part invoiced',c:'#C77800',b:'#FFF3E0'},
+  none:{t:'not invoiced',c:'#8a8a86',b:'#F1F0EC'}};
+function spxDealsHtml(r,money){
+  let deals=[];
+  try{deals=DB.wonDealsForSpxKey(r.key)||[];}catch(e){deals=[];}
+  const pad='padding:14px 16px';
+  if(!deals.length)return '<div style="'+pad+';color:#7c7c78;font-size:13px">Nothing signed on this event yet — '+
+    money(r.sent)+' still out there as proposals. <a href="spx.html?ev='+encodeURIComponent(r.key||'')+'" style="color:var(--orange)">Open the board →</a></div>';
+  const dt=iso=>{const p=(''+(iso||'')).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:'—';};
+  const txt=v=>v?esc(v):'<span style="color:#b3b1aa">—</span>';
+  const num=v=>v==null?'<span style="color:#b3b1aa">—</span>':esc(''+v);
+  const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
+  const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
+  const spk=deals.reduce((a,d)=>a+(+d.speakersN||0),0);
+  const stands=deals.filter(d=>d.stand).length;
+  const gaps=deals.filter(d=>!d.complete);
+  const billed=deals.filter(d=>d.acc==='invoiced'||d.acc==='paid'||d.acc==='partial'||d.acc==='partpaid').length;
+  const paid=deals.filter(d=>d.acc==='paid').length;
+  let h='<div style="'+pad+'">'+
+    '<div style="font-size:13px;margin-bottom:8px"><b>'+deals.length+' signed contract'+(deals.length===1?'':'s')+'</b> · '+money(tot)+
+    ' committed · <b>'+billed+'</b> invoiced (<b>'+paid+'</b> paid in full) · the event owes its sponsors <b>'+att+'</b> pass'+(att===1?'':'es')+
+    ', <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' and <b>'+stands+'</b> stand'+(stands===1?'':'s')+'.</div>';
+  if(gaps.length)h+='<div style="font-size:12.5px;color:#8a4a12;background:#FFF3E8;border:1px solid #F3C49B;border-radius:8px;padding:7px 10px;margin-bottom:8px">'+
+    '<b>'+gaps.length+' contract'+(gaps.length===1?' does':'s do')+' not say what was sold</b> — logistics is working blind on '+(gaps.length===1?'it':'them')+'. '+
+    'Owed by: '+spxDistinct(gaps.map(d=>d.owner||'unassigned')).map(esc).join(', ')+'. They each get a nudge on the board until it is filled in.</div>';
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'+
+    '<tr style="text-align:left;color:#7c7c78">'+
+    ['Sponsor','Amount','Signed','Money','Branding','Passes','Speakers','Stand','Branded items','Notes for logistics','Sales']
+      .map((t,i)=>'<th style="padding:5px 7px;border-bottom:1px solid var(--line)'+((i===1||i===5||i===6)?';text-align:right':'')+'">'+t+'</th>').join('')+'</tr>';
+  deals.forEach(d=>{
+    const a=SPX_ACC[d.acc]||SPX_ACC.none;
+    const accTitle=(d.accNet!=null&&(d.acc==='partial'||d.acc==='partpaid'))
+      ? ' title="'+money(d.accNet)+' invoiced of '+money(d.accVal||d.eur)+(d.accPaid?', '+money(d.accPaid)+' collected':'')+'"' : '';
+    h+='<tr style="border-bottom:1px solid var(--line)'+(d.complete?'':';background:#FFF6EF')+'">'+
+      '<td style="padding:6px 7px"><b>'+esc(d.company)+'</b>'+(d.packageTier?' <span style="color:#9a998f">· '+esc(d.packageTier)+'</span>':'')+'</td>'+
+      '<td style="padding:6px 7px;text-align:right;white-space:nowrap">'+money(d.eur)+'</td>'+
+      '<td style="padding:6px 7px;white-space:nowrap">'+dt(d.signedAt)+'</td>'+
+      '<td style="padding:6px 7px"><span'+accTitle+' style="background:'+a.b+';color:'+a.c+';border-radius:20px;padding:2px 8px;white-space:nowrap;font-weight:600">'+a.t+'</span></td>'+
+      '<td style="padding:6px 7px;max-width:200px">'+txt(d.branding)+'</td>'+
+      '<td style="padding:6px 7px;text-align:right">'+num(d.attendeesN)+'</td>'+
+      '<td style="padding:6px 7px;text-align:right">'+num(d.speakersN)+'</td>'+
+      '<td style="padding:6px 7px">'+(d.stand==null?'<span style="color:#b3b1aa">—</span>':(d.stand?'<b>Yes</b>':'No'))+'</td>'+
+      '<td style="padding:6px 7px;max-width:180px">'+txt(d.brandedItems)+'</td>'+
+      '<td style="padding:6px 7px;max-width:220px;color:#5c5c58">'+txt(d.notes)+'</td>'+
+      '<td style="padding:6px 7px;white-space:nowrap">'+esc(d.owner||'')+'</td></tr>';
+  });
+  h+='<tr style="font-weight:700"><td style="padding:6px 7px">Total</td>'+
+    '<td style="padding:6px 7px;text-align:right">'+money(tot)+'</td><td></td><td></td><td></td>'+
+    '<td style="padding:6px 7px;text-align:right">'+att+'</td><td style="padding:6px 7px;text-align:right">'+spk+'</td>'+
+    '<td style="padding:6px 7px">'+stands+'</td><td></td><td></td><td></td></tr></table></div>'+
+    '<p style="margin:8px 0 0;font-size:12px;color:#7c7c78">Read-only — contracts are edited on the '+
+    '<a href="spx.html?ev='+encodeURIComponent(r.key||'')+'" style="color:var(--orange)">💼 SPX board</a>'+
+    (r.financeId!=null?' · <a href="facturacion.html" style="color:var(--orange)">🧾 Invoicing</a> is where an invoice is linked to its contract':'')+'.</p></div>';
+  return h;
+}
+function spxDistinct(a){return Array.from(new Set(a.filter(x=>x!=null&&x!=='')));}
 function renderSpxStatus(){
   const C=document.getElementById('content');
   const rows=spxStatusAll();
@@ -383,10 +449,13 @@ function renderSpxStatus(){
   const money=v=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:0,useGrouping:'always'}).format(Math.round(+v||0))+' €';
   const pc=(a,b)=>b>0?Math.round(100*a/b)+'%':'—';
   const inv=r=>{try{if(r.financeId==null)return null;const f=DB.finance.find(x=>x.id==r.financeId);return f?DB.finInvoiced(f):null;}catch(e){return null;}};
+  const gapsFor=r=>{try{return (DB.wonDealsForSpxKey(r.key)||[]).filter(d=>!d.complete).length;}catch(e){return 0;}};
   const rowHtml=r=>{
     const iv=inv(r),reach=r.spTarget>0?r.won/r.spTarget:null;
-    return '<tr>'+
-      '<td style="text-align:left"><b>'+esc(r.name)+'</b></td>'+
+    const open=!!_spxOpen[r.key],gaps=gapsFor(r);
+    return '<tr class="evrow" data-ev="'+esc(r.key||'')+'" style="cursor:pointer" title="'+(open?'Hide':'Show')+' the signed contracts and what logistics has to deliver">'+
+      '<td style="text-align:left"><span style="color:var(--orange);display:inline-block;width:12px">'+(open?'▾':'▸')+'</span> <b>'+esc(r.name)+'</b>'+
+      (gaps?' <span title="'+gaps+' signed contract'+(gaps===1?' does':'s do')+' not say what was sold" style="background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:20px;padding:1px 7px;font-size:11px;font-weight:600">📦 '+gaps+'</span>':'')+'</td>'+
       '<td class="num" style="color:#3E8C28;font-weight:700">'+money(r.won)+(r.wonN?' <span style="font-size:10px;color:#7c7c78">('+r.wonN+')</span>':'')+'</td>'+
       '<td class="num">'+money(r.sent)+(r.sentN?' <span style="font-size:10px;color:#7c7c78">('+r.sentN+')</span>':'')+'</td>'+
       '<td class="num" style="color:#7c7c78">'+money(r.silent)+'</td>'+
@@ -395,7 +464,8 @@ function renderSpxStatus(){
       '<td class="num" style="font-weight:700;color:'+(reach!=null&&reach>=1?'#3E8C28':reach!=null&&reach<0.5?'#A32D2D':'#2B2B2B')+'">'+(reach==null?'—':Math.round(reach*100)+'%')+'</td>'+
       '<td class="num">'+(r.totTarget?money(r.totTarget):'—')+'</td>'+
       '<td class="num">'+(iv==null?'—':money(iv))+'</td>'+
-      '<td><a href="spx.html?ev='+encodeURIComponent(r.key||'')+'#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>';
+      '<td><a href="spx.html?ev='+encodeURIComponent(r.key||'')+'#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>'+
+      (open?'<tr class="evdet"><td colspan="10" style="padding:0;background:#FBFAF8;border-bottom:2px solid var(--line)">'+spxDealsHtml(r,money)+'</td></tr>':'');
   };
   const sec=(title,list)=>{
     if(!list.length)return '';
@@ -407,10 +477,17 @@ function renderSpxStatus(){
       '<tr class="total"><td style="text-align:left">Total</td><td class="num">'+money(T.won)+'</td><td class="num">'+money(T.sent)+'</td><td class="num">'+money(T.silent)+'</td><td class="num">'+money(T.lost)+'</td><td class="num">'+money(T.spT)+'</td><td class="num">'+pc(T.won,T.spT)+'</td><td class="num">'+money(T.totT)+'</td><td class="num"></td><td></td></tr>'+
       '</table></div>';
   };
-  C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Won</b> counts the moment a deal is marked Won. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+
+  C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Won</b> counts the moment a deal is marked Won. <b>Click any event</b> to open its signed contracts: what was sold, whether it is invoiced and paid, and what logistics has to deliver. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+
     sec('Selling now',rows.filter(r=>r.active))+
     sec('Before (finished / parked)',rows.filter(r=>!r.active));
   document.querySelectorAll('#content a[href="#year"]').forEach(a=>a.onclick=e=>{e.preventDefault();location.hash='year';render();});
+  /* click the event row to open/close its contracts — the links inside keep working */
+  document.querySelectorAll('#content tr.evrow').forEach(tr=>tr.onclick=e=>{
+    if(e.target.closest('a'))return;
+    const k=tr.dataset.ev;
+    if(_spxOpen[k])delete _spxOpen[k];else _spxOpen[k]=1;
+    renderSpxStatus();
+  });
 }
 
 /* ================= TAB 1: YEAR STATUS ================= */

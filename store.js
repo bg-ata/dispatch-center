@@ -1349,22 +1349,16 @@ function decorateNav(){
 
 /* ---- SPX status rollup for the Money page (29 Jul: "Money absorbing (or replicating)
    the Status quo tab of SPX"). One row per registry event with the board buckets and
-   targets. ⚠ KEEP IN SYNC with spx.html: lineRegEvent/spxBucket/eventTargets are the
-   canonical versions there — if bucket, alias or target rules change on the board,
-   change them here too (flagged for extraction into a single shared home later). */
+   targets. Line→event matching now lives in DB.spxLineReg (spx.html delegates there
+   too, so there is one implementation). ⚠ KEEP IN SYNC with spx.html: spxBucket and
+   eventTargets are still the canonical versions there — if bucket or target rules
+   change on the board, change them here too. */
 function spxStatusAll(){
   if(!DB.spxReady||!DB.spxReady())return [];
   const live=(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded);
-  const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
   const regs=(DB.spxEventReg||[]).filter(e=>!e.deleted);
   if(!regs.length)return [];
-  const findReg=l=>{
-    const lk=nk(l.eventKey);
-    let e=lk?regs.find(x=>nk(x.eventKey)===lk):null;
-    if(!e&&l.eventId!=null)e=regs.find(x=>x.financeId!=null&&x.financeId==l.eventId);
-    if(!e&&lk)e=regs.find(x=>((x.convByStatus&&x.convByStatus.aliases)||[]).some(a=>nk(a)===lk));
-    return e||null;
-  };
+  const findReg=l=>DB.spxLineReg(l);
   const bucket=p=>p.stage==='Silent'?'Silent':p.salesStatus;
   const rows={};
   regs.forEach(e=>{rows[e.eventKey]={key:e.eventKey,name:e.name,active:e.active!==false,financeId:e.financeId,
@@ -1666,6 +1660,61 @@ function notifySend(to,kind,text,link){
   if(ids.length)DB.save();
   return ids.length;
 }
+/* ---- tell Belén when an event appears, gets its code, or goes (Belén, 3 Aug: "inform me
+   each time a new event and code is created, just in case") ----
+   These are the moments that can move money: a new event on the timeline, the code that
+   turns a draft into real Money / Invoicing / SPX lines, and a deletion that retires them.
+   The message says WHICH of those happened and, for a code, whether it ATTACHED to a row
+   that already existed or created new lines — so a wrong code is visible the same minute
+   instead of at month end.
+   She is not told about her own edits. RLS is what makes this work for everyone else:
+   dc_inbox lets any signed-in person write to another person's inbox, while letting them
+   read only their own — so a PM's notification reaches her and nobody else sees it. */
+function notifyBelen(text,link){
+  try{
+    if(!DB.inboxReady()||!DB.currentUser)return 0;
+    const belen=(DB.people||[]).find(isBelenP);
+    if(!belen||belen.id==DB.currentUser.id)return 0;      // no need to tell herself
+    return notifySend(belen.id,'notice',text,link||'gantt.html');
+  }catch(e){return 0;}
+}
+function evWatchLabel(ev){
+  const when=(ev&&ev.date)?dateRange(ev):'no date yet';
+  return '“'+((ev&&ev.name)||'?')+'” ('+when+((ev&&ev.city)?' · '+ev.city:'')+')';
+}
+/* before = a copy of the event as it was, or null when it has just been created.
+   plan = the DB.evConnectPlan() result taken BEFORE saving, so we can say what the code did. */
+function notifyEventChange(ev,before,plan){
+  try{
+    if(!ev||evKind(ev)==='external')return;              // one-off projects never touch money
+    const who=(DB.currentUser&&DB.currentUser.name)||'Someone';
+    const code=DB.evCode(ev)||'';
+    const acode=(''+(ev.acode||'')).trim();
+    const didWhat=(plan&&plan.state==='adopt')?' It ATTACHED to the Money row that already existed.'
+                 :(plan&&plan.state==='create')?' It created its Money row, invoicing item and sales-board entry.':'';
+    /* the one that needs an answer, not just a read: someone has coded an event and it is
+       sitting in the queue for her OK before anything touches Money */
+    const ask=DB.evAwaitingOk(ev)
+      ? ' ⏳ It is NOT in Money, Invoicing or SPX yet — it needs your OK. Open the timeline and press “connect”.'
+      : '';
+    if(!before){
+      notifyBelen('📅 '+who+' added the event '+evWatchLabel(ev)+'. '+
+        (code?('Marketing code '+code+(acode?' · accounting code '+acode:'')+'.'+(ask||didWhat))
+             :'No marketing code yet, so it is NOT in Money, Invoicing or SPX — it stays a draft until the code arrives.'));
+      return;
+    }
+    const wasE=(''+(before.ecode||'')).trim().toUpperCase(), nowE=code.toUpperCase();
+    const wasA=(''+(before.acode||'')).trim(), nowA=acode;
+    if(wasE!==nowE&&nowE){
+      notifyBelen('🔗 '+who+' gave '+evWatchLabel(ev)+' the marketing code '+nowE+
+        (wasE?(' — it used to be '+wasE):'')+'.'+(ask||didWhat));
+    }else if(wasE!==nowE&&!nowE){
+      notifyBelen('⚠ '+who+' REMOVED the marketing code from '+evWatchLabel(ev)+
+        ' (it was '+wasE+'). Nothing new will reach Money, Invoicing or SPX for it.');
+    }
+    if(wasA!==nowA&&nowA)notifyBelen('🧾 '+who+' set the accounting code '+nowA+' on '+evWatchLabel(ev)+'.');
+  }catch(e){console.warn('event watch:',e.message||e);}
+}
 /* ================= 💬 the conversation on a person =================
    Belén, 29 Jul: "a little area in each person for the messages — whether they are for
    holidays, changes in clock ins and outs, changes to the platform — so there can be a
@@ -1781,6 +1830,25 @@ function spxTouchpointAlarms(){
       sent+=notifySend(me.id,'alarm','⏰ Follow-up overdue: '+(p.company||'proposal')+' — next touchpoint was '+deIso(due)+'. Time to chase.',key);
     });
   return sent;
+}
+
+/* 📦 SPX delivery-details alarms (Belén, 3 Aug 2026: "how can I force the sales team to
+   fill in those pending now?"). A contract of MINE that is Won but never said what was
+   sold leaves logistics working blind, so it comes back ONCE A WEEK — deduped on
+   proposal + that week's Monday — until it is filled in. One alarm per person, not per
+   contract: a wall of twelve notifications is noise, one that says "you owe 12" is a
+   task. It stops arriving by itself the moment the count reaches zero. */
+function spxDeliveryAlarms(){
+  const me=DB.currentUser;
+  if(!me||!me.email||!DB.inboxReady()||!DB.spxReady())return 0;
+  const mine=DB.spxDeliveryPending(me.email);
+  if(!mine.length)return 0;
+  const wk=toISO(monday(new Date()));
+  const key='spx.html?fill=me:'+wk;                          // one nudge per person per week
+  if((DB.inbox||[]).some(m=>m.personId==me.id&&m.link===key))return 0;
+  const n=mine.length;
+  return notifySend(me.id,'alarm','📦 '+n+' won contract'+(n===1?'':'s')+' of yours '+(n===1?'has':'have')+
+    ' no delivery details — logistics cannot deliver a stand from a signature. Open the board and fill '+(n===1?'it':'them')+' in.',key);
 }
 
 /* ================= team request box (💡 Requests) ================= */
@@ -2052,7 +2120,7 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages','ecode',
-    'acode'], // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = MARKETING code (E0xx, ActiveCampaign); acode = Jesús's ACCOUNTING code — different systems, both needed for time allocation (3 Aug)
+    'acode','moneyOk'], // moneyOk = Belén has OK'd wiring this event into Money/Invoicing/SPX (migration event_money_connection_needs_belen_ok, 3 Aug) // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = MARKETING code (E0xx, ActiveCampaign); acode = Jesús's ACCOUNTING code — different systems, both needed for time allocation (3 Aug)
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace','perms'], // startDate/workPlace/perms tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
   tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
@@ -2851,12 +2919,103 @@ const DB={
   nextEcode(){const used=this.ecodesInUse(null);let hi=0;
     Object.keys(used).forEach(k=>{const n=parseInt(k.slice(1),10);if(n>hi)hi=n;});
     return 'E'+String(hi+1).padStart(3,'0');},
+  /* ---- the ONE place a proposal line is matched to a registry event ----
+     Precedence across the WHOLE registry: exact eventKey → financeId → alias. Without
+     that order a key that is one event's own key AND another's alias resolves by
+     registry order and the turnover splits or doubles. spx.html lineRegEvent() and
+     spxStatusAll() both delegate here, so a line can never bucket two ways. */
+  spxLineReg(l){
+    const evs=(this.spxEventReg||[]).filter(e=>!e.deleted);
+    if(!evs.length||!l)return null;
+    const nk=k=>(''+(k==null?'':k)).trim().toLowerCase(),lk=nk(l.eventKey);
+    let e=lk?evs.find(x=>nk(x.eventKey)===lk):null;
+    if(!e&&l.eventId!=null)e=evs.find(x=>x.financeId!=null&&x.financeId==l.eventId);
+    if(!e&&lk)e=evs.find(x=>((x.convByStatus&&x.convByStatus.aliases)||[]).some(a=>nk(a)===lk));
+    return e||null;},
+  /* company-name normalisation — uppercase, accents/punctuation stripped, legal-form
+     tokens dropped from the END only ("SOLAR AB" → "SOLAR", "AB SOLAR" stays).
+     spx.html normCompany() delegates here: the crosswalk must match identically on
+     every page or a contract reads "invoiced" on one and "not invoiced" on another. */
+  spxNormCo(s){
+    const SUF={SAU:1,SLU:1,SASU:1,SARL:1,UNIPESSOAL:1,LDA:1,SA:1,SL:1,SRL:1,SAS:1,SPA:1,GMBH:1,AG:1,NV:1,BV:1,AS:1,OY:1,AB:1,PLC:1,LTD:1,LLC:1,INC:1,APS:1};
+    const n=(''+(s||'')).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase()
+      .replace(/[.,;()\/]/g,' ').replace(/\s+/g,' ').trim();
+    const parts=n.split(' ');
+    while(parts.length>1&&SUF[parts[parts.length-1]])parts.pop();
+    return parts.join(' ');},
+  /* ---- where a signed contract's money actually is (was accountingFor() in spx.html;
+     lifted here 3 Aug 2026 so the board, the event page and Money → Sponsorship all
+     read the same answer). Sales never type this — it is derived:
+       1) the explicit invoice ↔ contract link Jesús sets in Facturación (authoritative,
+          amount-aware: a contract billed in instalments is "part invoiced", not
+          "invoiced"; a linked invoice cancelled by an abono keeps its pair, netting to 0)
+       2) fallback, the confirmed company crosswalk, scoped to the contract's own events */
+  spxAccounting(p){
+    if(!p)return {state:'none',linked:false};
+    const linkedIds={};(this.invoices||[]).forEach(i=>{if(i.spxProposalId==p.id)linkedIds[i.id]=1;});
+    const direct=(this.invoices||[]).filter(i=>(i.spxProposalId==p.id||(i.abono_de&&linkedIds[i.abono_de]&&i.status==='abono'))&&this.invCountsMoney(i));
+    if(direct.length){
+      const cVal=+p.valueEur||0;
+      const net=direct.reduce((s,i)=>s+(+i.importe_base||0),0);
+      const paidNet=direct.reduce((s,i)=>s+((i.status==='pagado'||i.fecha_cobro)?(+i.importe_base||0):0),0);
+      if(!cVal)return {state:paidNet>0?'paid':'invoiced',linked:true,net:net,paid:paidNet,cVal:0};
+      const paidEff=Math.min(paidNet,net);          // never more collected than billed
+      const fullyInvoiced=net>=cVal-0.01;
+      const state=(fullyInvoiced&&paidEff>=net-0.01)?'paid'
+                 :(paidEff>0.005)                   ?'partpaid'
+                 :fullyInvoiced                     ?'invoiced'
+                 :(net>0.005)                       ?'partial'
+                 :                                   'none';
+      return {state:state,linked:true,net:net,paid:paidEff,cVal:cVal};
+    }
+    const n=this.spxNormCo(p.company);
+    const cm=n?(this.companyMap||[]).find(m=>m.status==='confirmed'&&(
+      (m.marketingAliases||[]).some(a=>this.spxNormCo(a)===n)||this.spxNormCo(m.canonicalName)===n)):null;
+    if(!cm)return {state:'none',linked:false};
+    const scope=[];   // ONLY event-linked lines — an empty scope must never match every allocation
+    (this.spxLinesFor(p.id)||[]).forEach(l=>{
+      if(l.eventId!=null){if(!scope.some(x=>x==l.eventId))scope.push(l.eventId);return;}
+      const e=this.spxLineReg(l);
+      if(e&&e.financeId!=null&&!scope.some(x=>x==e.financeId))scope.push(e.financeId);});
+    if(!scope.length)return {state:'none',linked:true,noEvent:true};
+    const key=this.spxNormCo(cm.invoiceClientKey);
+    let inv=false,paid=false;
+    if(key)(this.invoices||[]).forEach(i=>{
+      if(i.status==='cancelado')return;
+      if(!(i.producto==='sponsorship'||i.producto==='upgrade'))return;
+      if(this.spxNormCo(i.razon_social)!==key)return;
+      if(!(this.invoiceAllocs||[]).some(a=>a.invoice_id==i.id&&scope.some(x=>x==a.eventId)))return;
+      inv=true;if(i.status==='pagado'||i.fecha_cobro)paid=true;});
+    return {state:paid?'paid':inv?'invoiced':'none',linked:true};},
+  /* has this won contract said what was actually sold? The ONE definition of
+     "complete" — the Won dialog, the board's ⚠, the event list and the nudges all
+     ask this, so they can never disagree about who still owes what. */
+  spxDeliveryComplete(p){return !!(p&&p.branding&&p.attendeesN!=null&&p.speakersN!=null&&p.stand!=null&&p.brandedItems);},
   /* ---- what sales has SOLD on an event, for the people who have to deliver it ----
      (Belén, 3 Aug: "a list in each event that allows logistics and sales to exchange
      information easily so there is no mistake as to what needs to be done")
-     One row per won contract with the answers the Won pop-up collects. Walks
-     timeline event → Money row → SPX registry → the event's own lines, so it works
-     whether the line was keyed by eventKey or by financeId. */
+     One row per won contract: the answers the Won pop-up collects, plus where the
+     money is. `match(line)` decides which lines belong to the event being asked about. */
+  spxWonDealsWhere(match){
+    if(!this.spxReady||!this.spxReady())return [];
+    const out=[];
+    (this.spxProps||[]).forEach(p=>{
+      if(p.active===false||p.superseded)return;
+      if(!(p.stage==='Won'||p.salesStatus==='Confirmed'))return;
+      let eur=0,hit=false;
+      (this.spxLinesFor(p.id)||[]).forEach(l=>{if(!match(l))return;hit=true;eur+=(+l.valueEur||0);});
+      if(!hit)return;
+      const acc=this.spxAccounting(p);
+      out.push({id:p.id,company:p.company||'—',owner:p.responsableName||p.responsable||'',
+        eur:eur,signedAt:p.signedAt||null,contents:p.contents||'',packageTier:p.packageTier||'',
+        branding:p.branding||'',attendeesN:p.attendeesN,speakersN:p.speakersN,
+        stand:p.stand,brandedItems:p.brandedItems||'',notes:p.wonNotes||'',
+        acc:acc.state,accNet:acc.net,accPaid:acc.paid,accVal:acc.cVal,
+        complete:this.spxDeliveryComplete(p)});
+    });
+    return out.sort((a,b)=>(b.eur||0)-(a.eur||0));},
+  /* by TIMELINE event (the event page): walks event → Money row(s) → registry → lines,
+     so it works whether the line was keyed by eventKey or by financeId */
   wonDealsForEvent(evId){
     if(!this.spxReady||!this.spxReady()||evId==null)return [];
     const fins=(this.finance||[]).filter(f=>!f.deleted&&f.eventId==evId).map(f=>f.id);
@@ -2864,22 +3023,21 @@ const DB={
     const keys={};(this.spxEventReg||[]).forEach(g=>{
       if(!g.deleted&&fins.indexOf(g.financeId)>=0)keys[(''+g.eventKey).trim().toLowerCase()]=1;});
     const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
-    const out=[];
-    (this.spxProps||[]).forEach(p=>{
-      if(p.active===false||p.superseded)return;
-      if(!(p.stage==='Won'||p.salesStatus==='Confirmed'))return;
-      let eur=0,hit=false;
-      (this.spxLinesFor(p.id)||[]).forEach(l=>{
-        if(!(keys[nk(l.eventKey)]||(l.eventId!=null&&fins.indexOf(+l.eventId)>=0)))return;
-        hit=true;eur+=(+l.valueEur||0);});
-      if(!hit)return;
-      out.push({id:p.id,company:p.company||'—',owner:p.responsableName||p.responsable||'',
-        eur:eur,signedAt:p.signedAt||null,contents:p.contents||'',
-        branding:p.branding||'',attendeesN:p.attendeesN,speakersN:p.speakersN,
-        stand:p.stand,brandedItems:p.brandedItems||'',notes:p.wonNotes||'',
-        complete:!!(p.branding&&p.attendeesN!=null&&p.speakersN!=null&&p.stand!=null&&p.brandedItems)});
-    });
-    return out.sort((a,b)=>(b.eur||0)-(a.eur||0));},
+    return this.spxWonDealsWhere(l=>!!(keys[nk(l.eventKey)]||(l.eventId!=null&&fins.indexOf(+l.eventId)>=0)));},
+  /* by SPX REGISTRY event (Money → Sponsorship, where the rows ARE registry events) */
+  wonDealsForSpxKey(key){
+    const nk=k=>(''+(k==null?'':k)).trim().toLowerCase(),want=nk(key);
+    if(!want)return [];
+    return this.spxWonDealsWhere(l=>{const e=this.spxLineReg(l);return e?nk(e.eventKey)===want:nk(l.eventKey)===want;});},
+  /* won contracts still owing their delivery details — everyone's, or one person's.
+     This is the backlog the board nags about and the 🔔 alarm counts. */
+  spxDeliveryPending(email){
+    if(!this.spxReady||!this.spxReady())return [];
+    const em=(''+(email||'')).toLowerCase();
+    return (this.spxProps||[]).filter(p=>p.active!==false&&!p.superseded
+      &&(p.stage==='Won'||p.salesStatus==='Confirmed')
+      &&!this.spxDeliveryComplete(p)
+      &&(!em||(''+(p.responsableEmail||'')).toLowerCase()===em));},
   evMasterName(ev){return (''+((ev&&ev.name)||'')).replace(/^E\d+\s*/i,'').trim();},
   /* a Money row's display label — cascades from its linked timeline event; a row
      with no link (past editions) keeps its own stored name */
@@ -2951,8 +3109,30 @@ const DB={
      created in Money, Invoicing or SPX until the code arrives. When it does, the cascade
      runs and ADOPTS the row that already exists, because nothing was created early.
      The failure mode is designed out instead of repaired: no merge, nothing to undo. */
+  /* ---- and the second lock: BELÉN SAYS WHEN (her ask, 3 Aug) ----
+     "Maybe get me to confirm it is ok for the event to be added to the plumbing. In the
+     meanwhile can be created minus the code."  So anyone may create the event, and even
+     put its code on it — but the moment that wires it into Money, Invoicing and SPX is
+     hers. `moneyOk` is that consent. Her own saves carry it automatically: the form has
+     already told her exactly what will happen, so asking her twice would be theatre. */
   evMoneyReady(ev){if(!ev||!ev.date)return false;
-    const c=this.evCode(ev);return !!(c&&/^E\d+$/i.test(c));},
+    const c=this.evCode(ev);
+    return !!(c&&/^E\d+$/i.test(c)&&ev.moneyOk===true);},
+  /* coded, legal, and only waiting for her — this is what the queue counts */
+  evAwaitingOk(ev){if(!ev||!ev.date||evKind(ev)==='external')return false;
+    const c=this.evCode(ev);
+    return !!(c&&/^E\d+$/i.test(c))&&ev.moneyOk!==true&&!this.ecodeBlocker(c,ev.id);},
+  evAwaitingOkList(){return (this.events||[]).filter(e=>!e.deleted&&this.evAwaitingOk(e));},
+  /* the approval itself: flip the consent, then let the normal cascade do the work — one
+     code path for wiring, whether it happens now or the day the code arrives. */
+  connectEventMoney(evId){
+    const ev=this.event(evId);if(!ev)return null;
+    const plan=this.evConnectPlan(ev);
+    if(plan.state==='taken'||plan.state==='draft'||plan.state==='nodate')return plan;
+    ev.moneyOk=true;
+    let out=null;try{out=this.ensureEventLines();}catch(e){console.warn('connect event:',e.message||e);}
+    this.save();
+    return Object.assign({},plan,{done:true,cascade:out});},
   /* what the timeline should tell the person in front of it, before they save */
   evConnectPlan(ev){
     if(!ev||!ev.date)return {state:'nodate',msg:'Set the date first.'};
@@ -2964,10 +3144,17 @@ const DB={
     const reg=(this.spxEventReg||[]).find(g=>!g.deleted&&g.financeId!=null&&(''+g.eventKey).trim().toUpperCase()===c.toUpperCase());
     const twin=reg?this.finance.find(f=>!f.deleted&&f.id==reg.financeId&&(f.eventId==null||f.eventId===''))
                   :null;
-    if(twin){const item=this.codigos.find(x=>!x.deleted&&x.eventId==twin.id);
-      return {state:'adopt',msg:c+' → this ATTACHES to the Money row that already exists, “'+this.finTrueLabel(twin)+'”'+
-        (item&&item.codigo?' (accounting code '+item.codigo+')':'')+'. Nothing new is created, nothing is duplicated.'};}
-    return {state:'create',msg:c+' → this creates its Money row, its invoicing item (accounting code pending for Jesús) and its sales-board entry.'};
+    const item=twin?this.codigos.find(x=>!x.deleted&&x.eventId==twin.id):null;
+    const what=twin
+      ? 'ATTACH to the Money row that already exists, “'+this.finTrueLabel(twin)+'”'+(item&&item.codigo?' (accounting code '+item.codigo+')':'')+'. Nothing new is created, nothing is duplicated.'
+      : 'create its Money row, its invoicing item (accounting code pending for Jesús) and its sales-board entry.';
+    /* already wired? then this is just a description of what it did */
+    if(ev.moneyOk===true)return {state:twin?'adopt':'create',msg:c+' → this will '+what};
+    /* not yet: the event can be saved and lives on the timeline, but the wiring waits for
+       Belén. Her own saves approve themselves (see evMoneyReady). */
+    if(isBelenP(this.currentUser))return {state:twin?'adopt':'create',msg:c+' → on save this will '+what};
+    return {state:'pending',msg:c+' → saved, this event waits for Belén’s OK before it reaches Money, Invoicing or SPX. '+
+      'She will be asked, and when she approves it will '+what};
   },
   ensureEventLines(){
     const out={items:0,projects:0,adopted:0,money:0,spx:0,resynced:0};
@@ -3440,6 +3627,7 @@ async function boot(renderFn){
   try{renderPunchBanner();flushPendingPunches();}catch(e){} // recover punches that failed to save last time
   try{if(_breakTimer)clearInterval(_breakTimer);breakReminderTick();_breakTimer=setInterval(breakReminderTick,60000);}catch(e){} // break nudge on any page
   try{spxTouchpointAlarms();}catch(e){} // ⏰ my overdue SPX touchpoints → my inbox (any page)
+  try{spxDeliveryAlarms();}catch(e){}   // 📦 my won contracts still owing their delivery details (weekly)
 }
 function rosterBanner(em){
   const b=document.createElement('div');

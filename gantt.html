@@ -40,6 +40,18 @@
   .head .edit:hover{color:var(--orange)}
   .prov{background:#fff7d6;color:#7a5b00;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600}
   .nocode{background:#fdecec;color:#A32D2D;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600;white-space:nowrap}
+  .waiting{background:#fff3e0;color:#8a5200;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600;white-space:nowrap}
+  .okbtn{background:#fff3e0;color:#8a5200;font-size:9px;padding:1px 5px;border-radius:4px;font-weight:700;border:1px solid #f0d9b8;white-space:nowrap}
+  .okbtn:hover{background:var(--orange);color:#fff;border-color:var(--orange)}
+  /* the approval queue above the timeline */
+  #okQueue{background:#fff8ef;border:1px solid #f0d9b8;border-radius:11px;padding:11px 14px;margin:10px 0 0}
+  .okq-h{font-size:13px;font-weight:700;color:#8a5200;margin-bottom:7px}
+  .okq-r{display:flex;align-items:center;gap:12px;justify-content:space-between;padding:6px 0;border-top:1px solid #f3e6d3}
+  .okq-r:first-of-type{border-top:none}
+  .okq-c{background:#2B2B2B;color:#fff;font-size:9px;padding:1px 5px;border-radius:4px;vertical-align:1px}
+  .okq-m{font-size:11.5px;color:#7c6a52;margin-top:2px;max-width:78ch}
+  .okq-b{font-size:12px;padding:5px 12px;white-space:nowrap}
+  #m_plan.pending{background:#fff8ef;color:#8a5200;border:1px solid #f0d9b8}
   /* what saving this event will actually do to Money / Invoicing / SPX — said before it happens */
   #m_plan{font-size:11.5px;line-height:1.45;border-radius:7px;padding:8px 10px;margin:2px 0 0}
   #m_plan.draft{background:#fff7ec;color:#8a5200;border:1px solid #f0d9b8}
@@ -86,6 +98,7 @@
   <p class="tagline" id="tagline">every RENMAD event on one timeline — where the magic gets orchestrated</p>
   <div class="ptabs"><button id="pt_renmad" class="on">RENMAD</button><button id="pt_external">Projects</button></div>
   <div id="extBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:9px;padding:9px 13px;font-size:13px;margin:10px 0 0"></div>
+  <div id="okQueue" style="display:none"></div>
   <div class="bar-top">
     <button class="btn primary" id="addBtn">+ Add event</button>
     <span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:12px;color:var(--muted)">Zoom</span><button class="btn" id="zOut" style="padding:5px 11px">−</button><span id="zLbl" style="font-size:12px;color:var(--muted);min-width:40px;text-align:center;font-weight:600">100%</span><button class="btn" id="zIn" style="padding:5px 11px">+</button></span>
@@ -136,7 +149,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=102"></script>
+<script src="store.js?v=103"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -181,6 +194,8 @@ function wIdx(d,start){return Math.round((+monday(d)-+start)/(7*86400000));}
 function render(){
   const grid=document.getElementById('grid');
   const mg=DB.canManage();
+  const isBelen=isBelenP(DB.currentUser);   // only she connects an event to the money side
+  renderOkQueue();
   const list=tabEvents();
   if(!list.length){grid.innerHTML='<div style="padding:26px 22px;color:var(--muted);font-size:13px">'+
     (TAB==='external'?'No external projects yet — click <b>+ Add project</b> to create the first one, picking only the timelines it needs.':'No events yet.')+'</div>';return;}
@@ -210,7 +225,14 @@ function render(){
         /* an event with no marketing code is a DRAFT for money: it is planned and staffed
            here, but it is deliberately absent from Money / Invoicing / SPX until the code
            arrives. Say so on the row — the person who created it is the one who can fix it. */
-        (!isExt&&!DB.evMoneyReady(ev)?' <span class="nocode" title="No marketing code yet, so this event is NOT in Money, Invoicing or the SPX board. Add the E-code here and all three appear at once — attached to anything that already exists, never duplicated.">no code · not in reporting</span>':'')+'</div>'+
+        /* three states, said on the row itself: wired (nothing shown) · coded and waiting
+           for Belén · no code at all. The middle one is a BUTTON when she is the one
+           looking, so approving is one click from where she already is. */
+        (isExt||DB.evMoneyReady(ev)?''
+          :DB.evAwaitingOk(ev)
+            ?(isBelen?' <button class="okbtn" data-connect="'+ev.id+'" title="Connect this event to Money, Invoicing and SPX now">⏳ connect →</button>'
+                     :' <span class="waiting" title="Coded and waiting for Belén to connect it to Money, Invoicing and SPX.">waiting for Belén</span>')
+            :' <span class="nocode" title="No marketing code yet, so this event is NOT in Money, Invoicing or the SPX board. Add the E-code here and it goes to Belén to connect — attached to anything that already exists, never duplicated.">no code · not in reporting</span>')+'</div>'+
       '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+'</div>';
     const eb=head.querySelector('.edit');if(eb)eb.onclick=e=>{e.stopPropagation();openModal(ev.id);};
     head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
@@ -271,6 +293,7 @@ function render(){
     body.addEventListener('mouseleave',hideTip);
     row.appendChild(head);row.appendChild(body);grid.appendChild(row);
   });
+  wireConnect();   // the ⏳ connect buttons, on the rows and in the queue above
 }
 const tip=document.getElementById('tip');
 function showTip(x,y,t){tip.textContent=t;tip.style.display='block';tip.style.left=(x+12)+'px';tip.style.top=(y+14)+'px';}
@@ -298,6 +321,38 @@ function setDurControl(days){days=+days||1;let n=1,u='day';
   document.getElementById('m_dur_n').value=n;document.getElementById('m_dur_u').value=u;
   document.getElementById('m_dur_n').disabled=(u==='half');}
 document.getElementById('m_dur_u').onchange=function(){document.getElementById('m_dur_n').disabled=(this.value==='half');};
+/* ---- the queue: events coded by someone else, waiting for Belén (her ask, 3 Aug) ----
+   "Maybe get me to confirm it is ok for the event to be added to the plumbing."
+   It sits above the timeline so she never has to go looking, and it only exists when there
+   is something in it — an empty box would just teach her to ignore the space. Everyone
+   else sees the same strip read-only, so a PM can tell that their event is queued and not
+   lost. Connecting is one click and runs the ordinary cascade (adopt or create). */
+function renderOkQueue(){
+  const box=document.getElementById('okQueue');if(!box)return;
+  let list=[];try{list=DB.evAwaitingOkList().filter(e=>evKind(e)!=='external');}catch(e){}
+  if(!list.length){box.style.display='none';box.innerHTML='';return;}
+  const isBelen=isBelenP(DB.currentUser);
+  box.style.display='';
+  box.innerHTML='<div class="okq-h">⏳ '+list.length+' event'+(list.length>1?'s are':' is')+
+    ' waiting to be connected to Money, Invoicing and SPX'+(isBelen?'':' — Belén has been asked')+'</div>'+
+    list.map(e=>{
+      let p={msg:''};try{p=DB.evConnectPlan(e);}catch(err){}
+      return '<div class="okq-r"><div><b>'+esc(e.name)+'</b> <span class="okq-c">'+esc(DB.evCode(e)||'')+'</span>'+
+        '<div class="okq-m">'+esc((p.msg||'').replace(/^E\d+\s*→\s*/,'').replace(/^saved, this event waits for Belén’s OK before it reaches Money, Invoicing or SPX\.\s*She will be asked, and when she approves it will\s*/,'On connecting: '))+'</div></div>'+
+        (isBelen?'<button class="btn primary okq-b" data-connect="'+e.id+'">Connect it</button>':'')+'</div>';
+    }).join('');
+}
+function wireConnect(){
+  document.querySelectorAll('[data-connect]').forEach(b=>b.onclick=ev=>{
+    ev.stopPropagation();
+    const id=+b.dataset.connect,e=DB.event(id);if(!e)return;
+    let p={msg:''};try{p=DB.evConnectPlan(e);}catch(err){}
+    if(!confirm('Connect “'+e.name+'” ('+(DB.evCode(e)||'')+') to Money, Invoicing and SPX?\n\n'+(p.msg||'')))return;
+    const r=DB.connectEventMoney(id);
+    render();
+    if(r&&r.done)alert('Connected. '+((r.cascade&&r.cascade.adopted)?'It attached to the Money row that already existed.':'Its Money row, invoicing item and sales-board entry are in place.'));
+  });
+}
 function openModal(id){editingId=id;
   modalIsExt=id?(evKind(DB.event(id))==='external'):(TAB==='external');
   const defDate=modalIsExt?toISO(addDays(monday(new Date()),8*7)):'2027-09-01';
