@@ -3618,9 +3618,9 @@ window.PB = {
         ["12:50", "El hardware almacena, el software gana · optimizer", "Ponencia"],
         ["13:10", "El peaje de la tranquilidad · tolling y deuda", "Masterclass"],
         ["13:55", "Agenda cargada · cierre y hoja de ruta 2027", "Cierre"],
-        ["14:15", "Networking lunch", "—"]
+        ["14:15", "Networking con aperitivo", "—"]
       ],
-      note: "Inicio 10:00 · un único descanso a media mañana · cierre con networking lunch en la sede de PwC."
+      note: "Inicio 10:00 · un único descanso a media mañana · cierre con networking y aperitivo en la sede de PwC."
     },
     {
       id: "E061", tag: "DATACENTERS & IA", date_s: "MARTES 13 OCTUBRE", name: "Datacenters Off-Grid",
@@ -3642,9 +3642,9 @@ window.PB = {
         ["12:00", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
         ["12:20", "Energía propia, riesgo propio · financiación", "Masterclass"],
         ["13:10", "Modelos de negocio y hoja de ruta", "Cierre"],
-        ["13:30", "Networking lunch", "—"]
+        ["13:30", "Networking con aperitivo", "—"]
       ],
-      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking lunch en la sede de PwC."
+      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking y aperitivo en la sede de PwC."
     }
   ];
 
