@@ -31,11 +31,21 @@
   .chartbox.sm{height:260px}
   /* the seven control-document charts (Belén, 3 Aug) — two up on a desktop, one up
      on a narrow screen; every colour via var() so dark mode follows for free */
-  .cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px 18px}
+  /* wider tiles = fatter bars. At 330px each weekly chart squeezed 26 weeks × 2 editions
+     into hairlines (Belén, 3 Aug 2026: "best if you can make the lines thicker too"). */
+  .cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(470px,1fr));gap:16px 18px}
   .cbox{min-width:0}
+  /* the editions being compared: a chip each + a picker to add more */
+  .cmpbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:2px 0 10px}
+  .cmpchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-left-width:4px;
+    border-radius:20px;padding:3px 6px 3px 10px;font-size:12px;background:#fff;color:var(--ink)}
+  .cmpchip i{display:none}
+  .cmpchip button{border:none;background:none;cursor:pointer;font-size:14px;line-height:1;color:#9a978e;padding:0 2px}
+  .cmpchip button:hover{color:#A32D2D}
+  .cmpbar select{font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:20px;background:#fff;color:var(--ink)}
   .ctit{font-size:12.5px;font-weight:700;color:var(--charcoal);margin:0 0 1px}
   .csub{font-size:11px;color:var(--muted);margin:0 0 4px}
-  .chartbox.xs{height:212px}
+  .chartbox.xs{height:236px}
   /* a legend that sits BESIDE the chart instead of inside it, so target and stretch
      stop competing for attention with the events actually being compared */
   .sidewrap{display:flex;gap:14px;align-items:stretch}
@@ -206,7 +216,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=105"></script>
+<script src="store.js?v=106"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -252,8 +262,14 @@ const vlines={id:'vlines',afterDraw(c){const o=(c.options.plugins||{}).vlines;if
     ctx.beginPath();ctx.moveTo(x,c.chartArea.top);ctx.lineTo(x,c.chartArea.bottom);ctx.stroke();
     ctx.fillStyle=l.color;ctx.font='600 10px Segoe UI';ctx.fillText(l.label,x+3,c.chartArea.top+10);ctx.restore();});}};
 if(window.Chart)Chart.register(vlines);
-/* draw the exact value inside each stacked bar segment (used when charts show % mix) */
-const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins||{}).barlabels;if(!o)return;
+/* draw the exact value inside each stacked bar segment (used when charts show % mix).
+   ⚠ `on:true` is NOT decoration — it is the guard (Belén, 3 Aug 2026: "delete the numbers
+   from the thin vertical lines, otherwise it looks awful"). Chart.js resolves an unknown
+   plugin option key to a truthy proxy of its defaults, so the old `if(!o) return` never
+   returned and this plugin was silently stamping numbers on EVERY bar chart in the page —
+   including the seven weekly charts, where 26 weeks × 2 editions made an unreadable mess.
+   An explicit flag cannot be conjured by the resolver, so only charts that ask, get it. */
+const barlabels={id:'barlabels',afterDatasetsDraw(c){const o=(c.options.plugins||{}).barlabels;if(!o||o.on!==true)return;
   const cmp=v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v);
   const ctx=c.ctx;ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#fff';
   c.data.datasets.forEach((ds,di)=>{const meta=c.getDatasetMeta(di);if(meta.hidden)return;
@@ -1053,22 +1069,78 @@ function renderDetail(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   ensureHero(ms);
   const ev=ms.find(e=>e.code===heroCode);
-  const prev=prevEdition(ms,ev);
+  const prevs=comparisons(ms,ev);
+  const names=prevs.map(p=>p.name);
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Where it should be — '+heroSelHtml(ms,'heroSel')+'</h3>'+
     '<p class="hint" id="benchHint"></p>'+
     '<div class="sidewrap"><div class="chartbox"><canvas id="wkchart"></canvas></div>'+
     '<div class="sidelg" id="wkLg"></div></div></div>'+
-    '<div class="panel"><h3>The seven charts'+(prev?' — against '+esc(prev.name):'')+'</h3>'+
-    '<p class="hint">'+(prev
-      ? 'Your control document, live: each week of '+esc(ev.name)+' beside '+esc(prev.name)+' at the same point in its own countdown.'
-      : 'Your control document, live. No previous edition of this event is in the data yet, so there is nothing to compare against — the bars are this edition alone.')+
-    '</p><div class="cgrid" id="cgrid"></div></div>'+
+    '<div class="panel"><h3>The seven charts'+(names.length?' — against '+esc(names.join(' · ')):'')+'</h3>'+
+    '<p class="hint">'+(names.length
+      ? 'Your control document, live: each week of '+esc(ev.name)+' beside '+esc(names.join(' and '))+', each at the same point in its own countdown.'
+      : 'Your control document, live. Nothing is being compared right now — add an edition below and it appears in all seven charts.')+
+    '</p>'+cmpBarHtml(ms,ev,prevs)+
+    '<div class="cgrid" id="cgrid"></div></div>'+
     '<div class="panel"><h3>Week by week — the numbers</h3>'+
     '<p class="hint">The Excel view: every metric, every week — orange column = current week.</p><div class="wk" id="wktbl"></div></div>'+
     detailAnalysis(ms,ev);
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderDetail();};
-  drawWeekChart(ms,ev);drawWkCharts(ev,prev);drawWeekTable(ev);
+  wireCmpBar();
+  drawWeekChart(ms,ev);drawWkCharts(ev,prevs);drawWeekTable(ev);
+}
+/* ---- which earlier editions the seven charts are drawn against (Belén, 3 Aug 2026:
+   "give me an option to add to the graphs even more previous events if I want to") ----
+   sevenCmp null = the house default, the one previous edition; an array = her pick.
+   Kept in memory, not saved: it is a way of looking at a question, not a setting.
+   (Deliberately NOT cmpCodes — that name belongs to the Compare tab's own selection.) */
+let sevenCmp=null;
+const CMP_PAL=['#9a978e','#185FA5','#4C3079','#C77800','#29ACE3','#3E8C28'];
+function comparisons(ms,ev){
+  if(sevenCmp==null){const p=prevEdition(ms,ev);return p?[p]:[];}
+  return sevenCmp.map(c=>ms.find(e=>e.code===c)).filter(e=>e&&e.code!==ev.code);
+}
+/* anything with numbers worth plotting. Earlier editions of THIS event first — that is
+   the comparison she wants nine times out of ten — then every other event, newest first. */
+function cmpCandidates(ms,ev){
+  const has=e=>e.final>0||e.rows.some(r=>+r.soFarEur>0||+r.topicLeads>0||+r.eventLeads>0);
+  const mine=[],other=[];
+  ms.forEach(e=>{if(e.code===ev.code||!has(e))return;(e.fam===ev.fam?mine:other).push(e);});
+  const byYear=(a,b)=>((+b.year||0)-(+a.year||0))||(''+a.name).localeCompare(''+b.name);
+  return {mine:mine.sort(byYear),other:other.sort(byYear)};
+}
+function cmpBarHtml(ms,ev,prevs){
+  const cand=cmpCandidates(ms,ev),chosen=prevs.map(p=>p.code);
+  const opt=e=>chosen.indexOf(e.code)>=0?'':'<option value="'+esc(e.code)+'">'+esc(e.name)+'</option>';
+  const chips=prevs.map((p,i)=>'<span class="cmpchip" style="border-left-color:'+CMP_PAL[i%CMP_PAL.length]+'">'+
+      esc(p.name)+'<button data-cmpdel="'+esc(p.code)+'" title="Take it off the charts">×</button></span>').join('');
+  const sel='<select id="cmpAdd" title="Add another edition to all seven charts">'+
+    '<option value="">＋ Add an edition…</option>'+
+    (cand.mine.length?'<optgroup label="Earlier editions of this event">'+cand.mine.map(opt).join('')+'</optgroup>':'')+
+    (cand.other.length?'<optgroup label="Any other event">'+cand.other.map(opt).join('')+'</optgroup>':'')+'</select>';
+  return '<div class="cmpbar"><span class="cmpchip" style="border-left-color:#FF4A00"><b>'+esc(ev.name)+'</b></span>'+
+    chips+sel+
+    (sevenCmp!=null?'<button class="btn" id="cmpReset" style="font-size:12px;padding:3px 10px;border-radius:20px">↺ back to the default</button>':'')+
+    (prevs.length>2?'<span class="hint" style="margin:0">Each extra edition makes the weekly bars narrower — the accumulated charts take crowding best.</span>':'')+
+    '</div>';
+}
+function wireCmpBar(){
+  const add=document.getElementById('cmpAdd');
+  if(add)add.onchange=()=>{
+    if(!add.value)return;
+    const ms=meta(),ev=ms.find(e=>e.code===heroCode);
+    if(sevenCmp==null)sevenCmp=comparisons(ms,ev).map(p=>p.code);
+    if(sevenCmp.indexOf(add.value)<0)sevenCmp=sevenCmp.concat([add.value]);
+    renderDetail();
+  };
+  document.querySelectorAll('[data-cmpdel]').forEach(b=>b.onclick=()=>{
+    const ms=meta(),ev=ms.find(e=>e.code===heroCode);
+    if(sevenCmp==null)sevenCmp=comparisons(ms,ev).map(p=>p.code);
+    sevenCmp=sevenCmp.filter(c=>c!==b.dataset.cmpdel);
+    renderDetail();
+  });
+  const r=document.getElementById('cmpReset');
+  if(r)r.onclick=()=>{sevenCmp=null;renderDetail();};
 }
 /* the previous edition of the same event (Datacenters Italia 26 → …25). Same
    family name, earlier year, and it must actually have figures to compare. */
@@ -1090,9 +1162,14 @@ function prevEdition(ms,ev){
    different month still lines up with its predecessor week for week.
    The Acumulado chart carries BOTH money lines: invoiced (official) and signed
    (real), because sponsorship is signed long before it can be invoiced. */
-function drawWkCharts(ev,prev){
+function drawWkCharts(ev,prevs){
   const box=document.getElementById('cgrid');if(!box)return;
-  const CUR='#FF4A00',PRV='#9a978e',SIG='#3E8C28';
+  prevs=Array.isArray(prevs)?prevs:(prevs?[prevs]:[]);   // tolerate the old single-edition call
+  const CUR='#FF4A00',SIG='#3E8C28';
+  const prvC=i=>CMP_PAL[i%CMP_PAL.length];
+  /* fat bars, no hairlines: fill the category, drop the stroke, and give a non-zero
+     value at least 2px so a small week is still visible (Belén, 3 Aug 2026) */
+  const BARFAT={barPercentage:.97,categoryPercentage:.86,borderWidth:0,borderSkipped:false,minBarLength:2};
   const series=(e,k)=>WEEKS.map(w=>{const r=e?e.rows.find(x=>+x.week===w):null;
     return (r&&r[k]!=null&&r[k]!=='')?+r[k]:null;});
   const CH=[
@@ -1119,13 +1196,16 @@ function drawWkCharts(ev,prev){
       if(ev.rows.some(r=>r.signedAcc!=null))
         ds.push({label:ev.name+' — signed',data:series(ev,'signedAcc'),
           borderColor:SIG,backgroundColor:SIG,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,3]});
-      if(prev)ds.push({label:prev.name,data:series(prev,'soFarEur'),
-        borderColor:PRV,backgroundColor:PRV,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});
+      prevs.forEach((p,i)=>ds.push({label:p.name,data:series(p,'soFarEur'),
+        borderColor:prvC(i),backgroundColor:prvC(i),borderWidth:2,pointRadius:0,tension:.25,spanGaps:true}));
     }else{
-      if(prev)ds.push({label:prev.name,data:series(prev,c.k),
-        borderColor:PRV,backgroundColor:c.type==='bar'?PRV:PRV,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});
-      ds.push({label:ev.name,data:series(ev,c.k),
-        borderColor:CUR,backgroundColor:CUR,borderWidth:c.type==='bar'?1:2.5,pointRadius:0,tension:.25,spanGaps:true});
+      /* every earlier edition first, this one last so it draws on top */
+      prevs.forEach((p,i)=>ds.push(Object.assign({label:p.name,data:series(p,c.k),
+        borderColor:prvC(i),backgroundColor:prvC(i),borderWidth:c.type==='bar'?0:2,pointRadius:0,tension:.25,spanGaps:true},
+        c.type==='bar'?BARFAT:{})));
+      ds.push(Object.assign({label:ev.name,data:series(ev,c.k),
+        borderColor:CUR,backgroundColor:CUR,borderWidth:c.type==='bar'?0:2.5,pointRadius:0,tension:.25,spanGaps:true},
+        c.type==='bar'?BARFAT:{}));
     }
     mkChart(c.id,{type:c.type,data:{labels:WLAB,datasets:ds},
       options:{maintainAspectRatio:false,animation:false,
@@ -1290,7 +1370,7 @@ function drawComposition(ms){
     options:{maintainAspectRatio:false,animation:false,
       plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},
         tooltip:{callbacks:{label:c=>{const d=c.dataset;return d.label+': '+eur(d._eur[c.dataIndex])+' · '+Math.round(d._pct[c.dataIndex])+'%';}}},
-        barlabels:{both:true,min:7}},
+        barlabels:{on:true,both:true,min:7}},
       scales:{x:{stacked:true,ticks:{font:{size:10}}},
         y:{stacked:true,max:compMode==='pct'?100:undefined,ticks:{callback:v=>compMode==='pct'?(v+' %'):new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)}}}}});
 }
@@ -1578,7 +1658,7 @@ function drawMix(ms){
   mkChart('mix',{type:'bar',data:{labels:years,datasets:ds},options:{maintainAspectRatio:false,animation:false,
     plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},
       tooltip:{callbacks:{label:c=>{const d=c.dataset;return d.label+': '+eur(d._eur[c.dataIndex])+' · '+d._pct[c.dataIndex].toFixed(0)+'%';}}},
-      barlabels:{both:true,min:6}},
+      barlabels:{on:true,both:true,min:6}},
     scales:{x:{stacked:true},y:{stacked:true,max:mixMode==='pct'?100:undefined,ticks:{callback:v=>mixMode==='pct'?v+' %':compact(v)}}}}});
 }
 function drawFam(done){
