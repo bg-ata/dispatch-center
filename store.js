@@ -2832,15 +2832,22 @@ const DB={
   ecodeBlocker(code,exceptId){
     const c=(''+(code||'')).trim().toUpperCase();
     if(!/^E\d+$/.test(c))return null;
-    const clash=(this.events||[]).find(e=>!e.deleted&&e.id!=exceptId&&evKind(e)!=='external'&&this.evCode(e)===c);
-    if(clash)return clash.name||'another event';
-    /* a registry row whose Money row already belongs to a DIFFERENT event is a real clash */
+    /* THE ONE EXEMPTION (Belén, 3 Aug: "don't allow the same code twice, and do keep the
+       warnings and the draft"). A code already sitting on a Money row that is still WAITING
+       for its event is not a duplicate: typing it ATTACHES the two, and the code ends up on
+       exactly one event. That is the whole point of the draft → adopt path, so it must stay
+       open. Everything else below is refused — including a code that exists only in an old
+       edition's weekly history, because reusing it would pour this event's money into that
+       edition's curve. */
     const reg=(this.spxEventReg||[]).find(g=>!g.deleted&&(''+g.eventKey).trim().toUpperCase()===c);
     if(reg&&reg.financeId!=null){
       const f=(this.finance||[]).find(x=>!x.deleted&&x.id==reg.financeId);
-      if(f&&f.eventId!=null&&f.eventId!=exceptId&&this.event(f.eventId))return this.finTrueLabel(f);
+      const waiting=f&&(f.eventId==null||f.eventId===''||!this.event(f.eventId));
+      if(f&&(waiting||f.eventId==exceptId))return null;      // adoptable, or already this event's
     }
-    return null;},
+    /* strict from here: another timeline event, another registry entry, or weekly history */
+    const o=this.ecodesInUse(exceptId)[c];
+    return o?(o.name||o.eventKey||'another event'):null;},
   nextEcode(){const used=this.ecodesInUse(null);let hi=0;
     Object.keys(used).forEach(k=>{const n=parseInt(k.slice(1),10);if(n>hi)hi=n;});
     return 'E'+String(hi+1).padStart(3,'0');},
