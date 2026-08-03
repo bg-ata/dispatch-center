@@ -1378,9 +1378,15 @@ function spxStatusAll(){
     let w=(r.reg.convByStatus&&r.reg.convByStatus.specsPct!=null)?+r.reg.convByStatus.specsPct:null;
     if(w!=null){if(w>1)w=w/100;w=Math.max(0,Math.min(1,w));}
     if(fin&&fin.target!=null&&w!=null){r.totTarget=+fin.target||0;r.totStretch=+fin.stretch||0;r.spTarget=r.totTarget*w;}
-    else{const g=r.reg;r.spTarget=+g.sponsorshipTarget||0;
-      r.totTarget=(+g.sponsorshipTarget||0)+(+g.pasesTarget||0);
-      r.totStretch=(+g.sponsorshipStretch||0)+(+g.pasesStretch||0);}
+    else{
+      /* ONE target on the board — the SPX one (Belén, 3 Aug 2026: "the tickets target does
+         not need to be on the board… a simple subtraction job to show the rest"). The total
+         is the event's Money target; the rest is total − SPX. pasesTarget/pasesStretch are
+         no longer read. ⚠ KEEP IN SYNC with eventTargets() in spx.html. */
+      const g=r.reg;r.spTarget=+g.sponsorshipTarget||0;
+      r.totTarget=(fin&&fin.target!=null)?(+fin.target||0):r.spTarget;
+      r.totStretch=(fin&&fin.stretch!=null)?(+fin.stretch||0):(+g.sponsorshipStretch||0);}
+    r.restTarget=r.totTarget>r.spTarget?(r.totTarget-r.spTarget):(r.totTarget?0:null);
     delete r.reg;
   });
   return Object.values(rows).sort((a,b)=>a.sort-b.sort);

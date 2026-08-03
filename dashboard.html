@@ -206,7 +206,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=104"></script>
+<script src="store.js?v=105"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -462,19 +462,23 @@ function renderSpxStatus(){
       '<td class="num" style="color:#A32D2D">'+money(r.lost)+'</td>'+
       '<td class="num">'+(r.spTarget?money(r.spTarget):'—')+'</td>'+
       '<td class="num" style="font-weight:700;color:'+(reach!=null&&reach>=1?'#3E8C28':reach!=null&&reach<0.5?'#A32D2D':'#2B2B2B')+'">'+(reach==null?'—':Math.round(reach*100)+'%')+'</td>'+
-      '<td class="num">'+(r.totTarget?money(r.totTarget):'—')+'</td>'+
+      /* the rest of the target is never typed anywhere — it is this subtraction
+         (Belén, 3 Aug: "a simple subtraction job to show the rest of the target") */
+      '<td class="num">'+(r.totTarget?money(r.totTarget):'—')+
+        (r.restTarget?'<div style="font-size:10.5px;color:#7c7c78;font-weight:400" title="The rest of the target — what tickets and everything else have to bring: total − SPX">resto '+money(r.restTarget)+'</div>':'')+'</td>'+
       '<td class="num">'+(iv==null?'—':money(iv))+'</td>'+
       '<td><a href="spx.html?ev='+encodeURIComponent(r.key||'')+'#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>'+
       (open?'<tr class="evdet"><td colspan="10" style="padding:0;background:#FBFAF8;border-bottom:2px solid var(--line)">'+spxDealsHtml(r,money)+'</td></tr>':'');
   };
   const sec=(title,list)=>{
     if(!list.length)return '';
-    const T={won:0,sent:0,silent:0,lost:0,spT:0,totT:0};
-    list.forEach(r=>{T.won+=r.won;T.sent+=r.sent;T.silent+=r.silent;T.lost+=r.lost;T.spT+=r.spTarget||0;T.totT+=r.totTarget||0;});
+    const T={won:0,sent:0,silent:0,lost:0,spT:0,totT:0,rest:0};
+    list.forEach(r=>{T.won+=r.won;T.sent+=r.sent;T.silent+=r.silent;T.lost+=r.lost;T.spT+=r.spTarget||0;T.totT+=r.totTarget||0;T.rest+=r.restTarget||0;});
     return '<h3 style="margin:16px 0 6px">'+title+'</h3><div class="wstbl"><table>'+
-      '<tr><th style="text-align:left">Event</th><th class="num">Won (signed)</th><th class="num">Pipeline (Sent)</th><th class="num">Silent</th><th class="num">Lost</th><th class="num">Specs target</th><th class="num">% specs</th><th class="num">Total target</th><th class="num">Invoiced</th><th></th></tr>'+
+      '<tr><th style="text-align:left">Event</th><th class="num">Won (signed)</th><th class="num">Pipeline (Sent)</th><th class="num">Silent</th><th class="num">Lost</th><th class="num" title="The sponsorship target — the only one the SPX board holds">SPX target</th><th class="num">% SPX</th><th class="num" title="The event total from Money; underneath, the rest = total − SPX">Total target</th><th class="num">Invoiced</th><th></th></tr>'+
       list.map(rowHtml).join('')+
-      '<tr class="total"><td style="text-align:left">Total</td><td class="num">'+money(T.won)+'</td><td class="num">'+money(T.sent)+'</td><td class="num">'+money(T.silent)+'</td><td class="num">'+money(T.lost)+'</td><td class="num">'+money(T.spT)+'</td><td class="num">'+pc(T.won,T.spT)+'</td><td class="num">'+money(T.totT)+'</td><td class="num"></td><td></td></tr>'+
+      '<tr class="total"><td style="text-align:left">Total</td><td class="num">'+money(T.won)+'</td><td class="num">'+money(T.sent)+'</td><td class="num">'+money(T.silent)+'</td><td class="num">'+money(T.lost)+'</td><td class="num">'+money(T.spT)+'</td><td class="num">'+pc(T.won,T.spT)+'</td><td class="num">'+money(T.totT)+
+        (T.rest?'<div style="font-size:10.5px;color:#7c7c78;font-weight:400">resto '+money(T.rest)+'</div>':'')+'</td><td class="num"></td><td></td></tr>'+
       '</table></div>';
   };
   C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Won</b> counts the moment a deal is marked Won. <b>Click any event</b> to open its signed contracts: what was sold, whether it is invoiced and paid, and what logistics has to deliver. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+

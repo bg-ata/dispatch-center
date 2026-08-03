@@ -182,7 +182,7 @@
     <button class="btn p" id="w_save">Save</button></div>
 </div></div>
 
-<script src="store.js?v=104"></script>
+<script src="store.js?v=105"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -441,8 +441,8 @@ function renderProposals(app,scope){
     +tile('Silent',money(silente),cntB('Silent')+' dormidas')
     +tile('Lost',money(perdido),cntB('Lost')+' props')
     +tile('Won + pipeline',money(proceso),'')
-    +tile('Target (specs)',tgt?money(tgt):'—','where set in Money')
-    +tile('% target',reachedT==null?'—':pct(reachedT),reachedT==null?'':'fuera '+pct(Math.max(0,1-reachedT)))
+    +tile('Target SPX',tgt?money(tgt):'—','the sponsorship target only')
+    +tile('% target SPX',reachedT==null?'—':pct(reachedT),reachedT==null?'':'fuera '+pct(Math.max(0,1-reachedT)))
     +'</div>';
 
   if(scope!=='before'&&(DB.isSales()||DB.canSalesLead())){
@@ -528,7 +528,7 @@ function exportBackup(){
     const T=eventTargets(e);   // includes the Money-master × specs-% split — raw reg fields would show stale/blank targets
     const won=eventBucketMoney(e.key,'Confirmed'),sent=eventBucketMoney(e.key,'Sent'),silent=eventBucketMoney(e.key,'Silent'),lost=eventBucketMoney(e.key,'Lost');
     const tickets=fid!=null?invoicedPases(fid).total:0;const spT=T.spTarget,tkT=T.tkTarget,totT=T.totTarget;const closed=won+tickets;
-    return {Event:e.name,'Specs target €':spT,'Tickets target €':tkT,'Total target €':totT,'Specs Won €':won,'Tickets sold €':tickets,'Closed total €':closed,
+    return {Event:e.name,'SPX target €':spT,'Rest of target €':(tkT==null?'':tkT),'Total target €':totT,'Specs Won €':won,'Tickets sold €':tickets,'Closed total €':closed,
       '% target':totT?Math.round(1000*closed/totT)/10+'%':'','Sent €':sent,'Silent €':silent,'Lost €':lost,Current:evCurrent(e)?'yes':''};});
   exportXLSX('RENMAD_SPX_BACKUP_'+toISO(new Date())+'.xlsx',
     [{name:'Proposals (all)',rows:proposals},{name:'Event lines',rows:lines},{name:'Event summary',rows:evSummary}]);
@@ -1001,9 +1001,17 @@ function eventTargets(ev){
     return {source:'money',specsPct:w,moneyTotal:tot,totTarget:tot,totStretch:totS,
       spTarget:tot*w,tkTarget:tot*(1-w),spStretch:totS*w,tkStretch:totS*(1-w)};
   }
-  const spT=+reg.sponsorshipTarget||0,tkT=+reg.pasesTarget||0,spS=+reg.sponsorshipStretch||0,tkS=+reg.pasesStretch||0;
-  return {source:'spx',specsPct:w,moneyTotal:fin?(+fin.target||null):null,totTarget:spT+tkT,totStretch:spS+tkS,
-    spTarget:spT,tkTarget:tkT,spStretch:spS,tkStretch:tkS};
+  /* ---- the board holds ONE target: the SPX one (Belén, 3 Aug 2026: "the tickets target
+     does not need to be on the board… it will be a simple subtraction job to show the
+     rest of the target"). The rest is the event's total target (Money) minus SPX — never
+     a second number to keep in step. No Money total → there is nothing to subtract from,
+     so the rest is unknown (null) rather than zero, and the total is the SPX target.
+     pasesTarget/pasesStretch stay in the table but are no longer read or written. */
+  const spT=+reg.sponsorshipTarget||0,spS=+reg.sponsorshipStretch||0;
+  const mT=fin&&fin.target!=null?(+fin.target||0):null,mS=fin&&fin.stretch!=null?(+fin.stretch||0):null;
+  return {source:'spx',specsPct:w,moneyTotal:mT,totTarget:mT!=null?mT:spT,totStretch:mS!=null?mS:spS,
+    spTarget:spT,tkTarget:mT!=null?Math.max(0,mT-spT):null,
+    spStretch:spS,tkStretch:mS!=null?Math.max(0,mS-spS):null};
 }
 /* ---- proposed specs/tickets split (Belén, 30 Jul): "you must propose the % split
    and explain why your methodology proposes this specific split" ----
@@ -1088,7 +1096,7 @@ function renderDashboard(app){
     +tile('Specs cerrado',money(won),cntEventBucket(ev.key,'Confirmed')+' Won','good')
     +tile('Tickets cerrado',money(tickets),'vendidos (Facturación)')
     +tile('Cerrado total',money(closed),'specs + tickets','good')
-    +tile('Target del evento',totTarget?money(totTarget):'—',(spTarget&&tkTarget)?('specs '+money(spTarget)+' · tickets '+money(tkTarget)):'donde esté en Money')
+    +tile('Target del evento',totTarget?money(totTarget):'—',spTarget?('SPX '+money(spTarget)+(tkTarget!=null?' · resto '+money(tkTarget):'')):'donde esté en Money')
     +tile('% target',reached==null?'—':pct(reached),reached==null?'':'fuera '+pct(Math.max(0,1-reached))+' · faltan '+money(toGoMoney))
     +'</div></div>';
   // BOTTOM block — analysis: Sent / Silent / Lost / Won share of the pipeline
@@ -1116,10 +1124,14 @@ function renderDashboard(app){
       {type:'line',label:'€ acumulado',data:cum,borderColor:'#C0392B',backgroundColor:'#C0392B',borderWidth:2,tension:.25,pointRadius:2,order:1}]},
     options:{maintainAspectRatio:false,animation:false,plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+': '+money(c.parsed.y)}}},scales:{x:{ticks:{font:{size:9},maxRotation:0}},y:{ticks:{callback:v=>money(v)}}}}});
 }
-/* health-check target/stretch row — Specs | Tickets | TOTAL (editable cells wired by wireHC) */
-function hcRow2(label,specs,tickets,total,editable,specsF,ticketsF){
+/* health-check target/stretch row — SPX | the rest | TOTAL.
+   Only the SPX cell is ever typed (wired by wireHC); the rest is the subtraction
+   total − SPX and is deliberately not editable, so the two can never drift apart. */
+function hcRow2(label,specs,rest,total,editable,specsF){
   const c=(v,fld)=>editable?'<span class="mval" data-tf="'+fld+'" title="Click to edit">'+money(v)+'</span>':money(v);
-  return '<tr><td>'+esc(label)+'</td><td class="num">'+c(specs,specsF)+'</td><td class="num">'+c(tickets,ticketsF)+'</td><td class="num">'+money(total)+'</td></tr>';
+  const restCell=rest==null?'<span class="ro-note" title="Set the event total in Money to see what is left for tickets">—</span>'
+    :'<span title="The rest of the event target: total − SPX">'+money(rest)+'</span>';
+  return '<tr><td>'+esc(label)+'</td><td class="num">'+c(specs,specsF)+'</td><td class="num">'+restCell+'</td><td class="num">'+money(total)+'</td></tr>';
 }
 function renderHealth(app){
   const evsAll=spxEvents();   // already date-ordered
@@ -1181,17 +1193,19 @@ function healthCard(ev){
   //  things are going" on the right, with a clear line for right now)
   h+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">'+
      '<div style="flex:1 1 460px;min-width:340px">'+
-     '<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">Specs (sponsorship)</th><th class="num">Tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
+     '<table class="hcgrid"><thead><tr><th>Concepto</th><th class="num">SPX (sponsorship)</th><th class="num">Resto / tickets</th><th class="num">TOTAL</th></tr></thead><tbody>';
   if(T.source==='money'){
-    // Money is master: total read-only (edit in Money), specs/tickets DERIVED from the specs %
-    h+='<tr><td>Target <span class="ro-note">(total = Money)</span></td><td class="num">'+money(spTarget)+'</td><td class="num">'+money(tkTarget)+'</td><td class="num">'+money(totTarget)+'</td></tr>';
-    h+='<tr><td>Stretch</td><td class="num">'+money(spStretch)+'</td><td class="num">'+money(tkStretch)+'</td><td class="num">'+money(totStretch)+'</td></tr>';
-    h+='<tr><td>Specs % <span class="ro-note">(Cintia)</span></td><td class="num" colspan="3" style="text-align:left">'+specsPctCell(T.specsPct,editable)+' &nbsp;→&nbsp; specs '+money(spTarget)+' · tickets '+money(tkTarget)+'</td></tr>';
+    // Money is master: total read-only (edit in Money), SPX from the specs %, the rest = total − SPX
+    h+='<tr><td>Target SPX <span class="ro-note">(total = Money)</span></td><td class="num">'+money(spTarget)+'</td><td class="num" title="El resto del target del evento: total − SPX">'+money(tkTarget)+'</td><td class="num">'+money(totTarget)+'</td></tr>';
+    h+='<tr><td>Stretch</td><td class="num">'+money(spStretch)+'</td><td class="num" title="El resto del stretch: total − SPX">'+money(tkStretch)+'</td><td class="num">'+money(totStretch)+'</td></tr>';
+    h+='<tr><td>Specs % <span class="ro-note">(Cintia)</span></td><td class="num" colspan="3" style="text-align:left">'+specsPctCell(T.specsPct,editable)+' &nbsp;→&nbsp; SPX '+money(spTarget)+' · resto '+money(tkTarget)+'</td></tr>';
   }else{
-    // fallback (no Money row or no % yet): the hand-entered SPX targets stay editable
-    h+=hcRow2('Target',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget','pasesTarget');
-    h+=hcRow2('Stretch',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch','pasesStretch');
-    if(T.moneyTotal!=null)h+='<tr><td colspan="4" class="ro-note" style="text-align:left">Money total del evento: <b>'+money(T.moneyTotal)+'</b> — fija el Specs % para dividirlo automáticamente: '+specsPctCell(T.specsPct,editable)+'</td></tr>';
+    /* fallback (no Money row or no % yet): ONLY the SPX target is typed — the rest is
+       whatever the event's Money total leaves over (Belén, 3 Aug) */
+    h+=hcRow2('Target SPX',spTarget,tkTarget,totTarget,editable,'sponsorshipTarget');
+    h+=hcRow2('Stretch SPX',spStretch,tkStretch,totStretch,editable,'sponsorshipStretch');
+    if(T.moneyTotal!=null)h+='<tr><td colspan="4" class="ro-note" style="text-align:left">Money total del evento: <b>'+money(T.moneyTotal)+'</b> — el resto sale por resta; fija el Specs % si prefieres dividirlo por porcentaje: '+specsPctCell(T.specsPct,editable)+'</td></tr>';
+    else h+='<tr><td colspan="4" class="ro-note" style="text-align:left">Este evento aún no tiene target total en <b>Money</b>, así que sólo se conoce el target SPX — en cuanto lo tenga, el resto se calcula solo.</td></tr>';
   }
   /* the proposed split, with its reasoning — shown in BOTH target branches so a new
      event and a tracked one get the same guidance. Apply = one click; the % field
@@ -1732,12 +1746,12 @@ function openManageEvents(){
     +'<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-mev-active="'+e.id+'"'+(e.active!==false?' checked':'')+'> current</label></div>'
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px">'
     +'<span>Money: '+finSelect(e)+'</span>'
-    +'<span>Target €<input type="number" data-mev-t="'+e.id+'" value="'+(e.sponsorshipTarget==null?'':e.sponsorshipTarget)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
-    +'<span>Stretch €<input type="number" data-mev-s="'+e.id+'" value="'+(e.sponsorshipStretch==null?'':e.sponsorshipStretch)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
+    +'<span title="The sponsorship target only — the rest of the event target comes from the Money row by subtraction">SPX target €<input type="number" data-mev-t="'+e.id+'" value="'+(e.sponsorshipTarget==null?'':e.sponsorshipTarget)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
+    +'<span>SPX stretch €<input type="number" data-mev-s="'+e.id+'" value="'+(e.sponsorshipStretch==null?'':e.sponsorshipStretch)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
     +'<span class="ro-note">key '+esc(e.eventKey)+'</span></div></div>';
   const body='<div class="sec"><h5>Events being sold</h5>'
     +(notReady?'<div class="setupbanner">Run <b>_sql/dispatch_spx_events.sql</b> in Supabase first — then this list is saved for everyone.</div>':'')
-    +'<p class="ro-note">Untick <b>current</b> to move a finished event to the <b>Before</b> tab. Link an event to a Money row to track Invoiced/Paid.</p>'
+    +'<p class="ro-note">Untick <b>current</b> to move a finished event to the <b>Before</b> tab. Link an event to a Money row to track Invoiced/Paid. The <b>SPX target</b> is the only target set here — the rest of the event target is the Money total minus it, worked out for you.</p>'
     +(reg.map(rowHtml).join('')||'<div class="ro-note">No events yet — add one below.</div>')
     +'<div class="sec" style="background:#f6f5f2"><h5>Add an event</h5>'
       +'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="mev_key" placeholder="key e.g. E059" style="width:110px;padding:6px;border:1px solid var(--line);border-radius:7px">'
