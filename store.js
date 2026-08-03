@@ -2822,6 +2822,25 @@ const DB={
   ecodeOwner(code,exceptId){const c=(''+(code||'')).trim().toUpperCase();
     if(!/^E\d+$/.test(c))return null;const o=this.ecodesInUse(exceptId)[c];
     return o?(o.name||o.eventKey||'another event'):null;},
+  /* ---- what must actually BLOCK a code being typed (Belén, 3 Aug) ----
+     ecodeOwner() answers "is this code known anywhere", which is right for suggesting the
+     next free number and WRONG as a save guard: a code held by a registry row or by weekly
+     history is usually this event's OWN past waiting to be attached to. Refusing it is how
+     someone ends up saving an event with no code at all — which is the failure that started
+     all this. So only a clash with ANOTHER TIMELINE EVENT blocks; everything else is an
+     adoption, and evConnectPlan says so in the form before Save is pressed. */
+  ecodeBlocker(code,exceptId){
+    const c=(''+(code||'')).trim().toUpperCase();
+    if(!/^E\d+$/.test(c))return null;
+    const clash=(this.events||[]).find(e=>!e.deleted&&e.id!=exceptId&&evKind(e)!=='external'&&this.evCode(e)===c);
+    if(clash)return clash.name||'another event';
+    /* a registry row whose Money row already belongs to a DIFFERENT event is a real clash */
+    const reg=(this.spxEventReg||[]).find(g=>!g.deleted&&(''+g.eventKey).trim().toUpperCase()===c);
+    if(reg&&reg.financeId!=null){
+      const f=(this.finance||[]).find(x=>!x.deleted&&x.id==reg.financeId);
+      if(f&&f.eventId!=null&&f.eventId!=exceptId&&this.event(f.eventId))return this.finTrueLabel(f);
+    }
+    return null;},
   nextEcode(){const used=this.ecodesInUse(null);let hi=0;
     Object.keys(used).forEach(k=>{const n=parseInt(k.slice(1),10);if(n>hi)hi=n;});
     return 'E'+String(hi+1).padStart(3,'0');},
@@ -2913,8 +2932,38 @@ const DB={
   /* event name for a project/item label: drop the "E056"/"RENMAD" prefixes and any trailing
      year, so the caller can append the year once (no "…27 27") — Belén, 22 Jul. */
   evCleanName(ev){return (''+(ev.name||'')).replace(/^E\d+\s*/i,'').replace(/^RENMAD\s+/i,'').replace(/\s+(20)?\d{2}$/,'').trim();},
+  /* ---- WHEN MAY AN EVENT REACH THE MONEY REGISTERS? (Belén, 3 Aug 2026) ----
+     "It is WAY too easy to screw the whole thing up just adding an event, which a bunch of
+     people can do."  Only when it carries its MARKETING CODE and a date.
+     That code is the join every report runs on. Without it a Money row can never meet its
+     weekly history, its sales-board entry or its invoices — and if the event already exists
+     as an imported Money row, the cascade mints a SECOND one plus a second accounting item
+     (Datacenters Italia 26, 3 Aug: two rows and two items both carrying código 70320).
+     So an event with no code is a DRAFT as far as money is concerned. It lives on the
+     timeline, it can be planned, staffed and have hours logged against it — but nothing is
+     created in Money, Invoicing or SPX until the code arrives. When it does, the cascade
+     runs and ADOPTS the row that already exists, because nothing was created early.
+     The failure mode is designed out instead of repaired: no merge, nothing to undo. */
+  evMoneyReady(ev){if(!ev||!ev.date)return false;
+    const c=this.evCode(ev);return !!(c&&/^E\d+$/i.test(c));},
+  /* what the timeline should tell the person in front of it, before they save */
+  evConnectPlan(ev){
+    if(!ev||!ev.date)return {state:'nodate',msg:'Set the date first.'};
+    const c=this.evCode(ev);
+    if(!c||!/^E\d+$/i.test(c))return {state:'draft',
+      msg:'No marketing code yet — this event stays OFF the reporting: no Money row, no invoicing item, no sales-board entry. Add the code when ZOHO assigns it and all three appear at once, attached to whatever already exists. Nothing is duplicated by waiting.'};
+    const owner=this.ecodeBlocker(c,ev.id);
+    if(owner)return {state:'taken',msg:c+' already belongs to “'+owner+'”. An E-code can only belong to one event — a duplicate splits the event’s money in two.'};
+    const reg=(this.spxEventReg||[]).find(g=>!g.deleted&&g.financeId!=null&&(''+g.eventKey).trim().toUpperCase()===c.toUpperCase());
+    const twin=reg?this.finance.find(f=>!f.deleted&&f.id==reg.financeId&&(f.eventId==null||f.eventId===''))
+                  :null;
+    if(twin){const item=this.codigos.find(x=>!x.deleted&&x.eventId==twin.id);
+      return {state:'adopt',msg:c+' → this ATTACHES to the Money row that already exists, “'+this.finTrueLabel(twin)+'”'+
+        (item&&item.codigo?' (accounting code '+item.codigo+')':'')+'. Nothing new is created, nothing is duplicated.'};}
+    return {state:'create',msg:c+' → this creates its Money row, its invoicing item (accounting code pending for Jesús) and its sales-board entry.'};
+  },
   ensureEventLines(){
-    const out={items:0,projects:0,adopted:0,money:0,spx:0};
+    const out={items:0,projects:0,adopted:0,money:0,spx:0,resynced:0};
     const curYear=new Date().getFullYear();
     /* ---- Money rows: one per board EVENT of this year or later (Belén, 31 Jul:
        Chile 2027 was on the timeline but invisible to the 2027 dashboard, SPX and
@@ -2929,6 +2978,11 @@ const DB={
         if(!d||isNaN(d)||d.getFullYear()<curYear)return;
         if(evKind(ev)==='external')return;               // projects are not sellable events
         if(this.finance.some(f=>!f.deleted&&f.eventId==ev.id))return;
+        /* THE GATE: no code, no money registers (see evMoneyReady above). This single
+           line is what stops a half-made event duplicating a Money row and an accounting
+           code. Hours are deliberately NOT gated — the project below is created either
+           way, so nobody is ever blocked from logging time on a real event. */
+        if(!this.evMoneyReady(ev))return;
         /* ADOPT, NEVER DUPLICATE (3 Aug). A Money row usually exists long before its
            event reaches the timeline — every 2026 edition was imported that way. The two
            are matched on the E-CODE, through the registry row that already carries it;
@@ -3010,6 +3064,26 @@ const DB={
         out.spx++;
       });
       this.data.spxEventReg=regs;
+    }
+    /* ---- keep a linked Money row in step with its event (Belén, 3 Aug) ----
+       Hidrógeno 26 was created with a 2027 date and corrected minutes later; its Money row
+       kept 2027 and would have sat in the wrong year of the report for good. The DISPLAY
+       already cascades (finTrueWhen / finTrueCity), but YEAR and SEMESTER are what the
+       table groups by, so they have to follow the event too. The stored city/when are
+       refreshed at the same time, so a row that ever loses its link degrades to the last
+       truth rather than to a stale guess. */
+    if(this.canFinance()&&this.financeReady()){
+      this.finance.forEach(f=>{
+        if(f.deleted||!f.eventId)return;
+        const ev=this.event(f.eventId);if(!ev||!ev.date)return;
+        const d=ymd(ev.date);if(!d||isNaN(d))return;
+        const want={year:d.getFullYear(),semester:(d.getMonth()<6?1:2),city:ev.city||null,when:evWhenShort(ev)};
+        let n=0;
+        Object.keys(want).forEach(k=>{
+          const now=(f[k]==null?'':''+f[k]),next=(want[k]==null?'':''+want[k]);
+          if(now!==next){f[k]=want[k];n++;}});
+        if(n)out.resynced++;
+      });
     }
     this.syncEventCodes();
     return out;
@@ -3349,7 +3423,7 @@ async function boot(renderFn){
   }
   else{const p=new URLSearchParams(location.search).get('as')||localStorage.getItem('dispatchAs');DB.currentUser=p?DB.person(+p):(DB.people.find(x=>x.access==='admin')||null);} // local test: ?as=<personId> to simulate a user
   ensureSubDefaults();
-  try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted||r.money||r.spx))DB.save();}catch(e){} // event → Money/item/project/SPX cascade (writes only for finance/billing/sales-lead logins)
+  try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted||r.money||r.spx||r.resynced))DB.save();}catch(e){} // event → Money/item/project/SPX cascade (writes only for finance/billing/sales-lead logins)
   try{const nc=document.getElementById('nav-crm');if(nc&&DB.can('crm.leads','see'))nc.style.display='';}catch(e){} // CRM tab: Belén (grantable per-cell in the 🔐 panel)
   /* HR is no longer its own nav tab — it lives inside 👥 Team (gated there by DB.canSeeHR) */
   renderFn();

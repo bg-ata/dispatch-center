@@ -39,6 +39,14 @@
   .head .edit{position:absolute;top:4px;right:7px;border:none;background:none;color:#bdbab2;font-size:13px}
   .head .edit:hover{color:var(--orange)}
   .prov{background:#fff7d6;color:#7a5b00;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600}
+  .nocode{background:#fdecec;color:#A32D2D;font-size:9px;padding:0 4px;border-radius:4px;font-weight:600;white-space:nowrap}
+  /* what saving this event will actually do to Money / Invoicing / SPX — said before it happens */
+  #m_plan{font-size:11.5px;line-height:1.45;border-radius:7px;padding:8px 10px;margin:2px 0 0}
+  #m_plan.draft{background:#fff7ec;color:#8a5200;border:1px solid #f0d9b8}
+  #m_plan.adopt{background:#eef7ea;color:#2c6b1c;border:1px solid #cde3c2}
+  #m_plan.create{background:#eef3fa;color:#1f4b7d;border:1px solid #c9dcef}
+  #m_plan.taken{background:#fdecec;color:#A32D2D;border:1px solid #f0c4c4}
+  #m_plan.nodate{background:#f4f2ee;color:#7c7c78;border:1px solid var(--line)}
   .corner{flex:0 0 200px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}
   .hbody{position:relative;z-index:1} /* own stacking context so todaylab etc never paint over the sticky corner */
   .mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}
@@ -107,6 +115,8 @@
          never a pop-up. -->
     <label>Marketing code (E0xx)<input type="text" id="m_ecode" placeholder="E0xx — without it the reporting cannot join this event"></label>
     <label>Accounting code<input type="text" id="m_acode" placeholder="Jesús's code — a different system"></label>
+    <!-- says what saving will DO to Money / Invoicing / SPX, before it is done (3 Aug) -->
+    <div class="full" id="m_plan"></div>
     <label>Topic<select id="m_topic"></select></label>
     <label id="m_lenwrap">Length<select id="m_days"><option value="1">1 day</option><option value="2" selected>2 days</option></select></label>
     <label id="m_durwrap" style="display:none">Duration<span style="display:flex;gap:5px;align-items:center"><input type="number" id="m_dur_n" min="1" step="1" value="2" style="width:56px"><select id="m_dur_u"><option value="half">Half day</option><option value="day">Days</option><option value="week" selected>Weeks</option><option value="month">Months</option><option value="year">Years</option></select></span></label>
@@ -126,7 +136,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=100"></script>
+<script src="store.js?v=101"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -196,7 +206,11 @@ function render(){
     const row=document.createElement('div');row.className='row';
     const head=document.createElement('div');head.className='head';
     head.innerHTML=(canEd?'<button class="edit" title="edit">✎</button>':'')+
-      '<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span>'+(ev.prov?' <span class="prov">prov</span>':'')+'</div>'+
+      '<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span>'+(ev.prov?' <span class="prov">prov</span>':'')+
+        /* an event with no marketing code is a DRAFT for money: it is planned and staffed
+           here, but it is deliberately absent from Money / Invoicing / SPX until the code
+           arrives. Say so on the row — the person who created it is the one who can fix it. */
+        (!isExt&&!DB.evMoneyReady(ev)?' <span class="nocode" title="No marketing code yet, so this event is NOT in Money, Invoicing or the SPX board. Add the E-code here and all three appear at once — attached to anything that already exists, never duplicated.">no code · not in reporting</span>':'')+'</div>'+
       '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+'</div>';
     const eb=head.querySelector('.edit');if(eb)eb.onclick=e=>{e.stopPropagation();openModal(ev.id);};
     head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
@@ -309,7 +323,25 @@ function openModal(id){editingId=id;
   lw.style.display=lh.style.display=modalIsExt?'':'none';
   if(modalIsExt){const cur=id?evLanes(DB.event(id)):['project'];
     lw.innerHTML=LANES.map(l=>'<label style="display:flex;flex-direction:row;align-items:center;gap:5px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--ink)"><input type="checkbox" class="m_lane" value="'+l+'"'+(cur.indexOf(l)>=0?' checked':'')+'> '+LANE_LABEL[l]+'</label>').join('');}
-  document.getElementById('m_delete').style.display=id?'inline-block':'none';modal.classList.add('on');}
+  document.getElementById('m_delete').style.display=id?'inline-block':'none';modal.classList.add('on');
+  updatePlan();}
+/* ---- say what saving will DO, before it is done (Belén, 3 Aug: "it is WAY too easy to
+   screw the whole thing up just adding an event, which a bunch of people can do") ----
+   The three outcomes are not obvious from a form: this event will ATTACH to a Money row
+   that already exists, or CREATE a new set of lines, or stay a DRAFT out of the reporting
+   until its code arrives. Whichever it is, it is on screen before Save is pressed. */
+function planEvNow(){return {id:editingId||null,name:m_name.value,date:m_date.value,
+  ecode:m_ecode.value.trim().toUpperCase(),days:+m_days.value||1,city:m_city.value};}
+function updatePlan(){
+  const box=document.getElementById('m_plan');if(!box)return;
+  if(modalIsExt){box.style.display='none';return;}   // one-off projects never touch Money
+  box.style.display='';
+  let p;try{p=DB.evConnectPlan(planEvNow());}catch(e){box.style.display='none';return;}
+  box.className='full '+p.state;
+  box.innerHTML=({draft:'⚠ ',adopt:'✓ ',create:'✓ ',taken:'✗ ',nodate:'· '}[p.state]||'')+esc(p.msg);
+}
+['m_ecode','m_date','m_name'].forEach(id=>{const el=document.getElementById(id);
+  if(el){el.addEventListener('input',updatePlan);el.addEventListener('change',updatePlan);}});
 document.getElementById('addBtn').onclick=()=>openModal(null);
 document.getElementById('m_cancel').onclick=()=>modal.classList.remove('on');
 modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
@@ -343,8 +375,13 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
        because every report joins on this code, the weekly engine was writing two
        rows a week for them and the money split across phantom editions. Nothing
        stopped it being typed twice, so now something does. */
+    /* ⚠ ecodeBlocker, NOT ecodeOwner (3 Aug): a code held only by a registry row or by
+       weekly history is this event's own past waiting to be attached — refusing it is what
+       pushes someone into saving an event with no code at all, and THAT is what duplicates
+       the Money row and the accounting code. Only a clash with another timeline event
+       blocks. The form has already said which of the two will happen. */
     if(code){
-      const owner=DB.ecodeOwner(code,editingId||null);
+      const owner=DB.ecodeBlocker(code,editingId||null);
       if(owner){alert(code+' is already the marketing code for “'+owner+'”.\n\nAn E-code can only belong to one event — it is what tags ActiveCampaign and what every report joins on, so a duplicate splits the event\'s money in two.\n\nNext free code: '+DB.nextEcode());return;}
     }
     d.ecode=code||null;
