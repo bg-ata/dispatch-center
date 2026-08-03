@@ -2003,7 +2003,9 @@ const SEED_PEOPLE=[
  {id:18,name:'Recursos Humanos',role:'HR',access:'member',email:'rrhh@ata.email',hr:true}, // HR access only; primary final approver
 ];
 function buildSeed(){
-  const events=JSON.parse(JSON.stringify(SEED_EVENTS));
+  /* seeded events are pre-approved for the money side — offline/demo mode should not open
+     with six events queued for a confirmation nobody asked for (3 Aug) */
+  const events=JSON.parse(JSON.stringify(SEED_EVENTS)).map(e=>Object.assign({moneyOk:true},e));
   const people=JSON.parse(JSON.stringify(SEED_PEOPLE));
   const byName=n=>{const p=people.find(p=>p.name===n);return p?p.id:null;};
   const subs=[],tasks=[];let sid=1,tid=1;

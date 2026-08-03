@@ -149,7 +149,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=103"></script>
+<script src="store.js?v=104"></script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);
@@ -408,6 +408,7 @@ modal.onclick=e=>{if(e.target===modal)modal.classList.remove('on');};
    row that already billed something is left for a human. */
 document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);const nt=DB.tasksFor(editingId).length;if(!confirm('Delete the event "'+(e?e.name:'')+'"'+(nt?' and its '+nt+' task'+(nt>1?'s':''):'')+'? (recoverable from the audit log)'))return;
   let r={projects:0,items:0,spx:0,money:0,moneyKept:0};
+  const gone=e?{name:e.name,date:e.date,days:e.days,city:e.city,ecode:e.ecode,kind:e.kind}:null;
   try{r=DB.retireEventLines(editingId);}catch(err){console.warn('retire event lines:',err.message||err);}
   DB.data.events=DB.events.filter(e=>e.id!==editingId);DB.data.tasks=DB.tasks.filter(t=>t.eventId!==editingId);DB.data.substages=DB.substages.filter(s=>s.eventId!==editingId);DB.save();modal.classList.remove('on');render();
   const bits=[];
@@ -416,6 +417,11 @@ document.getElementById('m_delete').onclick=()=>{const e=DB.event(editingId);con
   if(r.spx)bits.push(r.spx+' SPX event'+(r.spx>1?'s':'')+' taken off the board and the builder');
   if(r.money)bits.push(r.money+' Money row removed');
   if(r.moneyKept)bits.push(r.moneyKept+' Money row'+(r.moneyKept>1?'s':'')+' LEFT IN PLACE — it has figures or invoices, remove it by hand if you mean to');
+  /* a deletion moves money too (it retires the item, the hour line and the board entry),
+     so it goes on the same 🔔 watch as a creation (Belén, 3 Aug: "just in case") */
+  try{if(gone&&evKind(gone)!=='external')notifyBelen('🗑 '+((DB.currentUser&&DB.currentUser.name)||'Someone')+
+    ' deleted the event '+evWatchLabel(gone)+(DB.evCode(gone)?' · code '+DB.evCode(gone):'')+'.'+
+    (bits.length?' '+bits.join('. ')+'.':''));}catch(err){}
   if(bits.length)alert('Event deleted.\n\nAlso: '+bits.join('.\n')+'.');};
 document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()||(modalIsExt?'New project':'New event'),topic:m_topic.value,days:+m_days.value,date:m_date.value,city:m_city.value.trim(),country:m_country.value,pm:m_pm.value.trim(),lead:m_lead.value.trim(),sales:m_sales.value.trim()};
   /* E-code: the join key that lets Money's week-by-week auto-update find this event
@@ -450,12 +456,24 @@ document.getElementById('m_save').onclick=()=>{const d={name:m_name.value.trim()
     if(window._extColsMissing){alert('One-time setup needed first — see the banner on the Projects tab.');return;}
     d.kind='external';d.lanes=sel;d.days=durToDays();   // free duration for projects
   }
+  /* what it looked like before, and what saving is about to do to the money side — both
+     read BEFORE the write, because afterwards the Money row is no longer "waiting" and the
+     answer would flip (3 Aug) */
+  const before=editingId?Object.assign({},DB.event(editingId)):null;
+  const plan=modalIsExt?null:DB.evConnectPlan(Object.assign({},(before||{}),d,{id:editingId||null}));
+  /* Belén's own save IS the confirmation — the box above the buttons has just told her
+     exactly what it will do. Anyone else's event waits in the queue for her. */
+  if(!modalIsExt&&isBelenP(DB.currentUser)&&DB.evCode(d))d.moneyOk=true;
+  let savedId=editingId;
   if(editingId){Object.assign(DB.event(editingId),d);DB.event(editingId).prov=false;}
-  else{const id=DB.newId();const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
-    DB.events.push({id,...d,milestones:{goNoGo:24,launch:18},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
+  else{const id=DB.newId();savedId=id;const dur={};LANES.forEach(l=>{dur[l]={};STAGES[l].forEach(s=>dur[l][s.key]=s.d);});
+    /* moneyOk set EXPLICITLY (v95 rule: the diff-sync sends null for whitelisted-but-unset) */
+    DB.events.push({id,...d,moneyOk:d.moneyOk===true,milestones:{goNoGo:24,launch:18},alerts:{LD:{off:16,on:true},SE:{off:12,on:true},EB:{off:8,on:true},LC:{off:4,on:true}},markers:{lhConnect:17,lhBrochure:17,pmMtg1:17,pmMtg2:9},dur,team:[]});}
   DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));
   try{DB.ensureEventLines();}catch(e){} // new board event → its hour-allocation project (code pending) exists at once
-  DB.save();modal.classList.remove('on');render();};
+  DB.save();
+  try{notifyEventChange(DB.event(savedId),before,plan);}catch(e){}   // 🔔 Belén hears about it
+  modal.classList.remove('on');render();};
 
 document.getElementById('xlsBtn').onclick=()=>exportXLSX(TAB==='external'?'External_projects_overview.xlsx':'RENMAD_events_overview.xlsx',
   [{name:TAB==='external'?'Projects':'Events',rows:tabEvents().map(e=>({Event:e.name,Topic:e.topic,City:e.city,Country:e.country,Date:dateRange(e),Days:e.days,PM:e.pm,Lead:e.lead,Sales:e.sales,Timelines:evLanes(e).map(l=>LANE_LABEL[l]).join(', ')}))}]);
