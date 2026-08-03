@@ -200,6 +200,19 @@ function dateRange(ev){const s=ymd(ev.date);
   return e.getFullYear()===s.getFullYear()
     ? fmtD(s)+'–'+fmtD(e)+' '+s.getFullYear()
     : fmtD(s)+' '+s.getFullYear()+'–'+fmtD(e)+' '+e.getFullYear();}
+/* the short "When" the reporting column has always shown — day-first, no year (the table
+   is already grouped by year): "26 Jan" · "11-12 Feb" · "31 Mar-1 Apr". Same shape the
+   event cascade writes, so a linked row reads identically before and after (3 Aug). */
+function evWhenShort(ev){
+  if(!ev||!ev.date)return '';
+  const s=ymd(ev.date);if(isNaN(s))return '';
+  const days=Math.max(1,Math.round(+ev.days||1));
+  if(days<2)return s.getDate()+' '+MON[s.getMonth()];
+  const e=addDays(s,days-1);
+  return s.getMonth()===e.getMonth()
+    ? s.getDate()+'-'+e.getDate()+' '+MON[s.getMonth()]
+    : s.getDate()+' '+MON[s.getMonth()]+'-'+e.getDate()+' '+MON[e.getMonth()];
+}
 /* ---- human dates ----
    People read "Thursday 30 Jul 26", not "2026-07-30". Everything a human decides on
    (holiday requests, approvals, balances) goes through these; ISO stays the storage format. */
@@ -1412,10 +1425,12 @@ function spxStatusAll(){
    telesales, the name/year) is hand-kept and must survive a rebuild untouched. */
 const WK_OWNED=['sponsorsEur','sponsorsN','ticketsEur','delegatesN','grabacionesEur',
   'siteVisitsEur','signedEur','spxAcc','ticketsAcc','signedAcc','totalEur','soFarEur'];
+let _wkCalcAt=null;   // when the series was last rebuilt, for the "live" stamp on Money
 function weeklyAutoRefresh(){
   const res={updated:[],skipped:[],changed:false};
   try{
     if(!DB.canFinance()||!DB.weeklyReady()||!DB.spxReady()||!DB.billReady())return res;
+    _wkCalcAt=new Date();
     const nowMon=monday(new Date()),WEEKMS=7*864e5;
     spxStatusAll().filter(r=>r.active&&r.financeId!=null).forEach(r=>{
       const f=DB.finance.find(x=>x.id==r.financeId);if(!f)return;
@@ -1562,6 +1577,25 @@ function evCardCode(f){
   const c=ev?DB.evCode(ev):null;
   return (c&&/^E\d+$/i.test(c))?c:null;
 }
+/* ---- what an E-code is CALLED, resolved live (Belén, 3 Aug) ----
+   A weekly row keeps the name it was born with, which is right for history and wrong for
+   everything else: E059 was still labelled "Talks BESS 2026" all over the reporting long
+   after the code had been reassigned to Invest Italia 2027. The name a report shows now
+   walks code → SPX registry (or the timeline event carrying that ecode) → Money row →
+   finTrueLabel, i.e. the SAME label the Year table prints. Only a code with no home left
+   anywhere (a closed 2021 edition) falls back to the name on its own history. */
+function weeklyLabel(code,fallback){
+  const c=(''+(code||'')).trim().toUpperCase();
+  if(!c)return fallback||'';
+  let fin=null;
+  try{
+    const reg=(DB.spxEventReg||[]).find(r=>!r.deleted&&(''+r.eventKey).trim().toUpperCase()===c);
+    if(reg&&reg.financeId!=null)fin=(DB.finance||[]).find(f=>!f.deleted&&f.id==reg.financeId);
+    if(!fin){const ev=(DB.events||[]).find(e=>!e.deleted&&DB.evCode(e)===c);
+      if(ev)fin=(DB.finance||[]).find(f=>!f.deleted&&f.eventId==ev.id);}
+  }catch(e){}
+  return fin?DB.finTrueLabel(fin):(fallback||c);
+}
 function evPaceCard(f){
   const code=evCardCode(f);
   const rowsOf=c=>DB.weekly.filter(x=>x.eventCode===c).sort((a,b)=>(+a.week)-(+b.week));
@@ -1598,7 +1632,10 @@ let _wkAutoTimer=null;
 /* called from syncNow with the set of tables the sync just pushed */
 function weeklyAutoHook(touched){
   if(!touched)return;
-  const rel=['invoices','invalloc','spxProps','spxLines','spxFrags','finance'];
+  /* 'events' is in the list because the timeline owns W0: move an event's date and every
+     week number under it moves with it, so the series must be rebuilt there and then
+     (Belén, 3 Aug: "it should get into an immediate update situation, continuously"). */
+  const rel=['invoices','invalloc','spxProps','spxLines','spxFrags','finance','events'];
   if(!rel.some(k=>touched[k]))return;
   clearTimeout(_wkAutoTimer);
   _wkAutoTimer=setTimeout(()=>{_wkAutoTimer=null;
@@ -2108,7 +2145,11 @@ function _setModFlags(f){if(!f)return;
   Object.keys(f.w||{}).forEach(k=>{if(f.w[k]!==undefined)window[k]=f.w[k];});}
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
-function snapshot(){_shadow={};Object.keys(TABLES).forEach(k=>{_shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
+/* skip = tables whose write was refused this round: their shadow must stay as it was,
+   or the rows that never landed would be marked "saved" and silently lost (3 Aug). */
+function snapshot(skip){if(!_shadow)_shadow={};
+  Object.keys(TABLES).forEach(k=>{if(skip&&skip[k])return;
+    _shadow[k]={};(DB.data[k]||[]).forEach(r=>{_shadow[k][r.id]=JSON.stringify(pickRow(r,k));});});}
 
 const DB={
   data:null,
@@ -2436,6 +2477,13 @@ const DB={
     if(_syncing){_pendingSync=true;return true;}
     _syncing=true;
     const touched={};   // tables this sync actually pushed — feeds the weekly auto-refresh
+    /* ONE TABLE'S REFUSAL MUST NOT SILENCE THE OTHER 28 (Belén, 3 Aug: "a lot of the data
+       is not getting cascaded through"). This loop used to throw on the first refused
+       write, so everything after that table in TABLES order — invoices, hours, the SPX
+       board, notifications — never got its turn either, on every retry, for ever. Now
+       each table stands or falls alone: the healthy ones are saved and snapshotted, the
+       refused one keeps its shadow (so it retries) and raises the banner. */
+    const failed={};let firstErr=null;
     try{
       for(const k of Object.keys(TABLES)){
         if(k==='finance'&&!_finReady)continue; // finance table not created yet
@@ -2460,16 +2508,29 @@ const DB={
         });
         Object.keys(_shadow[k]).forEach(id=>{if(!seen[id])dels.push(id);});
         if(k==='timeclock'){updates.length=0;dels.length=0;} // registro horario: APPEND-ONLY, never update/delete
-        if(inserts.length){const {error}=await sb.from(tbl).insert(inserts);if(error)throw error;}
-        for(const p of updates){const {error}=await sb.from(tbl).update(p).eq('id',p.id);if(error)throw error;}
-        if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
-        if(inserts.length||updates.length||dels.length)touched[k]=true;
+        try{
+          if(inserts.length){
+            /* dc_weekly is a DERIVED table whose real key is (eventCode, week), not the
+               id. A row soft-deleted earlier still occupies that key while being invisible
+               to the app, so the engine recreates it and the insert is refused for ever —
+               that is exactly what jammed every save on 3 Aug (E059, E061). Upserting on
+               the real key revives the ghost instead of colliding with it. */
+            const {error}=(k==='weekly')
+              ?await sb.from(tbl).upsert(inserts.map(p=>Object.assign({deleted:false},p)),{onConflict:'eventCode,week'})
+              :await sb.from(tbl).insert(inserts);
+            if(error)throw error;
+          }
+          for(const p of updates){const {error}=await sb.from(tbl).update(p).eq('id',p.id);if(error)throw error;}
+          if(dels.length){const {error}=await sb.from(tbl).update({deleted:true}).in('id',dels);if(error)throw error;}
+          if(inserts.length||updates.length||dels.length)touched[k]=true;
+        }catch(e){failed[k]=true;if(!firstErr)firstErr=e;console.error('sync refused on '+tbl,e);}
       }
-      snapshot();
+      snapshot(failed);   // only the tables that really landed count as saved
       this._writeSnap();                        // keep the page-boot snapshot as fresh as the DB
       /* an invoice or board change re-derives this week's dc_weekly rows by itself
          (Belén, 29 Jul night) — change-detected, so it cannot loop */
       try{weeklyAutoHook(touched);}catch(e){}
+      if(firstErr)throw firstErr;               // the healthy tables are already safe — now raise the banner
       _syncFails=0;renderSyncBanner();          // success clears the not-saved banner
     }catch(e){
       /* audit Critical 3: do NOT reload — a reload discards every unsaved edit in
@@ -2807,6 +2868,26 @@ const DB={
   finTrueCity(f){if(!f)return '';
     const ev=f.eventId?this.event(f.eventId):null;
     return ((ev&&ev.city)||f.city||'');},
+  /* a Money row's WHEN / PM / SALES — the same cascade again (Belén, 3 Aug: "a lot of the
+     write-in text boxes in the reporting are not supposed to be there; they should cascade
+     through from the timeline, like the other details — there is no point having more than
+     one source of truth"). Linked row → the timeline event's own dates and people; an
+     unlinked row (a past edition, which the board deliberately does not carry) keeps the
+     text it was imported with, read-only. dateRange() gives the house day-first format. */
+  finTrueWhen(f){if(!f)return '';
+    const ev=f.eventId?this.event(f.eventId):null;
+    return (ev&&ev.date)?evWhenShort(ev):(f['when']||'');},
+  finTruePM(f){if(!f)return '';
+    const ev=f.eventId?this.event(f.eventId):null;
+    return ((ev&&ev.pm)||f.pm||'');},
+  finTrueSales(f){if(!f)return '';
+    const ev=f.eventId?this.event(f.eventId):null;
+    return ((ev&&ev.sales)||f.sales||'');},
+  /* is this Money row driven by the timeline at all? (used to mark the few that are not) */
+  finLinked(f){return !!(f&&f.eventId&&this.event(f.eventId));},
+  /* freshness, for the "live" stamp on the reporting pages */
+  weeklyCalcAt(){return _wkCalcAt;},
+  syncStuck(){return _syncFails>0?(_syncErr||'a change has not saved yet'):null;},
   /* sortable "when does this event happen" key for a Money row, in ms — linked timeline
      date first, else the free-text `when` month + year, else end-of-year, else far future.
      ONE ordering for every event list (Belén, 31 Jul: "order them by date please. Same in
@@ -2843,20 +2924,28 @@ const DB={
        v95 rule: every whitelisted column is set explicitly (the diff-sync sends
        null for whitelisted-but-unset, and NOT NULL columns refuse the row). */
     if(this.canFinance()&&this.financeReady()){
-      const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       this.events.forEach(ev=>{
         const d=ev.date?ymd(ev.date):null;
         if(!d||isNaN(d)||d.getFullYear()<curYear)return;
         if(evKind(ev)==='external')return;               // projects are not sellable events
         if(this.finance.some(f=>!f.deleted&&f.eventId==ev.id))return;
-        const days=Math.max(1,+ev.days||1);
-        const end=new Date(d.getTime()+(days-1)*864e5);
-        const when=days<2?(d.getDate()+' '+MON[d.getMonth()])
-          :(d.getMonth()===end.getMonth()
-            ?(d.getDate()+'-'+end.getDate()+' '+MON[d.getMonth()])
-            :(d.getDate()+' '+MON[d.getMonth()]+'-'+end.getDate()+' '+MON[end.getMonth()]));
+        /* ADOPT, NEVER DUPLICATE (3 Aug). A Money row usually exists long before its
+           event reaches the timeline — every 2026 edition was imported that way. The two
+           are matched on the E-CODE, through the registry row that already carries it;
+           never on the name, which drifts ("H2" vs "Hidrógeno", "DC Italia" vs
+           "Datacenters Italia"). Without this, putting a live event on the board would
+           mint a SECOND Money row and split its invoices, targets and SPX history in two. */
+        const ecode=this.evCode(ev);
+        if(ecode&&/^E\d+$/i.test(ecode)){
+          const reg=(this.spxEventReg||[]).find(g=>!g.deleted&&g.financeId!=null&&(''+g.eventKey).trim().toUpperCase()===ecode);
+          const twin=reg?this.finance.find(f=>!f.deleted&&f.id==reg.financeId&&(f.eventId==null||f.eventId===''))
+                        :null;
+          if(twin){twin.eventId=ev.id;out.adopted++;return;}
+        }
+        /* the stored city/when are only a seed for the day the link is ever broken —
+           what reporting SHOWS comes from finTrueCity/finTrueWhen, i.e. the timeline */
         this.finance.push({id:this.newId(),eventId:ev.id,name:this.evCleanName(ev),edition:null,
-          year:d.getFullYear(),semester:(d.getMonth()<6?1:2),city:ev.city||null,when:when,
+          year:d.getFullYear(),semester:(d.getMonth()<6?1:2),city:ev.city||null,when:evWhenShort(ev),
           pm:null,sales:null,target:null,stretch:null,invoiced:null,spex:null,
           notes:'auto — created with the event'});
         out.money++;

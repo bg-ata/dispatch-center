@@ -124,6 +124,22 @@
   .wstbl tr.total td{font-weight:700;border-top:2px solid var(--line);background:#f6f5f1}
   .bigeur{font-size:26px;font-weight:800;color:var(--charcoal);font-variant-numeric:tabular-nums}
   .wsempty{color:var(--muted);font-style:italic;padding:14px 4px}
+  /* "is this actually up to date?" — answered on the page, not in someone's head */
+  .live{font-size:11.5px;color:#3E8C28;margin:-2px 0 10px;display:flex;gap:6px;align-items:baseline}
+  .live b{font-weight:700}
+  .live.bad{color:#D32230;font-weight:600}
+  /* the per-invoice drill-down under a week's event line */
+  .wdet{background:#faf9f6}
+  .wdet .in{padding:10px 12px;border-left:3px solid var(--orange)}
+  .wdet table{width:100%;border-collapse:collapse;font-size:12px;background:var(--card)}
+  .wdet th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);text-align:left;padding:5px 8px;border-bottom:1px solid #efede8}
+  .wdet td{padding:5px 8px;border-bottom:1px solid #f4f2ee}
+  .wdet td.num,.wdet th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .wdet .cap{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 4px}
+  .wdet .cap.sp{margin-top:12px}
+  .wdet .foot{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .evname.clk{cursor:pointer}
+  .evname.clk:hover{color:var(--orange)}
   /* week-by-week table */
   .wk{overflow-x:auto}
   .wk table{border-collapse:collapse;font-size:11.5px;white-space:nowrap}
@@ -190,7 +206,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=99"></script>
+<script src="store.js?v=100"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -211,7 +227,11 @@ function meta(){
       spx=Math.max(spx,+r.spxAcc||0);tik=Math.max(tik,+r.ticketsAcc||0);
       topicLeads=Math.max(topicLeads,+r.topicLeads||0);eventLeads=Math.max(eventLeads,+r.eventLeads||0);
       sponsorsN+=(+r.sponsorsN||0);});
-    out.push({code,name:rows[0].name||code,fam:famKey(rows[0].name),year:+rows[0].year||null,
+    /* the name is resolved LIVE from the code's current owner (store.js weeklyLabel), so
+       reassigning an E-code renames it everywhere at once. fam stays on the name the
+       history was imported with — that is what matches a 2021 edition to its family. */
+    out.push({code,name:weeklyLabel(code,rows[0].name||code),histName:rows[0].name||code,
+      fam:famKey(rows[0].name),year:+rows[0].year||null,
       rows,target,stretch,final,spx,tik,topicLeads,eventLeads,sponsorsN,
       lastDate:last.date,completed:(last.date||'')<today,lastData});
   });
@@ -275,19 +295,46 @@ function sideLegend(id,items){
 /* esc() comes from store.js (full &<>"' escaping) — no local override. */
 /* dd/mm/yyyy for DISPLAY only — stored values and option/input values stay ISO */
 function ddmmyyyy(iso){if(!iso)return'';const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso)}
+/* ---- "and is it getting updated?" (Belén, 3 Aug) ----
+   She has asked more than once whether the reporting is live. A page that cannot say so
+   is not trustworthy, and — worse — the day a write is refused it goes on showing
+   yesterday's numbers as if they were today's. So the answer is printed on the page:
+   green when the series has been recomputed in this session, red the moment a save is
+   stuck, with what is stuck. */
+function liveStamp(){
+  const stuck=DB.syncStuck?DB.syncStuck():null;
+  if(stuck)return '<div class="live bad">⚠ NOT up to date — a change has not saved ('+esc(stuck)+'). It is retrying by itself; the figures below are the last ones that did save.</div>';
+  const t=DB.weeklyCalcAt?DB.weeklyCalcAt():null;
+  const hhmm=t?(String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')):null;
+  return '<div class="live">● <span><b>Live.</b> Every figure here is worked out from Invoicing, the SPX board and the timeline'+
+    (hhmm?' — last recomputed at '+hhmm+' and again on every change':', and it recomputes on every change')+
+    (DB.canFinance()?'':' (the recompute runs on the accountant’s session)')+'.</span></div>';
+}
 
 /* ---------- tabs ---------- */
 const TABS=[['year','Year status'],['spx','Sponsorship'],['week','Weekly sales'],['detail','Week by week'],['compare','Compare events'],['insights','Insights']];
 /* the Insights tab (and every analysis strip) carries interpretation, not just figures — managers and up only */
 function visTabs(){return TABS.filter(([k])=>k!=='insights'||DB.can('money.insights','see'));}
 function activeTab(){const h=location.hash.replace('#','');return visTabs().some(t=>t[0]===h)?h:'year';}
-let _wkAutoRan=false;
+/* ---- self-healing, continuously (Belén, 3 Aug: "it gets into an immediate update
+   situation from now on, continuously") ----
+   It used to catch up ONCE per page load, so a page left open all morning went on
+   showing the 9 a.m. picture. Now every render catches up (throttled, because the
+   rebuild walks every allocation) and every colleague's change arriving over realtime
+   forces one. The rebuild is change-detected, so a run that finds nothing new writes
+   nothing and cannot loop. Only a finance login can write dc_weekly — for everyone
+   else this is a no-op and the figures arrive by realtime instead. */
+let _wkAutoAt=0;
+function wkCatchUp(force){
+  if(!DB.canFinance())return;
+  const now=Date.now();
+  if(!force&&now-_wkAutoAt<20000)return;
+  _wkAutoAt=now;
+  try{const r=weeklyAutoRefresh();if(r.changed)DB.save();}catch(e){console.warn('weekly catch-up:',e.message||e);}
+}
 function render(){
   const tab=activeTab();
-  /* self-healing on open: a finance user landing on Money silently catches up this
-     week's rows (covers Won deals saved by salespeople, who cannot write dc_weekly) */
-  if(!_wkAutoRan&&DB.canFinance()){_wkAutoRan=true;
-    try{const r=weeklyAutoRefresh();if(r.changed)DB.save();}catch(e){}}
+  wkCatchUp(false);
   /* level-1: Reporting (this whole page) vs Invoicing. The book is open to the whole team
      to READ (Belén, 29 Jul); only accounting can change anything in it. */
   document.getElementById('tabs1').innerHTML='<button type="button" class="on">📊 Reporting</button>'+
@@ -404,21 +451,44 @@ function finRowHtml(f,canF){
   const fromLines=DB.billReady()&&DB.invoicedTotal(f.id)!=null;
   const fx=Object.assign({},f,{invoiced:DB.finInvoiced(f)});
   const invRO='<td class="num"><span '+(fromLines?'title="Sum of the Invoicing lines — edit them in 🧾 Invoicing"':'')+'>'+finFmt(fx.invoiced)+(fromLines?' <span style="font-size:10px">🧾</span>':'')+'</span></td>';
+  /* ---- NO WRITE-IN BOXES FOR ANYTHING THE TIMELINE KNOWS (Belén, 3 Aug) ----
+     "they should cascade through from the timeline, as other details. There is no point
+     having more than 1 source of truth, all it does is complicate the whole thing."
+     Where · When · PM · Sales joined the name and the city: derived, read-only, changed
+     on the timeline. What is still typed here is only what the timeline cannot know —
+     the target, the stretch, the ticket target and SPEX. Invoiced already comes from
+     Invoicing. A row with no timeline event behind it (a past edition, which the board
+     deliberately does not carry) shows its own frozen record instead. */
+  const src=(txt,what)=>'<td>'+(txt
+    ?'<span title="Comes from the timeline — change it in 📅 Events ('+what+')">'+txt+' <span style="font-size:9px;opacity:.5">🔗</span></span>'
+    :'<span style="color:#b4b1a8" title="Not set on the timeline yet — fill it in there and it lands here">—</span>')+'</td>';
+  /* only an event that has NOT happened yet is "missing from the timeline" — the board
+     deliberately does not carry finished editions, so those are not a warning */
+  const orphanNow=!linked&&DB.finStartKey(f)>=Date.now();
+  const frzWhy=orphanNow
+    ?'This event is not on the timeline, so nothing can cascade into it — add it in 📅 Events with its E-code and this row will adopt it.'
+    :'Past edition — the timeline only carries current and future events, so this is the figure sheet’s own record.';
+  const frz=txt=>'<td>'+(txt?'<span title="'+frzWhy+'">'+txt+'</span>':'<span style="color:#b4b1a8">—</span>')+'</td>';
+  const cell=(txt,what)=>linked?src(txt,what):frz(txt);
+  const descr=cell(esc(DB.finTrueCity(f)),'city')+cell(esc(DB.finTrueWhen(f)),'dates')+
+              cell(pLink(DB.finTruePM(f)),'PM')+cell(pLink(DB.finTrueSales(f)),'salesperson');
+  const warn=orphanNow?' <a href="gantt.html" style="text-decoration:none" title="'+frzWhy+' Until then its weekly curve has no anchor either.">⚠</a>':'';
+  /* the ticket target is stored once — on the SPX registry event — and shown in both
+     places, so Money and the board can never disagree about it */
+  const reg=(DB.spxEventReg||[]).find(r=>!r.deleted&&r.financeId==f.id);
+  const canTik=canF&&DB.canSalesLead&&DB.canSalesLead()&&!!reg;
+  const tik='<td class="num">'+(reg
+    ?(canTik?'<span class="mval" data-mf="pasesTarget" data-reg="'+reg.id+'" title="Click to edit — the ticket target, shared with the SPX board">'+finFmt(reg.pasesTarget)+'</span>'
+            :'<span title="The ticket target lives on the SPX board">'+finFmt(reg.pasesTarget)+'</span>')
+    :'<span style="color:#b4b1a8" title="This row has no SPX registry event yet, so it has nowhere to keep a ticket target">—</span>')+'</td>';
   if(!canF){
-    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+'</td><td>'+esc(DB.finTrueCity(f))+'</td><td>'+esc(f['when']||'')+'</td><td>'+pLink(f.pm)+'</td><td>'+pLink(f.sales)+'</td>'+
-      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
+    return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+warn+'</td>'+descr+
+      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+tik+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
-  const inp=(fld)=>'<input data-ff="'+fld+'" data-id="'+f.id+'" value="'+esc(f[fld])+'">';
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
-  /* city cascades from the timeline exactly like the name (Belén, 31 Jul: Zaragoza
-     was on the timeline but blank on the 2027 dashboard) — linked rows show the
-     derived city read-only; unlinked past editions keep their input */
-  const cityCell=linked
-    ?'<td><span title="Cascades from the timeline — edit the city there">'+esc(DB.finTrueCity(f))+' <span style="font-size:9px;opacity:.5">🔗</span></span></td>'
-    :'<td>'+inp('city')+'</td>';
-  return '<tr><td>'+caret+nameRO+ed+'</td>'+cityCell+'<td>'+inp('when')+'</td><td>'+inp('pm')+'</td><td>'+inp('sales')+'</td>'+
-    mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
+  return '<tr><td>'+caret+nameRO+ed+warn+'</td>'+descr+
+    mny('target')+mny('stretch')+tik+(fromLines?invRO:mny('invoiced'))+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
 }
@@ -530,7 +600,9 @@ function renderYear(){
     (canF?'<button class="btn primary" id="addBtn" style="font-size:12px;padding:4px 10px">+ Add event figures</button> ':'')+
     (canF?'<button class="btn" id="fillBtn" title="Write this week\'s dc_weekly row per selling event from the SPX board + Jesús\'s invoicing — leads stay yours" style="font-size:12px;padding:4px 10px">⟳ Fill this week</button> ':'')+
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
-    '<p class="hint">'+(canF?'You can edit — click a figure to change it; every change is recorded. Invoiced marked 🧾 comes from Invoicing lines and is edited there.':'Read-only · invoiced flows in from Invoicing; targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
+    '<p class="hint">Event, where, when, PM and salesperson 🔗 <b>come from the timeline</b> — change them in 📅 Events and they land here. Invoiced 🧾 is the sum of the Invoicing lines. '+
+    (canF?'The only figures typed here are the <b>target, stretch, ticket target and SPEX</b> — click one to change it; every change is recorded.':'Read-only · targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
+    liveStamp()+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
     yearAnalysis()+
     '<div class="panel"><h3>Portfolio pulse</h3><p class="hint">Each upcoming event, week by week: green = at or ahead of the pace past events needed to hit target · amber = 75%+ · red = behind. Grey = no target yet.</p>'+
@@ -540,17 +612,19 @@ function renderYear(){
   ys.onchange=()=>{yearFilter=ys.value;renderYear();};
   const g=finGrouped();
   let h='<tr><th>Event</th><th>Where</th><th>When</th><th>PM</th><th>Sales</th>'+
-    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
+    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Tickets tgt</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
   const keys=Object.keys(g);
-  if(!keys.length)h+='<tr><td colspan="11" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
+  const tikSum=list=>{let n=0,any=false;list.forEach(f=>{const r=(DB.spxEventReg||[]).find(x=>!x.deleted&&x.financeId==f.id);
+    if(r&&r.pasesTarget!=null&&r.pasesTarget!==''){n+=+r.pasesTarget||0;any=true;}});return any?n:null;};
+  if(!keys.length)h+='<tr><td colspan="12" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
   keys.forEach(k=>{
     const list=g[k];
-    h+='<tr class="semhead"><td colspan="11">'+k.replace('·',' — ')+'</td></tr>';
+    h+='<tr class="semhead"><td colspan="12">'+k.replace('·',' — ')+'</td></tr>';
     list.forEach(f=>{h+=finRowHtml(f,canF);
-      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="11">'+evCardHtml(f)+'</td></tr>';});
+      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="12">'+evCardHtml(f)+'</td></tr>';});
     const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>{const v=DB.finInvoiced(f);return v!=null&&v!=='';})?list.reduce((a,f)=>a+(+DB.finInvoiced(f)||0),0):null};
     h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
-      '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
+      '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(tikSum(list))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
       '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td></td></tr>';
   });
   document.getElementById('ftbl').innerHTML=h;
@@ -562,16 +636,16 @@ function renderYear(){
   });
   evxOpen.forEach(id=>{const f=DB.finance.find(x=>x.id==id);if(f)try{drawEvCard(f);}catch(e){console.warn('event card chart:',e.message||e);}});
   if(canF){
-    document.querySelectorAll('[data-ff]').forEach(el=>el.onchange=()=>{
-      const f=DB.finance.find(x=>x.id==el.dataset.id);if(!f)return;
-      f[el.dataset.ff]=el.value;DB.save();renderYear();});
+    /* only money is typed here now (targets · ticket target · SPEX). The ticket target
+       is kept on the SPX registry row, so data-reg says which object to write to. */
     document.querySelectorAll('.mval').forEach(sp=>sp.onclick=()=>{
-      const f=DB.finance.find(x=>x.id==sp.dataset.id);if(!f)return;
+      const o=sp.dataset.reg?(DB.spxEventReg||[]).find(x=>x.id==sp.dataset.reg):DB.finance.find(x=>x.id==sp.dataset.id);
+      if(!o)return;
       const fld=sp.dataset.mf,td=sp.parentElement;
-      td.innerHTML='<input class="money" type="number" step="any" value="'+(f[fld]==null?'':f[fld])+'">';
+      td.innerHTML='<input class="money" type="number" step="any" value="'+(o[fld]==null?'':o[fld])+'">';
       const inp=td.firstChild;inp.focus();inp.select();
       let doneEdit=false;
-      const commit=()=>{if(doneEdit)return;doneEdit=true;const v=inp.value;f[fld]=(v===''?null:+v);DB.save();renderYear();};
+      const commit=()=>{if(doneEdit)return;doneEdit=true;const v=inp.value;o[fld]=(v===''?null:+v);DB.save();renderYear();};
       inp.onblur=commit;
       inp.onkeydown=e=>{if(e.key==='Enter')commit();if(e.key==='Escape'){doneEdit=true;renderYear();}};
     });
@@ -589,15 +663,20 @@ function openFinModal(){
   const sel=document.getElementById('f_link');
   sel.innerHTML='<option value="">— past event (not on the board) —</option>'+
     DB.events.map(e=>'<option value="'+e.id+'">'+e.name+' · '+dateRange(e)+'</option>').join('');
+  /* linked → name, where, when, PM and sales all CASCADE from the timeline and are
+     locked here, exactly as they are in the table (Belén, 3 Aug: one source of truth) */
+  const CASC=[['f_name','name'],['f_city','city'],['f_when','dates'],['f_pm','PM'],['f_sales','salesperson']];
+  const lock=on=>CASC.forEach(([id,what])=>{const el=document.getElementById(id);
+    el.readOnly=on;el.title=on?('Comes from the timeline event — change the '+what+' there'):'';
+    el.style.background=on?'#f4f2ee':'';});
   sel.onchange=()=>{const ev=DB.event(+sel.value);
-    /* linked → the name CASCADES from the timeline and is locked here (30 Jul) */
-    f_name.readOnly=!!ev;f_name.title=ev?'Cascades from the timeline event — rename it there':'';
+    lock(!!ev);
     if(!ev)return;
-    f_name.value=DB.evMasterName(ev);f_city.value=ev.city||'';f_when.value=dateRange(ev);
+    f_name.value=DB.evMasterName(ev);f_city.value=ev.city||'';f_when.value=evWhenShort(ev);
     f_pm.value=ev.pm||'';f_sales.value=ev.sales||'';
     const d=ymd(ev.date);f_year.value=d.getFullYear();document.getElementById('f_sem').value=(d.getMonth()<6?'1':'2');};
   ['f_name','f_edition','f_city','f_when','f_pm','f_sales','f_target','f_stretch','f_invoiced','f_spex','f_notes'].forEach(id=>document.getElementById(id).value='');
-  f_name.readOnly=false;f_name.title='';
+  lock(false);
   f_year.value=new Date().getFullYear();
   document.getElementById('modal').classList.add('on');f_name.focus();
 }
@@ -758,6 +837,83 @@ function drawHeat(ms){
 /* ================= TAB 2: WEEKLY SALES ================= */
 const SERVICES=[['sponsorsEur','Sponsors','sponsorsN'],['ticketsEur','Tickets','delegatesN'],['telesalesEur','Telesales','telesalesN'],['grabacionesEur','Recordings',null],['siteVisitsEur','Site visits',null]];
 function weekMoney(r){return SERVICES.reduce((a,[k])=>a+(+r[k]||0),0);}
+/* which Money row an E-code belongs to — the same walk weeklyLabel does: registry first,
+   then the timeline event carrying that ecode. Never by name (names drift, codes don't). */
+function finForCode(code){
+  const c=(''+(code||'')).trim().toUpperCase();if(!c)return null;
+  const reg=(DB.spxEventReg||[]).find(x=>!x.deleted&&(''+x.eventKey).trim().toUpperCase()===c);
+  if(reg&&reg.financeId!=null){const f=DB.finance.find(x=>!x.deleted&&x.id==reg.financeId);if(f)return f;}
+  const ev=(DB.events||[]).find(e=>!e.deleted&&DB.evCode(e)===c);
+  if(ev){const f=DB.finance.find(x=>!x.deleted&&x.eventId==ev.id);if(f)return f;}
+  return null;
+}
+/* ---- what exactly made up a week, invoice by invoice (Belén, 3 Aug) ----
+   "can you make a way for me to click in the name of the event and that a tab opens
+   (collapsable) detailing what amounts came in exactly per invoice?"
+   One line per invoice — its number, its date, who it is to, what it is for and the part
+   of it that belongs to THIS event (an invoice can be split across events, so the figure
+   here is the event's share, never the invoice total). Contracts signed in the same week
+   follow underneath, because signed money is not billable money and the week's two
+   numbers only reconcile when you can see both. */
+let wdetOpen=new Set();
+function weekDetailHtml(r){
+  const f=finForCode(r.eventCode);
+  if(!DB.billReady())return '<div class="in">Invoicing is not switched on for this login, so the breakdown cannot be shown.</div>';
+  if(!f)return '<div class="in">No Money row is linked to '+esc(r.eventCode||'this code')+', so its invoices cannot be traced. Link it in 💼 SPX → ⚙ Manage events.</div>';
+  const from=(''+r.date).slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from))return '<div class="in">This week has no date on it yet.</div>';
+  const to=toISO(addDays(ymd(from),6));
+  const inWeek=iso=>{const s=(''+(iso||'')).slice(0,10);return s>=from&&s<=to;};
+  const per={};
+  DB.invoiceAllocs.forEach(a=>{
+    if(a.eventId!=f.id)return;
+    const iv=DB.invoice(a.invoice_id);
+    if(!iv||!DB.invCountsMoney(iv)||!inWeek(iv.fecha))return;
+    const e=(per[iv.id]=per[iv.id]||{iv,eur:0,passes:0,what:{}});
+    e.eur+=DB.allocEur(a);
+    if(iv.status!=='cancelado'&&iv.status!=='abono')e.passes+=(+a.passes||0);
+    const p=DB.lineProdEff(a);e.what[PRODUCTO_LABEL[p]||p||'—']=1;
+  });
+  const invs=Object.values(per).sort((a,b)=>(''+(a.iv.fecha||'')).localeCompare(''+(b.iv.fecha||''))||(b.eur-a.eur));
+  const tot=invs.reduce((a,x)=>a+x.eur,0);
+  let h='<div class="in"><div class="cap">Invoices dated '+ddmmyyyy(from)+' – '+ddmmyyyy(to)+' · the part of each that belongs to this event</div>';
+  h+='<table><tr><th>Invoice</th><th>Date</th><th>Company</th><th>For</th><th class="num">€ this event</th><th>Status</th></tr>';
+  if(!invs.length)h+='<tr><td colspan="6" style="color:var(--muted);font-style:italic">Nothing was invoiced for this event in this week.</td></tr>';
+  invs.forEach(x=>{
+    const paid=x.iv.status==='pagado'||x.iv.fecha_cobro;
+    h+='<tr><td><b>'+esc(x.iv.numero_factura||'—')+'</b></td><td>'+dmyS(x.iv.fecha)+'</td>'+
+      '<td>'+esc(x.iv.razon_social||'')+'</td>'+
+      '<td>'+esc(Object.keys(x.what).join(', '))+(x.passes?' <span style="color:var(--muted)">('+x.passes+' pass'+(x.passes===1?'':'es')+')</span>':'')+'</td>'+
+      '<td class="num"><b>'+finFmt(x.eur)+'</b></td>'+
+      '<td'+(paid?' style="color:#3E8C28"':'')+'>'+esc(INV_STATUS[x.iv.status]||x.iv.status||'')+(paid?' ✓':'')+'</td></tr>';
+  });
+  if(invs.length)h+='<tr class="total"><td colspan="4" style="font-weight:700">Invoiced this week</td><td class="num" style="font-weight:700">'+finFmt(tot)+'</td><td></td></tr>';
+  h+='</table>';
+  /* contracts signed in the same week — committed money, not yet billable */
+  const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
+  const keys={};(DB.spxEventReg||[]).forEach(g=>{if(!g.deleted&&g.financeId==f.id)keys[nk(g.eventKey)]=1;});
+  const signed=[];
+  (DB.spxProps||[]).forEach(p=>{
+    if(p.active===false||p.superseded)return;
+    if(!(p.stage==='Won'||p.salesStatus==='Confirmed'))return;
+    const d=(''+(p.signedAt||p.fechaEnvio||p.createdAt||'')).slice(0,10);
+    if(!inWeek(d))return;
+    let eur=0,hit=false;
+    (DB.spxLinesFor(p.id)||[]).forEach(l=>{
+      if(!(keys[nk(l.eventKey)]||(l.eventId!=null&&l.eventId==f.id)))return;hit=true;eur+=(+l.valueEur||0);});
+    if(hit)signed.push({company:p.company||'—',eur,when:d,who:p.responsableName||p.responsable||''});
+  });
+  if(signed.length){
+    h+='<div class="cap sp">Contracts signed the same week · committed, not all of it billable yet</div><table>'+
+      '<tr><th>Company</th><th>Signed</th><th>Sales</th><th class="num">€ signed</th></tr>';
+    signed.sort((a,b)=>b.eur-a.eur).forEach(s=>{h+='<tr><td>'+esc(s.company)+'</td><td>'+dmyS(s.when)+'</td><td>'+esc(s.who)+'</td><td class="num" style="color:#3E8C28;font-weight:700">'+finFmt(s.eur)+'</td></tr>';});
+    h+='</table>';
+  }
+  h+='<div class="foot"><a href="facturacion.html" style="color:var(--orange)">🧾 Open these in Invoicing</a>'+
+     (f.eventId?' &nbsp;·&nbsp; <a href="event.html?id='+f.eventId+'" style="color:inherit">📅 The event page</a>':'')+
+     ' &nbsp;·&nbsp; a split invoice shows only this event’s share.</div></div>';
+  return h;
+}
 function renderWeek(){
   const today=new Date().toISOString().slice(0,10);
   const dates=[...new Set(DB.weekly.filter(r=>r.date&&r.date<=today).map(r=>r.date))].sort().reverse();
@@ -769,7 +925,8 @@ function renderWeek(){
   const signed=rows.reduce((a,r)=>a+(+r.signedEur||0),0);
   document.getElementById('content').innerHTML=
     '<div class="panel"><h3>Week of <select id="wkSel" style="font-size:13px"></select></h3>'+
-    '<p class="hint">Only what moved THIS week — which events, which services — and where each event stands with the new takings.</p>'+
+    '<p class="hint">Only what came in THIS week — which events, which services — and where each event stands with the new takings. <b>Click an event to open the invoices behind its figure.</b></p>'+
+    liveStamp()+
     '<div class="bigeur">'+eur(total)+'</div><p class="hint">invoiced across '+rows.length+' event'+(rows.length===1?'':'s')+' this week'+
     (signed?' &nbsp;·&nbsp; <b style="color:#3E8C28">'+eur(signed)+'</b> signed in new contracts (not all of it billable yet)':'')+'</p>'+
     '<div class="wstbl"><table id="wstbl"></table></div></div>'+
@@ -780,19 +937,27 @@ function renderWeek(){
   sel.onchange=()=>{weekDate=sel.value;renderWeek();};
   let h='<tr><th>Event</th><th>Week</th>'+SERVICES.map(s=>'<th class="num">'+s[1]+'</th>').join('')+
     '<th class="num">Week total</th><th class="num">Signed</th><th>Status with new takings</th></tr>';
-  if(!rows.length)h+='<tr><td colspan="11" class="wsempty">A quiet week — nothing invoiced and nothing signed.</td></tr>';
+  if(!rows.length)h+='<tr><td colspan="'+(SERVICES.length+5)+'" class="wsempty">A quiet week — nothing invoiced and nothing signed.</td></tr>';
   rows.sort((a,b)=>(weekMoney(b)+(+b.signedEur||0))-(weekMoney(a)+(+a.signedEur||0))).forEach(r=>{
     const st=finResult({invoiced:r.soFarEur,stretch:r.stretch,year:r.year});
     const pct=(r.target&&r.soFarEur!=null)?Math.round(100*r.soFarEur/r.target)+' % of target':'no target';
-    h+='<tr><td class="evname">'+(r.name||r.eventCode)+'</td><td>W'+(r.week<0?r.week:'+'+r.week)+'</td>'+
+    const op=wdetOpen.has(r.eventCode);
+    h+='<tr><td class="evname clk" data-wdet="'+esc(r.eventCode||'')+'" title="'+(op?'Fold the invoices':'See the invoices behind this figure')+'">'+
+      (op?'▾ ':'▸ ')+esc(weeklyLabel(r.eventCode,r.name||r.eventCode))+'</td><td>W'+(r.week<0?r.week:'+'+r.week)+'</td>'+
       SERVICES.map(([k,l,cnt])=>'<td class="num">'+(+r[k]?(eur(+r[k])+(cnt&&r[cnt]?' <span style="color:#b4b1a8;font-size:11px">('+r[cnt]+')</span>':'')):'')+'</td>').join('')+
       '<td class="num"><b>'+eur(weekMoney(r))+'</b></td>'+
       '<td class="num"'+(+r.signedEur?' style="color:#3E8C28;font-weight:700"':'')+'>'+(+r.signedEur?eur(+r.signedEur):'')+'</td>'+
       '<td>'+eur(r.soFarEur)+' so far · '+pct+' '+chipHtml(st)+'</td></tr>';
+    if(op)h+='<tr class="wdet"><td colspan="'+(SERVICES.length+5)+'">'+weekDetailHtml(r)+'</td></tr>';
   });
   h+='<tr class="total"><td>TOTAL</td><td></td>'+SERVICES.map(([k])=>'<td class="num">'+(rows.reduce((a,r)=>a+(+r[k]||0),0)?eur(rows.reduce((a,r)=>a+(+r[k]||0),0)):'')+'</td>').join('')+
     '<td class="num">'+eur(total)+'</td><td class="num">'+(signed?eur(signed):'')+'</td><td></td></tr>';
   document.getElementById('wstbl').innerHTML=h;
+  document.querySelectorAll('[data-wdet]').forEach(el=>el.onclick=()=>{
+    const c=el.dataset.wdet;
+    if(wdetOpen.has(c))wdetOpen.delete(c);else wdetOpen.add(c);
+    renderWeek();
+  });
   wireImport();
 }
 
@@ -1609,7 +1774,8 @@ window.addEventListener('hashchange',render);
    is deliberately out of realtime — so on any remote change, also pull a fresh weekly
    copy (rate-limited inside reloadWeekly) before re-rendering (Belén, 31 Jul: "the week
    by week numbers are NOT updating … automatic immediate updates across the board") */
-window.addEventListener('dc-remote',()=>{render();DB.reloadWeekly().then(fresh=>{if(fresh)render();}).catch(()=>{});});
+window.addEventListener('dc-remote',()=>{render();
+  DB.reloadWeekly().then(fresh=>{if(fresh){wkCatchUp(true);render();}}).catch(()=>{});});
 </script>
 </body>
 </html>
