@@ -60,7 +60,10 @@ function meta(){
   Object.keys(m).forEach(code=>{
     const rows=m[code],last=rows[rows.length-1];
     let final=0;rows.forEach(r=>{final=Math.max(final,+r.soFarEur||0);});
-    out.push({code,name:rows[0].name||code,fam:famKey(rows[0].name),year:+rows[0].year||null,
+    /* the label comes from the code's current owner, like Money's (store.js weeklyLabel):
+       an E-code that changes hands must not keep printing the old event's name. fam stays
+       on the history's own name — that is what matches an edition to its family. */
+    out.push({code,name:weeklyLabel(code,rows[0].name||code),fam:famKey(rows[0].name),year:+rows[0].year||null,
       rows,final,lastDate:last.date,completed:(last.date||'')<today});
   });
   return out.sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
