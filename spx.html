@@ -182,7 +182,7 @@
     <button class="btn p" id="w_save">Save</button></div>
 </div></div>
 
-<script src="store.js?v=108"></script>
+<script src="store.js?v=109"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
@@ -309,7 +309,10 @@ function spxEvents(){
   const out=Object.values(map);out.forEach(e=>{e.financeId=evFinanceId(e.key,e.name);});
   return out.sort((a,b)=>(evDateKey(a)-evDateKey(b))||(''+a.name).localeCompare(''+b.name));
 }
-function evCurrent(e){return hasReg()?!!e.active:e.sent>0;}
+/* current = the manual tick AND the date not yet passed — DB.spxIsCurrent is the one
+   definition (store.js), shared with Money → Sponsorship and the Proposal Builder. */
+function evCurrent(e){return hasReg()?DB.spxIsCurrent(e.reg||e):e.sent>0;}
+function evPast(e){return hasReg()?DB.spxRegIsPast(e.reg||e):false;}
 function currentEventKeys(){const s={};spxEvents().forEach(e=>{if(evCurrent(e))s[e.key]=1;});return s;}
 /* a proposal is "current" if it's General or touches an event still in pipeline; else it's "Before".
    Keys NOT in the dc_spx_events registry count as CURRENT (never silently filed under Before) —
@@ -1743,7 +1746,9 @@ function openManageEvents(){
     DB.finance.slice().sort((a,b)=>(DB.finStartKey(b)-DB.finStartKey(a))||(''+a.name).localeCompare(''+b.name)).map(f=>'<option value="'+f.id+'"'+(e.financeId==f.id?' selected':'')+'>'+esc(finLabel(f))+'</option>').join('')+'</select>';
   const rowHtml=e=>'<div class="sec" style="padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input data-mev-name="'+e.id+'" value="'+esc(e.name)+'" style="flex:1;font-weight:700;padding:6px;border:1px solid var(--line);border-radius:7px">'
-    +'<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-mev-active="'+e.id+'"'+(e.active!==false?' checked':'')+'> current</label></div>'
+    +(DB.spxRegIsPast(e)
+      ? '<span class="ro-note" style="white-space:nowrap" title="Its date has passed, so it lives in Before on its own — no tick to remember">🗓 finished · Before</span></div>'
+      : '<label style="font-size:12px;display:flex;gap:4px;align-items:center;white-space:nowrap"><input type="checkbox" data-mev-active="'+e.id+'"'+(e.active!==false?' checked':'')+'> current</label></div>')
     +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:12px">'
     +'<span>Money: '+finSelect(e)+'</span>'
     +'<span title="The sponsorship target only — the rest of the event target comes from the Money row by subtraction">SPX target €<input type="number" data-mev-t="'+e.id+'" value="'+(e.sponsorshipTarget==null?'':e.sponsorshipTarget)+'" style="width:88px;padding:5px;border:1px solid var(--line);border-radius:6px;margin-left:3px"></span>'
@@ -1751,7 +1756,7 @@ function openManageEvents(){
     +'<span class="ro-note">key '+esc(e.eventKey)+'</span></div></div>';
   const body='<div class="sec"><h5>Events being sold</h5>'
     +(notReady?'<div class="setupbanner">Run <b>_sql/dispatch_spx_events.sql</b> in Supabase first — then this list is saved for everyone.</div>':'')
-    +'<p class="ro-note">Untick <b>current</b> to move a finished event to the <b>Before</b> tab. Link an event to a Money row to track Invoiced/Paid. The <b>SPX target</b> is the only target set here — the rest of the event target is the Money total minus it, worked out for you.</p>'
+    +'<p class="ro-note">An event whose <b>date has passed moves to Before by itself</b> — you never have to untick it. Untick <b>current</b> only to park an event that is still to come. Link an event to a Money row to track Invoiced/Paid. The <b>SPX target</b> is the only target set here — the rest of the event target is the Money total minus it, worked out for you.</p>'
     +(reg.map(rowHtml).join('')||'<div class="ro-note">No events yet — add one below.</div>')
     +'<div class="sec" style="background:#f6f5f2"><h5>Add an event</h5>'
       +'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="mev_key" placeholder="key e.g. E059" style="width:110px;padding:6px;border:1px solid var(--line);border-radius:7px">'

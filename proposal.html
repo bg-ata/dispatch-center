@@ -167,7 +167,7 @@
   <div class="hint" id="msg"></div>
 </div>
 
-<script src="store.js?v=108"></script>
+<script src="store.js?v=109"></script>
 <script src="pb_bundle.js?v=13"></script>
 <script>
 const SOURCE_OPTIONS=["Apollo","External Events","Inbound","LinkedHelper","AC brochure","AC webinar","Past delegate 2026","Past sponsor 2026","Past sponsor previous","Past delegate previous","Referral","Outreach"];
@@ -194,7 +194,9 @@ const keyFold=k=>(''+(k||'')).toUpperCase().replace(/[^A-Z0-9]/g,'');
 function retiredKeys(){
   const s=new Set();
   try{(DB.spxEventReg||[]).forEach(r=>{
-    if(!r.deleted&&r.active===false&&r.eventKey)s.add(keyFold(r.eventKey));});}catch(e){}
+    /* parked OR already over — nobody should be able to build a proposal for an
+       edition that has happened (Belén, 4 Aug). DB.spxIsCurrent is the one rule. */
+    if(!r.deleted&&r.eventKey&&!DB.spxIsCurrent(r))s.add(keyFold(r.eventKey));});}catch(e){}
   return s;
 }
 function isRetired(e,retired){return retired.has(keyFold(e.spx_key||e.key));}

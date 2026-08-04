@@ -220,7 +220,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=108"></script>
+<script src="store.js?v=109"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -244,10 +244,22 @@ function meta(){
     /* the name is resolved LIVE from the code's current owner (store.js weeklyLabel), so
        reassigning an E-code renames it everywhere at once. fam stays on the name the
        history was imported with — that is what matches a 2021 edition to its family. */
+    /* WHEN this edition actually happens — the W0 row's date, or extrapolated back from
+       the last dated row (a live edition's curve stops at the CURRENT week, so it has no
+       W0 yet). Needed because neither shortcut works on its own: "last row is in the
+       past" calls Talks BESS finished while it is still 8 weeks away, and "the curve
+       reached W0" calls Datacenters Italia 2026 finished because weeklyAutoRefresh
+       pre-writes its W0 row three months into the future. Belén, 4 Aug. */
+    const w0=rows.find(r=>+r.week===0);
+    let evDate=(w0&&w0.date)||null;
+    if(!evDate&&last&&last.date){const p=(''+last.date).split('-').map(Number);
+      const d=new Date(p[0],p[1]-1,p[2]);
+      if(!isNaN(d)){d.setDate(d.getDate()-(+last.week||0)*7);
+        evDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}}
     out.push({code,name:weeklyLabel(code,rows[0].name||code),histName:rows[0].name||code,
       fam:famKey(rows[0].name),year:+rows[0].year||null,
       rows,target,stretch,final,spx,tik,topicLeads,eventLeads,sponsorsN,
-      lastDate:last.date,completed:(last.date||'')<today,lastData});
+      lastDate:last.date,evDate,completed:(evDate||last.date||'')<today,lastData});
   });
   return out.sort((a,b)=>(a.lastDate||'').localeCompare(b.lastDate||''));
 }
@@ -462,7 +474,13 @@ function spxDealsHtml(r,money){
 function spxDistinct(a){return Array.from(new Set(a.filter(x=>x!=null&&x!=='')));}
 function renderSpxStatus(){
   const C=document.getElementById('content');
-  const rows=spxStatusAll();
+  /* date order, soonest first, so the top of "Selling now" is always the next event to
+     come (Belén, 31 Jul "order them by date please. Same in SPX and across the board",
+     and again 4 Aug). Events with no Money row have no date and sort last. */
+  const rows=spxStatusAll().slice().sort((a,b)=>{
+    const fa=a.financeId!=null?DB.finance.find(x=>x.id==a.financeId):null,
+          fb=b.financeId!=null?DB.finance.find(x=>x.id==b.financeId):null;
+    return ((fa?DB.finStartKey(fa):Infinity)-(fb?DB.finStartKey(fb):Infinity))||((+a.sort||0)-(+b.sort||0));});
   if(!rows.length){C.innerHTML='<div style="color:#7c7c78;padding:14px 4px">No SPX events registered yet — set them up in <a href="spx.html" style="color:var(--orange)">💼 SPX → ⚙ Manage events</a>.</div>';return;}
   /* not finFmt: es-ES leaves 4-digit numbers ungrouped ("5000 €" next to "10.000 €" — the
      Jesús quirk from facturación), so force grouping here */
@@ -502,8 +520,8 @@ function renderSpxStatus(){
       '</table></div>';
   };
   C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Won</b> counts the moment a deal is marked Won. <b>Click any event</b> to open its signed contracts: what was sold, whether it is invoiced and paid, and what logistics has to deliver. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+
-    sec('Selling now',rows.filter(r=>r.active))+
-    sec('Before (finished / parked)',rows.filter(r=>!r.active));
+    sec('Selling now',rows.filter(r=>r.current))+
+    sec('Before (finished / parked)',rows.filter(r=>!r.current));
   document.querySelectorAll('#content a[href="#year"]').forEach(a=>a.onclick=e=>{e.preventDefault();location.hash='year';render();});
   /* click the event row to open/close its contracts — the links inside keep working */
   document.querySelectorAll('#content tr.evrow').forEach(tr=>tr.onclick=e=>{
@@ -1074,11 +1092,20 @@ function renderWeek(){
 
 /* ================= TAB 3: WEEK BY WEEK DETAIL ================= */
 function heroSelHtml(ms,id){
-  const groups={'Upcoming':ms.filter(e=>!e.completed).reverse(),'Past':ms.filter(e=>e.completed).reverse()};
+  /* Upcoming reads soonest-first (by the edition's own date), Past newest-first */
+  const byEv=(a,b)=>(a.evDate||a.lastDate||'').localeCompare(b.evDate||b.lastDate||'');
+  const groups={'Upcoming':ms.filter(e=>!e.completed).slice().sort(byEv),
+                'Past':ms.filter(e=>e.completed).slice().sort((a,b)=>byEv(b,a))};
   return '<select id="'+id+'">'+Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('')+'</select>';
 }
-function ensureHero(ms){const up=ms.filter(e=>!e.completed);
-  if(!heroCode||!ms.some(e=>e.code===heroCode))heroCode=(up.find(e=>e.final>0)||up[0]||ms[ms.length-1]).code;}
+/* the default edition is THE NEXT ONE TO COME (Belén, 4 Aug: "if you must show numbers
+   without picking an event, please make it the next event to come"). ms is sorted by the
+   edition's last week, so up[0] is the soonest unfinished one — we no longer skip it just
+   because it has no money in yet, which is how a long-gone edition became the default. */
+function ensureHero(ms){
+  const up=ms.filter(e=>!e.completed).slice()
+    .sort((a,b)=>(a.evDate||a.lastDate||'').localeCompare(b.evDate||b.lastDate||''));
+  if(!heroCode||!ms.some(e=>e.code===heroCode))heroCode=(up[0]||ms[ms.length-1]).code;}
 function renderDetail(){
   const ms=meta();if(!ms.length){document.getElementById('content').innerHTML='<div class="panel wsempty">No weekly data yet.</div>';return;}
   ensureHero(ms);

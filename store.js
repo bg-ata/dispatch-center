@@ -1361,7 +1361,11 @@ function spxStatusAll(){
   const findReg=l=>DB.spxLineReg(l);
   const bucket=p=>p.stage==='Silent'?'Silent':p.salesStatus;
   const rows={};
-  regs.forEach(e=>{rows[e.eventKey]={key:e.eventKey,name:e.name,active:e.active!==false,financeId:e.financeId,
+  /* `active` = the manual tick (what weeklyAutoRefresh still keys off, so a finished
+     edition's curve keeps being rebuilt from its invoices); `current` = the tick AND the
+     date not yet passed — that is what every "Selling now / Before" split reads. */
+  regs.forEach(e=>{rows[e.eventKey]={key:e.eventKey,name:e.name,active:e.active!==false,
+    current:DB.spxIsCurrent(e),past:DB.spxRegIsPast(e),financeId:e.financeId,
     sort:+e.sort||0,won:0,wonN:0,sent:0,sentN:0,silent:0,lost:0,reg:e};});
   live.forEach(p=>{
     const b=bucket(p),touched={};
@@ -2973,6 +2977,18 @@ const DB={
     if(!e&&l.eventId!=null)e=evs.find(x=>x.financeId!=null&&x.financeId==l.eventId);
     if(!e&&lk)e=evs.find(x=>((x.convByStatus&&x.convByStatus.aliases)||[]).some(a=>nk(a)===lk));
     return e||null;},
+  /* ---- "current" vs "Before" for a registry event: ONE definition (Belén, 4 Aug:
+     "any events whose dates have passed, please move them to before… you are constantly
+     showing Invest 26, which bears no relevance to our current work"). An edition whose
+     date has passed is Before FULL STOP — nobody has to remember to untick it, and the
+     board stops defaulting to a finished event. The manual `active` tick still parks a
+     FUTURE event (a cancelled edition), it just can no longer resurrect a past one.
+     A registry row with no Money link has no date, so it keeps the manual tick alone. */
+  spxRegIsPast(r){
+    if(!r||r.financeId==null)return false;
+    const f=(this.finance||[]).find(x=>x.id==r.financeId);
+    return f?this.finIsPast(f):false;},
+  spxIsCurrent(r){return !!r&&r.active!==false&&!this.spxRegIsPast(r);},
   /* company-name normalisation — uppercase, accents/punctuation stripped, legal-form
      tokens dropped from the END only ("SOLAR AB" → "SOLAR", "AB SOLAR" stays).
      spx.html normCompany() delegates here: the crosswalk must match identically on
@@ -3128,6 +3144,23 @@ const DB={
     const mo=m?M[m[1].toLowerCase()]:null;
     const day=(/(\d{1,2})/.exec(''+(f.when||''))||[])[1];
     return new Date(y,mo!=null?mo:11,mo!=null?(+day||1):31).getTime();},
+  /* ...and when it FINISHES. Linked timeline event -> its own `days`; otherwise count the
+     day numbers in the free-text `when` ("17-18 March" and "31 Mar-1 Apr" are both two
+     days, "27 Jan" is one). Needed because finStartKey alone would call a two-day event
+     finished on its opening morning. */
+  finEndKey(f){
+    const s=this.finStartKey(f);
+    if(!f||!isFinite(s))return s;
+    const ev=f.eventId?this.event(f.eventId):null;
+    let days=(ev&&+ev.days>0)?+ev.days:((''+(f.when||'')).match(/\d{1,2}/g)||[]).length;
+    if(!(days>0))days=1;
+    return s+(days-1)*864e5;},
+  /* has this edition already happened? (the day it ends still counts as current) */
+  finIsPast(f){
+    const e=this.finEndKey(f);
+    if(!isFinite(e))return false;
+    const t=new Date();t.setHours(0,0,0,0);
+    return e<t.getTime();},
   /* ---------- event → allocation-line cascade (Belén, 2026-07-17) ----------
      The moment an event exists, its two "allocation" lines exist too:
      an invoicing ITEM in dc_codigos and an hour-allocation PROJECT in
