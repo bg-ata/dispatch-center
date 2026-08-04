@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>RENMAD Dispatch — Event Marketing</title>
+<style>
+:root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px 'Segoe UI',system-ui,sans-serif}
+.app{padding:0 0 60px}
+.hd{display:flex;align-items:center;gap:12px;padding:18px 20px 6px}
+.hd h1{font-size:20px;margin:0;color:var(--charcoal)}
+.sub{padding:0 20px 14px;color:var(--muted);font-size:13px;max-width:820px}
+.prow{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:7px;background:var(--bg);display:flex;gap:8px;align-items:center}
+.prow input[type=text]{flex:1}
+.prow img{width:40px;height:40px;object-fit:contain;border:1px solid var(--line);border-radius:6px;background:#fff}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg label{flex:1;min-width:130px;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:13px}
+.seg input{display:none}
+.seg label:has(input:checked){border-color:var(--orange);background:rgba(255,74,0,.06)}
+.seg input:checked+span{font-weight:600;color:var(--orange)}
+</style>
+<script src="store.js?v=107"></script>
+<script src="imagegen_core.js?v=107"></script>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <div class="hd"><h1>📅 Event Marketing <span class="ig-new">NEW! Please try &amp; give feedback</span></h1></div>
+  <div class="sub">Event infographics (Ingo, ES+EN × 4), sponsor marketing packs and the logo wall.
+    Pick an event and its name, code, theme, colour, dates and confirmed sponsors cascade from the Dispatch.
+    <b>Speakers and sponsor logos aren't in the Dispatch</b> — upload logos below. <span id="apistat"></span></div>
+
+  <div class="ig-wrap">
+   <div class="ig-panel">
+     <div class="ig-field"><label>Event</label><select id="ev"></select></div>
+     <div class="ig-cascade" id="casc">Pick an event to cascade its details.</div>
+   </div>
+
+   <div class="ig-grid2">
+    <div>
+      <div class="ig-panel">
+        <h2>Event box (cascaded — editable)</h2>
+        <div class="ig-row">
+          <div class="ig-field"><label>Display name</label><input id="name"></div>
+          <div class="ig-field"><label>Theme</label><select id="theme"></select></div>
+        </div>
+        <div class="ig-row">
+          <div class="ig-field"><label>Location / city</label><input id="loc"></div>
+          <div class="ig-field"><label>Language (pack)</label><select id="lang"></select></div>
+        </div>
+        <div class="ig-row">
+          <div class="ig-field"><label>Date — ES (UPPER)</label><input id="dateEs"></div>
+          <div class="ig-field"><label>Date — EN (UPPER)</label><input id="dateEn"></div>
+        </div>
+      </div>
+
+      <div class="ig-panel">
+        <h2>Sponsors <span class="ig-mut">(names cascade; add logos)</span></h2>
+        <div id="partners"></div>
+        <button class="ig-btn ig-btn-ghost ig-btn-sm" id="addP">+ Add sponsor</button>
+      </div>
+
+      <div class="ig-panel">
+        <h2>Secondary partners <span class="ig-mut">(media / knowledge / host)</span></h2>
+        <div id="secondary"></div>
+        <button class="ig-btn ig-btn-ghost ig-btn-sm" id="addS">+ Add partner</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="ig-panel">
+        <h2>What to generate</h2>
+        <div class="seg" id="outType">
+          <label><input type="radio" name="ot" value="ingo" checked><span>Event Ingo (8)</span></label>
+          <label><input type="radio" name="ot" value="pack"><span>Sponsor packs</span></label>
+          <label><input type="radio" name="ot" value="wall"><span>Logo wall</span></label>
+        </div>
+        <div id="statsWrap" style="margin-top:12px">
+          <label class="ig-mut">Stats for the Ingo (up to 3)</label>
+          <div id="stats"></div>
+        </div>
+        <button class="ig-btn" id="gen" style="width:100%;margin-top:10px"><span id="genLbl">Generate</span></button>
+      </div>
+      <div class="ig-panel"><h2>Output</h2><div id="results"><p class="ig-mut">Nothing generated yet.</p></div></div>
+    </div>
+   </div>
+  </div>
+</div>
+
+<script>
+var RESOLVED=null, PARTNERS=[], SECONDARY=[], STATS=[{num:'',label:''},{num:'',label:''},{num:'',label:''}];
+var TIER_ORDER=['diamond','platinum','global','gold','silver','bronze','standard','sponsor'];
+var _init=false, _meta=null;
+
+function render(){
+  document.getElementById('nav').innerHTML=navBar('tools');
+  if(!_init){ initPage(); _init=true; }
+  refreshEvents();
+}
+function refreshEvents(){
+  var sel=document.getElementById('ev'), cur=sel.value;
+  sel.innerHTML=igEventOptions(cur|| (+new URLSearchParams(location.search).get('id')||''));
+}
+
+function initPage(){
+  igStatusChip(document.getElementById('apistat'));
+  igApiGet('/api/meta').then(function(m){ _meta=m; fillThemeLang(); }).catch(function(){ fillThemeLang(); });
+  document.getElementById('ev').onchange=onPick;
+  document.getElementById('addP').onclick=function(){ PARTNERS.push({company:'',tier:'sponsor',logoBlob:null}); paintPartners(); };
+  document.getElementById('addS').onclick=function(){ SECONDARY.push({name:'',logoBlob:null}); paintSecondary(); };
+  document.getElementById('gen').onclick=doGenerate;
+  document.querySelectorAll('#outType input').forEach(function(r){ r.onchange=syncOut; });
+  paintStats(); paintPartners(); paintSecondary(); syncOut();
+  // honour ?id= deep-link
+  var id=+new URLSearchParams(location.search).get('id');
+  if(id){ setTimeout(function(){ var s=document.getElementById('ev'); s.value=id; onPick(); },200); }
+}
+
+function fillThemeLang(){
+  var t=document.getElementById('theme');
+  t.innerHTML=IG_THEME_KEYS.map(function(k){ var nm=_meta&&_meta.themes[k]?_meta.themes[k].name:k; return '<option value="'+k+'">'+igEsc(nm)+'</option>'; }).join('');
+  var l=document.getElementById('lang'); var langs=(_meta&&_meta.languages)||['es','en','it','pl'];
+  l.innerHTML=langs.map(function(x){return '<option value="'+x+'">'+x.toUpperCase()+'</option>';}).join('');
+}
+
+function onPick(){
+  var ev=DB.event(+document.getElementById('ev').value);
+  var c=document.getElementById('casc');
+  if(!ev){ RESOLVED=null; c.textContent='Pick an event to cascade its details.'; return; }
+  RESOLVED=igResolveEvent(ev);
+  c.innerHTML='<b>'+igEsc(RESOLVED.name)+'</b> · '+igEsc(RESOLVED.ecode||'—')+' · '+igEsc(RESOLVED.dateRange)+
+    ' · '+igEsc(RESOLVED.city||'—')+' · theme <b>'+igEsc(RESOLVED.topic||'—')+'</b> '+
+    '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+RESOLVED.colour+';vertical-align:middle"></span>'+
+    ' · <b>'+RESOLVED.sponsors.length+'</b> confirmed sponsor(s)';
+  document.getElementById('name').value=RESOLVED.name;
+  document.getElementById('loc').value=RESOLVED.city;
+  var up=RESOLVED.dateRange.toUpperCase();
+  document.getElementById('dateEs').value=up; document.getElementById('dateEn').value=up;
+  document.getElementById('theme').value=RESOLVED.themeKey;
+  document.getElementById('lang').value='es';
+  PARTNERS=RESOLVED.sponsors.map(function(s){ return {company:s.company,tier:s.tier||'sponsor',logoBlob:null}; });
+  if(!PARTNERS.length) PARTNERS=[{company:'',tier:'sponsor',logoBlob:null}];
+  paintPartners();
+}
+
+function tierSelect(val){
+  return '<select data-f="tier">'+TIER_ORDER.map(function(t){return '<option value="'+t+'"'+(t===val?' selected':'')+'>'+t+'</option>';}).join('')+'</select>';
+}
+function paintPartners(){
+  var host=document.getElementById('partners'); host.innerHTML='';
+  PARTNERS.forEach(function(p,i){
+    var d=document.createElement('div'); d.className='prow';
+    d.innerHTML='<img style="display:none"><input type="text" data-f="company" placeholder="Company" value="'+igEsc(p.company)+'">'+tierSelect(p.tier)+
+      '<input type="file" accept="image/*" data-f="logo" style="max-width:150px"><button class="ig-btn ig-btn-ghost ig-btn-sm" data-del>×</button>';
+    d.querySelector('[data-f=company]').oninput=function(e){ p.company=e.target.value; };
+    d.querySelector('[data-f=tier]').onchange=function(e){ p.tier=e.target.value; };
+    d.querySelector('[data-f=logo]').onchange=function(e){ var f=e.target.files[0]; if(f){p.logoBlob=f; var im=d.querySelector('img'); im.src=URL.createObjectURL(f); im.style.display='';} };
+    if(p.logoBlob){ var im=d.querySelector('img'); im.src=URL.createObjectURL(p.logoBlob); im.style.display=''; }
+    d.querySelector('[data-del]').onclick=function(){ PARTNERS.splice(i,1); paintPartners(); };
+    host.appendChild(d);
+  });
+}
+function paintSecondary(){
+  var host=document.getElementById('secondary'); host.innerHTML='';
+  SECONDARY.forEach(function(p,i){
+    var d=document.createElement('div'); d.className='prow';
+    d.innerHTML='<img style="display:none"><input type="text" data-f="name" placeholder="Group (e.g. Media Partners)" value="'+igEsc(p.name)+'">'+
+      '<input type="file" accept="image/*" data-f="logo" style="max-width:150px"><button class="ig-btn ig-btn-ghost ig-btn-sm" data-del>×</button>';
+    d.querySelector('[data-f=name]').oninput=function(e){ p.name=e.target.value; };
+    d.querySelector('[data-f=logo]').onchange=function(e){ var f=e.target.files[0]; if(f){p.logoBlob=f; var im=d.querySelector('img'); im.src=URL.createObjectURL(f); im.style.display='';} };
+    if(p.logoBlob){ var im=d.querySelector('img'); im.src=URL.createObjectURL(p.logoBlob); im.style.display=''; }
+    d.querySelector('[data-del]').onclick=function(){ SECONDARY.splice(i,1); paintSecondary(); };
+    host.appendChild(d);
+  });
+}
+function paintStats(){
+  var host=document.getElementById('stats'); host.innerHTML='';
+  STATS.forEach(function(s,i){
+    var d=document.createElement('div'); d.className='ig-row'; d.style.marginTop='5px';
+    d.innerHTML='<input placeholder="e.g. 40+" value="'+igEsc(s.num)+'" data-k="num"><input placeholder="e.g. speakers" value="'+igEsc(s.label)+'" data-k="label">';
+    d.querySelector('[data-k=num]').oninput=function(e){ s.num=e.target.value; };
+    d.querySelector('[data-k=label]').oninput=function(e){ s.label=e.target.value; };
+    host.appendChild(d);
+  });
+}
+function syncOut(){
+  var ot=document.querySelector('#outType input:checked').value;
+  document.getElementById('statsWrap').style.display=(ot==='ingo')?'':'none';
+}
+
+// group partner rows -> [{name:tierLabel, logo_refs:[]}] and collect file blobs
+function groupTiers(files){
+  var byTier={};
+  PARTNERS.forEach(function(p,i){
+    if(!p.logoBlob) return;
+    var k='pt'+i; files.push({key:k,blob:p.logoBlob});
+    var t=p.tier||'sponsor'; (byTier[t]=byTier[t]||[]).push(k);
+  });
+  return TIER_ORDER.filter(function(t){return byTier[t];}).map(function(t){
+    return {name:t.charAt(0).toUpperCase()+t.slice(1), logo_refs:byTier[t]};
+  });
+}
+function groupSecondary(files){
+  var byName={};
+  SECONDARY.forEach(function(p,i){
+    if(!p.logoBlob) return;
+    var k='sc'+i; files.push({key:k,blob:p.logoBlob});
+    var nm=p.name||'Partners'; (byName[nm]=byName[nm]||[]).push(k);
+  });
+  return Object.keys(byName).map(function(nm){ return {name:nm, logo_refs:byName[nm]}; });
+}
+
+async function doGenerate(){
+  var ot=document.querySelector('#outType input:checked').value;
+  var theme=document.getElementById('theme').value;
+  var name=document.getElementById('name').value, loc=document.getElementById('loc').value;
+  var files=[], path, payload;
+  if(ot==='ingo'){
+    payload={ theme:theme,
+      events:{ es:{title:name,date_str:document.getElementById('dateEs').value,location:loc},
+               en:{title:name,date_str:document.getElementById('dateEn').value,location:loc} },
+      stats:STATS.filter(function(s){return s.num||s.label;}).map(function(s){return {num:s.num,label:s.label};}),
+      tiers:groupTiers(files), secondary:groupSecondary(files) };
+    path='/api/event/ingo';
+  } else if(ot==='pack'){
+    var lang=document.getElementById('lang').value;
+    var startISO=RESOLVED?RESOLVED.dateISO:''; var endISO=startISO;
+    if(RESOLVED && RESOLVED.days>1 && startISO){ var dt=new Date(startISO); dt.setDate(dt.getDate()+RESOLVED.days-1); endISO=dt.toISOString().slice(0,10); }
+    var partners=[];
+    PARTNERS.forEach(function(p,i){ if(!p.company) return; var ref=null; if(p.logoBlob){ref='pk'+i; files.push({key:ref,blob:p.logoBlob});}
+      var role=(p.tier==='sponsor'?'SPONSOR':p.tier.toUpperCase()+' SPONSOR');
+      partners.push({company:p.company, role_label:role, logo_ref:ref}); });
+    payload={ event:{name:name,theme_key:theme,date_str:document.getElementById('dateEn').value,location:loc,language:lang,start_date:startISO,end_date:endISO}, partners:partners };
+    path='/api/event/marketing-pack';
+  } else {
+    payload={ theme:theme, language:'es',
+      event:{title:name,date_str:document.getElementById('dateEn').value,location:loc},
+      tiers:groupTiers(files), secondary:groupSecondary(files), speakers:[] };
+    path='/api/event/logowall';
+  }
+  var btn=document.getElementById('gen'), lbl=document.getElementById('genLbl');
+  btn.disabled=true; lbl.innerHTML='<span class="ig-spin"></span>Rendering…';
+  var res=document.getElementById('results'); res.innerHTML='<p class="ig-mut">Rendering on the server…</p>';
+  try{ var json=await igApi(path,payload,files); igRenderResults(res,json,{downloadAll:true}); }
+  catch(e){ res.innerHTML='<p class="ig-mut">Failed: '+igEsc(e.message)+'</p>'; }
+  btn.disabled=false; lbl.textContent='Generate';
+}
+
+boot(render);
+window.addEventListener('dc-remote', render);
+</script>
+</body>
+</html>

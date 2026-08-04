@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>RENMAD Dispatch — Event Decks &amp; Docs</title>
+<style>
+:root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px 'Segoe UI',system-ui,sans-serif}
+.app{padding:0 0 60px}
+.hd{display:flex;align-items:center;gap:12px;padding:18px 20px 6px}
+.hd h1{font-size:20px;margin:0;color:var(--charcoal)}
+.sub{padding:0 20px 14px;color:var(--muted);font-size:13px;max-width:820px}
+.chk{display:flex;flex-wrap:wrap;gap:10px}
+.chk label{display:flex;align-items:center;gap:5px;font-size:13px}
+.summary{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6}
+</style>
+<script src="store.js?v=107"></script>
+<script src="imagegen_core.js?v=107"></script>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <div class="hd"><h1>🎬 Event Decks &amp; Docs <span class="ig-new">NEW! Please try &amp; give feedback</span></h1></div>
+  <div class="sub">Agenda → native editable PPTX title-slide deck (marketing or bilingual event mode).
+    Upload the agenda .docx (or paste the agenda JSON from the agenda builder); drop a photo/logo pool
+    and the server auto-matches by filename. <span class="ig-mut">Brochures / build-from-event-website: a later phase.</span>
+    <span id="apistat"></span></div>
+
+  <div class="ig-wrap">
+   <div class="ig-panel">
+     <div class="ig-row">
+       <div class="ig-field"><label>Event (cascades theme)</label><select id="ev"></select></div>
+       <div class="ig-field"><label>Theme</label><select id="theme"></select></div>
+     </div>
+     <div class="ig-cascade" id="casc">Pick an event to set the theme (optional — you can also just set it manually).</div>
+   </div>
+
+   <div class="ig-grid2">
+    <div>
+      <div class="ig-panel">
+        <h2>Agenda</h2>
+        <div class="ig-field"><label>Upload agenda (.docx)</label><input type="file" id="agFile" accept=".docx"></div>
+        <div class="ig-mut" style="margin:4px 0 10px">— or —</div>
+        <div class="ig-field"><label>Paste agenda JSON (from the agenda builder)</label><textarea id="agJson" style="min-height:80px"></textarea></div>
+        <button class="ig-btn ig-btn-ghost ig-btn-sm" id="parseBtn">Load agenda</button>
+        <div class="summary" id="agSummary" style="margin-top:10px;display:none"></div>
+      </div>
+
+      <div class="ig-panel">
+        <h2>Photo / logo pool</h2>
+        <div class="ig-field"><label>Upload speaker photos &amp; company logos (matched by filename)</label>
+          <input type="file" id="pool" accept="image/*" multiple></div>
+        <div class="ig-mut" id="poolMsg">No files yet.</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="ig-panel">
+        <h2>Deck options</h2>
+        <div class="ig-row">
+          <div class="ig-field"><label>Mode</label><select id="layout"><option value="marketing">Marketing (title top)</option><option value="event">Event (bilingual)</option></select></div>
+          <div class="ig-field"><label>Event band</label><select id="band"><option value="bottom">Bottom</option><option value="top">Top</option></select></div>
+        </div>
+        <div class="ig-row">
+          <div class="ig-field"><label>Language</label><select id="lang"></select></div>
+          <div class="ig-field"><label>2nd language (event mode)</label><select id="lang2"><option value="">—</option></select></div>
+        </div>
+        <div class="ig-field"><label>Title fit</label><select id="fit"><option value="flexible">Flexible</option><option value="uniform">Uniform</option></select></div>
+        <div class="chk" style="margin:8px 0">
+          <label><input type="checkbox" id="cover" checked> Cover slide</label>
+          <label><input type="checkbox" id="breaks" checked> Break slides</label>
+          <label><input type="checkbox" id="cards"> Per-speaker cards</label>
+        </div>
+        <div class="chk">
+          <span class="ig-mut">Utility slides:</span>
+          <label><input type="checkbox" class="util" value="mute"> Mute phone</label>
+          <label><input type="checkbox" class="util" value="wifi"> WiFi</label>
+          <label><input type="checkbox" class="util" value="qr"> QR</label>
+        </div>
+        <button class="ig-btn" id="gen" style="width:100%;margin-top:12px"><span id="genLbl">Generate deck</span></button>
+      </div>
+      <div class="ig-panel"><h2>Output</h2><div id="results"><p class="ig-mut">Nothing generated yet.</p></div></div>
+    </div>
+   </div>
+  </div>
+</div>
+
+<script>
+var AGENDA=null, _init=false, _meta=null;
+
+function render(){
+  document.getElementById('nav').innerHTML=navBar('tools');
+  if(!_init){ initPage(); _init=true; }
+  var sel=document.getElementById('ev'); sel.innerHTML=igEventOptions(sel.value);
+}
+function initPage(){
+  igStatusChip(document.getElementById('apistat'));
+  igApiGet('/api/meta').then(function(m){ _meta=m; fillThemeLang(); }).catch(function(){ fillThemeLang(); });
+  document.getElementById('ev').onchange=onPick;
+  document.getElementById('parseBtn').onclick=loadAgenda;
+  document.getElementById('gen').onclick=doGenerate;
+  document.getElementById('pool').onchange=function(e){ var n=e.target.files.length; document.getElementById('poolMsg').textContent=n?(n+' file(s) ready to match'):'No files yet.'; };
+  var id=+new URLSearchParams(location.search).get('id');
+  if(id){ setTimeout(function(){ var s=document.getElementById('ev'); s.value=id; onPick(); },200); }
+}
+function fillThemeLang(){
+  var t=document.getElementById('theme');
+  t.innerHTML=IG_THEME_KEYS.map(function(k){ var nm=_meta&&_meta.themes[k]?_meta.themes[k].name:k; return '<option value="'+k+'">'+igEsc(nm)+'</option>'; }).join('');
+  var langs=(_meta&&_meta.languages)||['es','en','it','pl'];
+  document.getElementById('lang').innerHTML=langs.map(function(x){return '<option value="'+x+'"'+(x==='en'?' selected':'')+'>'+x.toUpperCase()+'</option>';}).join('');
+  document.getElementById('lang2').innerHTML='<option value="">—</option>'+langs.map(function(x){return '<option value="'+x+'">'+x.toUpperCase()+'</option>';}).join('');
+}
+function onPick(){
+  var ev=DB.event(+document.getElementById('ev').value);
+  var c=document.getElementById('casc');
+  if(!ev){ c.textContent='Pick an event to set the theme (optional).'; return; }
+  var r=igResolveEvent(ev);
+  document.getElementById('theme').value=r.themeKey;
+  c.innerHTML='<b>'+igEsc(r.name)+'</b> · theme <b>'+igEsc(r.topic)+'</b> · '+igEsc(r.dateRange);
+}
+async function loadAgenda(){
+  var sum=document.getElementById('agSummary');
+  var jsonTxt=document.getElementById('agJson').value.trim();
+  try{
+    if(jsonTxt){ AGENDA=JSON.parse(jsonTxt); }
+    else{
+      var f=document.getElementById('agFile').files[0];
+      if(!f){ sum.style.display=''; sum.textContent='Upload a .docx or paste JSON first.'; return; }
+      sum.style.display=''; sum.textContent='Parsing…';
+      AGENDA=await igApi('/api/parse-agenda', {}, [{key:f.name,blob:f}]);
+    }
+    var sessions=(AGENDA.sessions||[]); var spk={};
+    sessions.forEach(function(s){ (s.speakers||[]).forEach(function(p){ if(p.name) spk[p.name]=1; }); });
+    sum.style.display='';
+    sum.innerHTML='<b>'+igEsc((AGENDA.event&&AGENDA.event.title)||'Agenda')+'</b> · '+sessions.length+' session(s) · '+Object.keys(spk).length+' speaker(s)';
+  }catch(e){ sum.style.display=''; sum.textContent='Could not load agenda: '+e.message; }
+}
+async function doGenerate(){
+  if(!AGENDA){ alert('Load an agenda first.'); return; }
+  var util=[].filter.call(document.querySelectorAll('.util'),function(c){return c.checked;}).map(function(c){return c.value;});
+  var payload={ agenda:AGENDA, theme:document.getElementById('theme').value, lang:document.getElementById('lang').value,
+    pool_match:true,
+    options:{ layout:document.getElementById('layout').value, event_band:document.getElementById('band').value,
+      title_fit:document.getElementById('fit').value, cover:document.getElementById('cover').checked,
+      include_breaks:document.getElementById('breaks').checked, include_cards:true,
+      speaker_cards:document.getElementById('cards').checked, utility_kinds:util,
+      lang2:document.getElementById('lang2').value||null } };
+  var files=[]; var pool=document.getElementById('pool').files;
+  [].forEach.call(pool,function(f){ files.push({key:f.name,blob:f}); });
+  var btn=document.getElementById('gen'), lbl=document.getElementById('genLbl');
+  btn.disabled=true; lbl.innerHTML='<span class="ig-spin"></span>Building deck…';
+  var res=document.getElementById('results'); res.innerHTML='<p class="ig-mut">Building the PPTX on the server…</p>';
+  try{ var json=await igApi('/api/titleslides',payload,files); igRenderResults(res,json,{downloadAll:true}); }
+  catch(e){ res.innerHTML='<p class="ig-mut">Failed: '+igEsc(e.message)+'</p>'; }
+  btn.disabled=false; lbl.textContent='Generate deck';
+}
+boot(render);
+window.addEventListener('dc-remote', render);
+</script>
+</body>
+</html>

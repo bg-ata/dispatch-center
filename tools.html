@@ -36,7 +36,7 @@
   <p class="note">Missing a tile you need? Ask Belén. Greyed tiles are being finished. Something broken or clunky? The 💡 request box now lives with your <a href="inbox.html#requests" style="color:var(--muted)">🔔 notifications</a>.</p>
   <p class="note" id="oldpb"></p>
 </div>
-<script src="store.js?v=101"></script>
+<script src="store.js?v=107"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('tools');
 function render(){
@@ -52,6 +52,20 @@ function render(){
   pb.innerHTML='<span class="ic" style="background:#FF4A00">PB</span>'+
     '<span><h3>Proposal Builder</h3><p>Sponsorship, Options and Webinar decks — plus the portfolio and market decks — built in the browser and logged straight to the SPX board.</p></span>';
   g.appendChild(pb);
+  /* Three NEW browser tools that replace the Streamlit image/webinar generators.
+     They open directly (like PB), share one render engine (renmad-render-api.onrender.com)
+     + one event-source layer (imagegen_core.js), and cascade event data from the Dispatch.
+     The old Streamlit 'images'/'webinar' tiles below stay live as reserve until sign-off. */
+  [['webinar_studio.html','Webinar Studio','WS','#29ACE3','LinkedIn banners, miniatures, Ingo packs and title slides for a single webinar.'],
+   ['event_marketing.html','Event Marketing','EM','#4C3079','Event infographics (Ingo ×8), sponsor marketing packs and the logo wall — event details cascade straight from the Dispatch.'],
+   ['event_decks.html','Event Decks &amp; Docs','ED','#E84830','Agenda → native editable PPTX title-slide decks (marketing or bilingual event mode).']
+  ].forEach(x=>{
+    const t=document.createElement('a');t.className='tile';t.href=x[0];
+    t.innerHTML='<span class="ic" style="background:'+x[3]+'">'+x[2]+'</span>'+
+      '<span><h3>'+x[1]+'</h3><p>'+x[4]+' <b style="color:#FF4A00">NEW! Please try and provide feedback.</b></p></span>'+
+      '<span class="badge" style="background:#FF4A00;color:#fff">new</span>';
+    g.appendChild(t);
+  });
   DISPATCH_TOOLS.forEach(t=>{
     if(t.mgrOnly&&!DB.canManage())return; // Proposals Dashboard: admins & managers only
     const pending=!t.url;

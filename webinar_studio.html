@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>RENMAD Dispatch — Webinar Studio</title>
+<style>
+:root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#3a3a3a;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px 'Segoe UI',system-ui,sans-serif}
+.app{padding:0 0 60px}
+.hd{display:flex;align-items:center;gap:12px;padding:18px 20px 6px}
+.hd h1{font-size:20px;margin:0;color:var(--charcoal)}
+.sub{padding:0 20px 14px;color:var(--muted);font-size:13px;max-width:820px}
+.sp-row{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:var(--bg)}
+.sp-row .ig-row{margin-bottom:6px}
+.sp-mini{display:flex;align-items:center;gap:8px}
+.sp-thumb{width:44px;height:44px;border-radius:6px;object-fit:cover;border:1px solid var(--line);background:#fff}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg label{flex:1;min-width:120px;border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;cursor:pointer;font-size:13px}
+.seg input{display:none}
+.seg input:checked+span{font-weight:600;color:var(--orange)}
+.seg label:has(input:checked){border-color:var(--orange);background:rgba(255,74,0,.06)}
+</style>
+<script src="store.js?v=107"></script>
+<script src="imagegen_core.js?v=107"></script>
+</head>
+<body>
+<div class="app">
+  <div id="nav"></div>
+  <div class="hd">
+    <h1>🎤 Webinar Studio <span class="ig-new">NEW! Please try &amp; give feedback</span></h1>
+  </div>
+  <div class="sub">
+    LinkedIn banner, miniature web card, Ingo share pack and title slides for a single webinar —
+    exact-to-Streamlit output from the shared render engine. <span id="apistat"></span>
+  </div>
+
+  <div class="ig-wrap">
+   <div class="ig-grid2">
+    <!-- LEFT: inputs -->
+    <div>
+      <div class="ig-panel">
+        <h2>Fill from the webinar page</h2>
+        <div class="ig-field">
+          <label>Webinar URL (my.atainsights.com) — pulls title, date, speakers &amp; photos</label>
+          <div class="ig-row">
+            <input id="scrapeUrl" placeholder="https://my.atainsights.com/…" style="flex:3">
+            <button class="ig-btn ig-btn-ghost" id="scrapeBtn" style="flex:1">Fill</button>
+          </div>
+        </div>
+        <div class="ig-mut" id="scrapeMsg"></div>
+      </div>
+
+      <div class="ig-panel">
+        <h2>Basics</h2>
+        <div class="ig-row">
+          <div class="ig-field"><label>Theme</label><select id="theme"></select></div>
+          <div class="ig-field"><label>Language</label><select id="lang"></select></div>
+        </div>
+        <div class="ig-field"><label>Session title</label><textarea id="title"></textarea></div>
+        <div class="ig-row">
+          <div class="ig-field"><label>Date (e.g. 17 Jul 2026)</label><input id="dateStr"></div>
+          <div class="ig-field"><label>Time (e.g. 16:00 CET)</label><input id="timeStr"></div>
+        </div>
+        <div class="ig-row">
+          <div class="ig-field"><label>Location</label><input id="loc" placeholder="Online"></div>
+          <div class="ig-field"><label>Registration URL</label><input id="cta"></div>
+        </div>
+        <div class="ig-field"><label>Background (optional — else theme/library default)</label>
+          <input type="file" id="bg" accept="image/*"></div>
+      </div>
+
+      <div class="ig-panel">
+        <h2>Speakers</h2>
+        <div id="speakers"></div>
+        <button class="ig-btn ig-btn-ghost ig-btn-sm" id="addSp">+ Add speaker</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: output -->
+    <div>
+      <div class="ig-panel">
+        <h2>What to generate</h2>
+        <div class="seg" id="outType">
+          <label><input type="radio" name="ot" value="slide" checked><span>Title slide</span></label>
+          <label><input type="radio" name="ot" value="miniature"><span>Miniature card</span></label>
+          <label><input type="radio" name="ot" value="ingo"><span>Ingo pack</span></label>
+          <label><input type="radio" name="ot" value="linkedin"><span>LinkedIn banner</span></label>
+        </div>
+        <div class="ig-row" style="margin-top:12px">
+          <div class="ig-field" id="variantWrap"><label>Variant</label>
+            <select id="variant">
+              <option value="normal">Normal</option>
+              <option value="starting_soon">Starting soon</option>
+              <option value="recording_available">Recording available</option>
+            </select></div>
+          <div class="ig-field" id="tplWrap"><label>Template</label>
+            <select id="tpl"><option value="A">A — circles</option><option value="B">B — silhouettes</option><option value="C">C — squares</option></select></div>
+        </div>
+        <button class="ig-btn" id="gen" style="width:100%;margin-top:4px"><span id="genLbl">Generate</span></button>
+        <p class="ig-mut" style="margin:8px 0 0">The render is the preview — it appears below and downloads with one click.</p>
+      </div>
+      <div class="ig-panel">
+        <h2>Output</h2>
+        <div id="results"><p class="ig-mut">Nothing generated yet.</p></div>
+      </div>
+    </div>
+   </div>
+  </div>
+</div>
+
+<script>
+var SP = [];   // speakers: {name,title,company,is_moderator,photoBlob,logoBlob}
+var _init = false;
+
+function render(){
+  document.getElementById('nav').innerHTML = navBar('tools');
+  if(!_init){ initPage(); _init = true; }
+}
+
+function initPage(){
+  igStatusChip(document.getElementById('apistat'));
+  // theme + language dropdowns from the render API meta (single source of truth)
+  var themeSel = document.getElementById('theme'), langSel = document.getElementById('lang');
+  igApiGet('/api/meta').then(function(m){
+    var order = IG_THEME_KEYS;
+    themeSel.innerHTML = order.map(function(k){
+      var t = m.themes[k]; return t ? '<option value="'+k+'">'+igEsc(t.name)+'</option>' : '';
+    }).join('');
+    langSel.innerHTML = m.languages.map(function(l){return '<option value="'+l+'">'+l.toUpperCase()+'</option>';}).join('');
+  }).catch(function(){
+    themeSel.innerHTML = IG_THEME_KEYS.map(function(k){return '<option value="'+k+'">'+k+'</option>';}).join('');
+    langSel.innerHTML = ['es','en','it','pl'].map(function(l){return '<option value="'+l+'">'+l.toUpperCase()+'</option>';}).join('');
+  });
+
+  document.getElementById('addSp').onclick = function(){ SP.push(blankSp()); paintSpeakers(); };
+  document.getElementById('scrapeBtn').onclick = doScrape;
+  document.getElementById('gen').onclick = doGenerate;
+  document.querySelectorAll('#outType input').forEach(function(r){ r.onchange = syncOutOpts; });
+  SP.push(blankSp()); paintSpeakers(); syncOutOpts();
+}
+
+function blankSp(){ return {name:'',title:'',company:'',is_moderator:false,photoBlob:null,logoBlob:null}; }
+
+function paintSpeakers(){
+  var host = document.getElementById('speakers'); host.innerHTML='';
+  SP.forEach(function(s, i){
+    var d = document.createElement('div'); d.className='sp-row';
+    d.innerHTML =
+      '<div class="ig-row"><input placeholder="Name" data-f="name"><input placeholder="Job title" data-f="title"></div>'+
+      '<div class="ig-row"><input placeholder="Company" data-f="company">'+
+        '<label class="sp-mini" style="flex:0 0 auto"><input type="checkbox" data-f="is_moderator"> moderator</label></div>'+
+      '<div class="sp-mini"><img class="sp-thumb" style="display:none"><input type="file" accept="image/*" data-f="photo" style="flex:1">'+
+        '<button class="ig-btn ig-btn-ghost ig-btn-sm" data-del>Remove</button></div>';
+    d.querySelectorAll('[data-f]').forEach(function(el){
+      var f = el.getAttribute('data-f');
+      if(f==='is_moderator'){ el.checked=s.is_moderator; el.onchange=function(){s.is_moderator=el.checked;}; }
+      else if(f==='photo'){ el.onchange=function(){ var file=el.files[0]; if(file){ s.photoBlob=file; var im=d.querySelector('.sp-thumb'); im.src=URL.createObjectURL(file); im.style.display=''; } }; }
+      else { el.value=s[f]||''; el.oninput=function(){ s[f]=el.value; }; }
+    });
+    if(s.photoBlob){ var im=d.querySelector('.sp-thumb'); im.src=URL.createObjectURL(s.photoBlob); im.style.display=''; }
+    d.querySelector('[data-del]').onclick=function(){ SP.splice(i,1); paintSpeakers(); };
+    host.appendChild(d);
+  });
+}
+
+function syncOutOpts(){
+  var ot = document.querySelector('#outType input:checked').value;
+  document.getElementById('variantWrap').style.display = (ot==='slide')?'':'none';
+  document.getElementById('tplWrap').style.display = (ot==='slide'||ot==='miniature')?'':'none';
+}
+
+async function doScrape(){
+  var url = document.getElementById('scrapeUrl').value.trim();
+  var msg = document.getElementById('scrapeMsg');
+  if(!url){ msg.textContent='Paste a webinar URL first.'; return; }
+  msg.textContent='Scraping…';
+  try{
+    var s = await igApi('/api/scrape', {url:url});
+    if(s.title) document.getElementById('title').value = s.title;
+    if(s.language_guess){ var ls=document.getElementById('lang'); if([].some.call(ls.options,function(o){return o.value===s.language_guess;})) ls.value=s.language_guess; }
+    document.getElementById('cta').value = url;
+    // speakers
+    SP = (s.speakers||[]).map(function(sp){ return {name:sp.name||'',title:sp.role||'',company:sp.company||'',is_moderator:!!sp.is_moderator,photoBlob:null,logoBlob:null}; });
+    if(!SP.length) SP=[blankSp()];
+    paintSpeakers();
+    msg.textContent = 'Found ' + (s.speakers||[]).length + ' speaker(s). Pulling photos…';
+    // pull speaker photos server-side (avoids CORS) + split composite
+    var pending = (s.speakers||[]).map(function(sp, i){
+      if(!sp.photo) return Promise.resolve();
+      return igApi('/api/proxy-image', {url:sp.photo, split:true}).then(function(r){
+        var files = (r && r.files) || [];
+        files.forEach(function(f){
+          var blob = igB64ToBlob(f.b64, f.mime);
+          if(f.name.indexOf('photo')===0) SP[i].photoBlob = blob;
+          else if(f.name.indexOf('logo')===0) SP[i].logoBlob = blob;
+        });
+      }).catch(function(){});
+    });
+    await Promise.all(pending);
+    paintSpeakers();
+    msg.textContent = 'Filled from page. Review the fields, then generate.';
+  }catch(e){ msg.textContent = 'Scrape failed: ' + e.message; }
+}
+
+function buildSession(){
+  return {
+    theme: document.getElementById('theme').value,
+    language: document.getElementById('lang').value,
+    title: document.getElementById('title').value,
+    date_str: document.getElementById('dateStr').value,
+    time_str: document.getElementById('timeStr').value,
+    location: document.getElementById('loc').value,
+    cta_url: document.getElementById('cta').value,
+    speakers: SP.map(function(s){ return {name:s.name,title:s.title,company:s.company,is_moderator:s.is_moderator}; })
+  };
+}
+
+async function doGenerate(){
+  var ot = document.querySelector('#outType input:checked').value;
+  var payload = buildSession();
+  var files = [];
+  SP.forEach(function(s,i){
+    if(s.photoBlob){ var k='p'+i; files.push({key:k,blob:s.photoBlob}); payload.speakers[i].photo_ref=k; }
+    if(s.logoBlob){ var lk='l'+i; files.push({key:lk,blob:s.logoBlob}); payload.speakers[i].logo_ref=lk; }
+  });
+  var bg = document.getElementById('bg').files[0];
+  if(bg){ files.push({key:'bg0',blob:bg}); payload.bg_ref='bg0'; }
+  if(ot==='slide' || ot==='miniature'){ payload.template = document.getElementById('tpl').value; }
+  if(ot==='slide'){ payload.variant = document.getElementById('variant').value; }
+  var path = {slide:'/api/webinar/slide', miniature:'/api/webinar/miniature', ingo:'/api/webinar/ingo', linkedin:'/api/webinar/linkedin'}[ot];
+
+  var btn=document.getElementById('gen'), lbl=document.getElementById('genLbl');
+  btn.disabled=true; lbl.innerHTML='<span class="ig-spin"></span>Rendering…';
+  var res=document.getElementById('results'); res.innerHTML='<p class="ig-mut">Rendering on the server…</p>';
+  try{
+    var json = await igApi(path, payload, files);
+    igRenderResults(res, json, {downloadAll:true});
+  }catch(e){ res.innerHTML='<p class="ig-mut">Failed: '+igEsc(e.message)+'</p>'; }
+  btn.disabled=false; lbl.textContent='Generate';
+}
+
+boot(render);
+window.addEventListener('dc-remote', render);
+</script>
+</body>
+</html>
