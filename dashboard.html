@@ -216,7 +216,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=106"></script>
+<script src="store.js?v=107"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -553,7 +553,7 @@ function finRowHtml(f,canF){
      having more than 1 source of truth, all it does is complicate the whole thing."
      Where · When · PM · Sales joined the name and the city: derived, read-only, changed
      on the timeline. What is still typed here is only what the timeline cannot know —
-     the target, the stretch, the ticket target and SPEX. Invoiced already comes from
+     the target, the stretch and SPEX. Invoiced already comes from
      Invoicing. A row with no timeline event behind it (a past edition, which the board
      deliberately does not carry) shows its own frozen record instead. */
   const src=(txt,what)=>'<td>'+(txt
@@ -570,22 +570,18 @@ function finRowHtml(f,canF){
   const descr=cell(esc(DB.finTrueCity(f)),'city')+cell(esc(DB.finTrueWhen(f)),'dates')+
               cell(pLink(DB.finTruePM(f)),'PM')+cell(pLink(DB.finTrueSales(f)),'salesperson');
   const warn=orphanNow?' <a href="gantt.html" style="text-decoration:none" title="'+frzWhy+' Until then its weekly curve has no anchor either.">⚠</a>':'';
-  /* the ticket target is stored once — on the SPX registry event — and shown in both
-     places, so Money and the board can never disagree about it */
-  const reg=(DB.spxEventReg||[]).find(r=>!r.deleted&&r.financeId==f.id);
-  const canTik=canF&&DB.canSalesLead&&DB.canSalesLead()&&!!reg;
-  const tik='<td class="num">'+(reg
-    ?(canTik?'<span class="mval" data-mf="pasesTarget" data-reg="'+reg.id+'" title="Click to edit — the ticket target, shared with the SPX board">'+finFmt(reg.pasesTarget)+'</span>'
-            :'<span title="The ticket target lives on the SPX board">'+finFmt(reg.pasesTarget)+'</span>')
-    :'<span style="color:#b4b1a8" title="This row has no SPX registry event yet, so it has nowhere to keep a ticket target">—</span>')+'</td>';
+  /* The "Tickets tgt" column lived here until 3 Aug 2026. Belén: "take this field out,
+     actually we don't need it — the targets can go on the SPX dashboard." Since v105 the
+     board keeps one target (SPX) and derives the rest by subtraction, so this column had
+     nothing left to show. Targets live in Money (the event total) and on the SPX board. */
   if(!canF){
     return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+warn+'</td>'+descr+
-      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+tik+invRO+
+      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
   return '<tr><td>'+caret+nameRO+ed+warn+'</td>'+descr+
-    mny('target')+mny('stretch')+tik+(fromLines?invRO:mny('invoiced'))+
+    mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
 }
@@ -698,7 +694,7 @@ function renderYear(){
     (canF?'<button class="btn" id="fillBtn" title="Write this week\'s dc_weekly row per selling event from the SPX board + Jesús\'s invoicing — leads stay yours" style="font-size:12px;padding:4px 10px">⟳ Fill this week</button> ':'')+
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
     '<p class="hint">Event, where, when, PM and salesperson 🔗 <b>come from the timeline</b> — change them in 📅 Events and they land here. Invoiced 🧾 is the sum of the Invoicing lines. '+
-    (canF?'The only figures typed here are the <b>target, stretch, ticket target and SPEX</b> — click one to change it; every change is recorded.':'Read-only · targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
+    (canF?'The only figures typed here are the <b>target, stretch and SPEX</b> — click one to change it; every change is recorded. The sponsorship split of the target lives on the <a href="spx.html#health" style="color:var(--orange)">💼 SPX board</a>.':'Read-only · targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
     liveStamp()+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
     yearAnalysis()+
@@ -709,19 +705,17 @@ function renderYear(){
   ys.onchange=()=>{yearFilter=ys.value;renderYear();};
   const g=finGrouped();
   let h='<tr><th>Event</th><th>Where</th><th>When</th><th>PM</th><th>Sales</th>'+
-    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Tickets tgt</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
+    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
   const keys=Object.keys(g);
-  const tikSum=list=>{let n=0,any=false;list.forEach(f=>{const r=(DB.spxEventReg||[]).find(x=>!x.deleted&&x.financeId==f.id);
-    if(r&&r.pasesTarget!=null&&r.pasesTarget!==''){n+=+r.pasesTarget||0;any=true;}});return any?n:null;};
-  if(!keys.length)h+='<tr><td colspan="12" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
+  if(!keys.length)h+='<tr><td colspan="11" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
   keys.forEach(k=>{
     const list=g[k];
-    h+='<tr class="semhead"><td colspan="12">'+k.replace('·',' — ')+'</td></tr>';
+    h+='<tr class="semhead"><td colspan="11">'+k.replace('·',' — ')+'</td></tr>';
     list.forEach(f=>{h+=finRowHtml(f,canF);
-      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="12">'+evCardHtml(f)+'</td></tr>';});
+      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="11">'+evCardHtml(f)+'</td></tr>';});
     const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>{const v=DB.finInvoiced(f);return v!=null&&v!=='';})?list.reduce((a,f)=>a+(+DB.finInvoiced(f)||0),0):null};
     h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
-      '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(tikSum(list))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
+      '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
       '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td></td></tr>';
   });
   document.getElementById('ftbl').innerHTML=h;
@@ -733,10 +727,11 @@ function renderYear(){
   });
   evxOpen.forEach(id=>{const f=DB.finance.find(x=>x.id==id);if(f)try{drawEvCard(f);}catch(e){console.warn('event card chart:',e.message||e);}});
   if(canF){
-    /* only money is typed here now (targets · ticket target · SPEX). The ticket target
-       is kept on the SPX registry row, so data-reg says which object to write to. */
+    /* only money is typed here now: target · stretch · invoiced · SPEX, all on the
+       Money row itself (the ticket-target cell, which wrote to the SPX registry, was
+       taken out on 3 Aug 2026 — targets belong on the SPX dashboard) */
     document.querySelectorAll('.mval').forEach(sp=>sp.onclick=()=>{
-      const o=sp.dataset.reg?(DB.spxEventReg||[]).find(x=>x.id==sp.dataset.reg):DB.finance.find(x=>x.id==sp.dataset.id);
+      const o=DB.finance.find(x=>x.id==sp.dataset.id);
       if(!o)return;
       const fld=sp.dataset.mf,td=sp.parentElement;
       td.innerHTML='<input class="money" type="number" step="any" value="'+(o[fld]==null?'':o[fld])+'">';
