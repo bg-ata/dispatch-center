@@ -77,8 +77,12 @@
   .chip2 .x:hover{color:var(--red)}
   /* finance table (year tab) */
   .ftbl{overflow-x:auto}
-  .ftbl table{width:100%;border-collapse:collapse;font-size:13px;min-width:1040px}
-  .ftbl th,.ftbl td{text-align:left;padding:7px 9px;border-bottom:1px solid #efede8;white-space:nowrap}
+  /* it has to FIT (Belén, 4 Aug 2026): the year table is read across, so a horizontal
+     scrollbar hides the money. PM/Sales carry first names only (see shortName) and the
+     padding is tighter, which buys back the ~140px that forced the scroll. */
+  .ftbl table{width:100%;border-collapse:collapse;font-size:13px;min-width:900px}
+  .ftbl th,.ftbl td{text-align:left;padding:6px 7px;border-bottom:1px solid #efede8;white-space:nowrap}
+  .ftbl td.who,.ftbl th.who{max-width:92px;overflow:hidden;text-overflow:ellipsis}
   .ftbl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   .ftbl td.num,.ftbl th.num{text-align:right;font-variant-numeric:tabular-nums}
   .ftbl tr.semhead td{background:#faf9f6;font-weight:700;color:var(--charcoal);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
@@ -216,7 +220,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=107"></script>
+<script src="store.js?v=108"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -556,7 +560,7 @@ function finRowHtml(f,canF){
      the target, the stretch and SPEX. Invoiced already comes from
      Invoicing. A row with no timeline event behind it (a past edition, which the board
      deliberately does not carry) shows its own frozen record instead. */
-  const src=(txt,what)=>'<td>'+(txt
+  const src=(txt,what,cls)=>'<td'+(cls?' class="'+cls+'"':'')+'>'+(txt
     ?'<span title="Comes from the timeline — change it in 📅 Events ('+what+')">'+txt+' <span style="font-size:9px;opacity:.5">🔗</span></span>'
     :'<span style="color:#b4b1a8" title="Not set on the timeline yet — fill it in there and it lands here">—</span>')+'</td>';
   /* only an event that has NOT happened yet is "missing from the timeline" — the board
@@ -565,10 +569,10 @@ function finRowHtml(f,canF){
   const frzWhy=orphanNow
     ?'This event is not on the timeline, so nothing can cascade into it — add it in 📅 Events with its E-code and this row will adopt it.'
     :'Past edition — the timeline only carries current and future events, so this is the figure sheet’s own record.';
-  const frz=txt=>'<td>'+(txt?'<span title="'+frzWhy+'">'+txt+'</span>':'<span style="color:#b4b1a8">—</span>')+'</td>';
-  const cell=(txt,what)=>linked?src(txt,what):frz(txt);
+  const frz=(txt,cls)=>'<td'+(cls?' class="'+cls+'"':'')+'>'+(txt?'<span title="'+frzWhy+'">'+txt+'</span>':'<span style="color:#b4b1a8">—</span>')+'</td>';
+  const cell=(txt,what,cls)=>linked?src(txt,what,cls):frz(txt,cls);
   const descr=cell(esc(DB.finTrueCity(f)),'city')+cell(esc(DB.finTrueWhen(f)),'dates')+
-              cell(pLink(DB.finTruePM(f)),'PM')+cell(pLink(DB.finTrueSales(f)),'salesperson');
+              cell(pLink(DB.finTruePM(f)),'PM','who')+cell(pLink(DB.finTrueSales(f)),'salesperson','who');
   const warn=orphanNow?' <a href="gantt.html" style="text-decoration:none" title="'+frzWhy+' Until then its weekly curve has no anchor either.">⚠</a>':'';
   /* The "Tickets tgt" column lived here until 3 Aug 2026. Belén: "take this field out,
      actually we don't need it — the targets can go on the SPX dashboard." Since v105 the
@@ -585,9 +589,24 @@ function finRowHtml(f,canF){
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
 }
+/* PM and Sales only need enough name to be unambiguous — the full one is a tooltip away
+   and eats the width the money columns need. First name alone, unless two people on the
+   roster share it (there are two Jesús), in which case it takes a surname initial. */
+function shortName(n){
+  const s=(''+(n==null?'':n)).trim();if(!s)return '';
+  const parts=s.split(/\s+/);if(parts.length<2)return s;
+  const first=parts[0],fl=first.toLowerCase();
+  const shared=DB.people.filter(p=>!p.deleted&&(''+(p.name||'')).trim().split(/\s+/)[0].toLowerCase()===fl).length>1;
+  if(!shared)return first;
+  const ini=parts[1].replace(/\W/g,'').charAt(0).toUpperCase();
+  return ini?(first+' '+ini+'.'):first;
+}
 /* PM/Sales names link to the person page when they match the roster (29 Jul stitches) */
-function pLink(n){if(!n)return '';const p=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf((''+n).toLowerCase())===0);
-  return p?'<a href="person.html?id='+p.id+'" style="color:inherit">'+esc(n)+'</a>':esc(n);}
+function pLink(n){if(!n)return '';
+  const full=''+n,lbl=esc(shortName(full));
+  const p=DB.people.find(x=>!x.deleted&&(x.name||'').toLowerCase().indexOf(full.toLowerCase())===0);
+  const tip=' title="'+esc(full)+'"';
+  return p?'<a href="person.html?id='+p.id+'" style="color:inherit"'+tip+'>'+lbl+'</a>':'<span'+tip+'>'+lbl+'</span>';}
 /* ---------- the event card (Belén, 30 Jul): the name clicks through to this ----------
    Identity from the timeline · money derived from Invoicing · sales boxes from the SPX
    rollup · CUMULATIVE chart (this edition / previous edition / average → target) ·
@@ -704,7 +723,7 @@ function renderYear(){
   ys.innerHTML='<option value="all">All years</option>'+years.map(y=>'<option '+(yearFilter==y?'selected':'')+'>'+y+'</option>').join('');
   ys.onchange=()=>{yearFilter=ys.value;renderYear();};
   const g=finGrouped();
-  let h='<tr><th>Event</th><th>Where</th><th>When</th><th>PM</th><th>Sales</th>'+
+  let h='<tr><th>Event</th><th>Where</th><th>When</th><th class="who">PM</th><th class="who">Sales</th>'+
     '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
   const keys=Object.keys(g);
   if(!keys.length)h+='<tr><td colspan="11" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
@@ -1177,12 +1196,23 @@ function drawWkCharts(ev,prevs){
     {id:'c_acc', t:'Acumulado (Euros)',    s:'official vs real',          k:'soFarEur',   type:'line',both:true}
   ];
   box.innerHTML=CH.map(c=>'<div class="cbox"><div class="ctit">'+c.t+'</div>'+
-    '<div class="csub">'+c.s+'</div><div class="chartbox xs"><canvas id="'+c.id+'"></canvas></div></div>').join('');
+    '<div class="csub" id="s_'+c.id+'">'+c.s+'</div><div class="chartbox xs"><canvas id="'+c.id+'"></canvas></div></div>').join('');
   const fmtV=money=>(money===false
     ?(v=>new Intl.NumberFormat('es-ES').format(v))
     :(v=>new Intl.NumberFormat('es-ES',{notation:'compact'}).format(v)));
   CH.forEach(c=>{
     const money=c.money!==false;
+    /* AN EMPTY COMPARISON IS NOT A COMPARISON (Belén, 4 Aug 2026: "why are the grey
+       columns missing?"). An edition that never recorded THIS metric used to get a
+       legend entry and no bars, which reads as a broken chart when the truth is that
+       the figure does not exist — the pre-2026 sheets only carried the accumulated
+       total and the leads, so tickets and the sponsorship split start in 2026. Keep
+       the series out of the chart and say plainly what is missing instead. */
+    const use=[],none=[],mk=c.both?'soFarEur':c.k;
+    prevs.forEach(p=>{(series(p,mk).some(v=>v!=null)?use:none).push(p);});
+    const sub=document.getElementById('s_'+c.id);
+    if(sub&&none.length)sub.innerHTML=c.s+' · <span style="color:#C77800">no figures on record for '+
+      none.map(p=>esc(p.name)).join(', ')+'</span>';
     const ds=[];
     if(c.both){
       /* the point of the whole exercise: where we officially are, and where we really are */
@@ -1191,13 +1221,15 @@ function drawWkCharts(ev,prevs){
       if(ev.rows.some(r=>r.signedAcc!=null))
         ds.push({label:ev.name+' — signed',data:series(ev,'signedAcc'),
           borderColor:SIG,backgroundColor:SIG,borderWidth:2,pointRadius:0,tension:.25,spanGaps:true,borderDash:[6,3]});
-      prevs.forEach((p,i)=>ds.push({label:p.name,data:series(p,'soFarEur'),
-        borderColor:prvC(i),backgroundColor:prvC(i),borderWidth:2,pointRadius:0,tension:.25,spanGaps:true}));
+      /* colour follows the edition's place in the chip bar, not its place in this chart,
+         so an edition keeps the same colour across all seven even when one drops out */
+      use.forEach(p=>{const i=prevs.indexOf(p);ds.push({label:p.name,data:series(p,'soFarEur'),
+        borderColor:prvC(i),backgroundColor:prvC(i),borderWidth:2,pointRadius:0,tension:.25,spanGaps:true});});
     }else{
       /* every earlier edition first, this one last so it draws on top */
-      prevs.forEach((p,i)=>ds.push(Object.assign({label:p.name,data:series(p,c.k),
+      use.forEach(p=>{const i=prevs.indexOf(p);ds.push(Object.assign({label:p.name,data:series(p,c.k),
         borderColor:prvC(i),backgroundColor:prvC(i),borderWidth:c.type==='bar'?0:2,pointRadius:0,tension:.25,spanGaps:true},
-        c.type==='bar'?BARFAT:{})));
+        c.type==='bar'?BARFAT:{}));});
       ds.push(Object.assign({label:ev.name,data:series(ev,c.k),
         borderColor:CUR,backgroundColor:CUR,borderWidth:c.type==='bar'?0:2.5,pointRadius:0,tension:.25,spanGaps:true},
         c.type==='bar'?BARFAT:{}));

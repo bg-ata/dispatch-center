@@ -2682,6 +2682,25 @@ const DB={
       return {ok:false,row,msg:e.message||''+e};
     }
   },
+  /* Re-read ONE person's punches for named days straight from the server and merge in
+     whatever this tab is missing. The clock is append-only, so this can only ADD rows —
+     it can never undo an edit waiting to sync. Returns false when the read failed: a
+     caller that is about to WRITE to the record must then do nothing rather than act on
+     a picture it could not confirm. (Araceli, 4 Aug 2026 — see splitAtMidnight.) */
+  async refreshPunchDays(personId,days){
+    if(!USE_SUPABASE||!sb)return true;                    // offline rig: memory IS the record
+    try{
+      const r=await sb.from('dc_timeclock').select('*').eq('personId',personId).in('day',days);
+      if(r.error)throw r.error;
+      const have={};(this.data.timeclock||[]).forEach(x=>{have[x.id]=true;});
+      (r.data||[]).forEach(row=>{
+        if(have[row.id])return;
+        this.data.timeclock.push(row);
+        if(_shadow&&_shadow.timeclock)_shadow.timeclock[row.id]=JSON.stringify(pickRow(row,'timeclock'));
+      });
+      return true;
+    }catch(e){console.warn('clock re-read failed',e.message||e);return false;}
+  },
   /* --- THE MIDNIGHT SPLIT (Belén, 29 Jul 2026) ---------------------------------
      Punches pair inside ONE calendar day, so a session that crossed 00:00 could never be
      closed: the old day stayed open for ever and the hours were lost. Carlos works Chilean
@@ -2696,6 +2715,20 @@ const DB={
     if(!prevDay||!newDay||prevDay>=newDay)return false;
     if(!tcDayInfo(me.id,prevDay).open)return false;        // nothing was left open
     if(tcEffective(me.id,newDay).length)return false;      // the new day already has punches
+    /* NEVER SPLIT ON A STALE PICTURE (Araceli, night of 3→4 Aug 2026). She clocked out at
+       16:34 and the clock still opened a session for her at 00:00, because the tab that saw
+       midnight had been open since the morning and had never learnt about that clock-out —
+       another tab (or her phone) made it, and a tab left visible all day can sit on a dead
+       realtime socket without ever being reloaded. The check above was therefore reading a
+       picture from before lunch. A write to an append-only ledger has to be decided on what
+       the SERVER says right now: ask it, re-check, and if we cannot ask, invent nothing. */
+    if(!(await this.refreshPunchDays(me.id,[prevDay,newDay])))return false;
+    if(!tcDayInfo(me.id,prevDay).open)return false;
+    if(tcEffective(me.id,newDay).length)return false;
+    /* and if two tabs of the same browser both watch midnight go by, only one writes */
+    try{const K='dcMidnightSplit',mine=me.id+'|'+newDay;
+      if(localStorage.getItem(K)===mine)return false;
+      localStorage.setItem(K,mine);}catch(e){}
     const R='automatic midnight split';
     const a=await this.punchAt('out',prevDay,'23:59:59',R+' — the day ended while you were still clocked in');
     if(!a.ok)return false;
