@@ -149,7 +149,8 @@
   </div>
 </div></div>
 
-<script src="store.js?v=109"></script>
+<script src="store.js?v=110"></script>
+<script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
 let WEEKW=Math.round(18*ZOOM);

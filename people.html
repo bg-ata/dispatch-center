@@ -107,7 +107,7 @@
   <div class="mrow"><button class="btn" id="m_del" style="color:#A32D2D;border-color:#f0c4c4">Delete</button>
   <span><button class="btn" id="m_cancel">Cancel</button> <button class="btn primary" id="m_save">Save</button></span></div>
 </div></div>
-<script src="store.js?v=109"></script>
+<script src="store.js?v=110"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('people');
 let editingId=null, expanded=null;
@@ -162,7 +162,15 @@ function renderPerms(){
   const box=document.getElementById('permPanel');if(!box)return;
   if(!isBelenP(DB.currentUser)){box.style.display='none';return;}   // her eyes only
   box.style.display='';
-  const roster=DB.people.filter(p=>!isTeamAccount(p)).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  /* EVERY login, service accounts included. They are deliberately absent from the Team
+     roster above (they are not people on the team) but this is the panel where Belén
+     manages them — Belén, 5 Aug 2026: "no appearance as a member to the team, but please
+     do create it in the permissions side so I can manage it". Team members first, the
+     service accounts last under their own heading. */
+  const sorted=a=>a.sort((x,y)=>(x.name||'').localeCompare(y.name||''));
+  const team=sorted(DB.people.filter(p=>!isTeamAccount(p))),
+        svc =sorted(DB.people.filter(p=>isTeamAccount(p))),
+        roster=team.concat(svc);
   const tick=(p,f,label)=>'<td style="text-align:center"><input type="checkbox" data-pf="'+f+'" data-id="'+p.id+'"'+(p[f]?' checked':'')+' title="'+label+'"></td>';
   let h='<h3>🔐 Permissions — who can see and edit what'+
       '<span title="Only you can see this panel" style="font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;vertical-align:2px;margin-left:6px;background:#F6E9E3;color:#A83A12">👁 you only</span></h3>'+
@@ -177,8 +185,14 @@ function renderPerms(){
     '<th style="text-align:center" title="Sales lead: edits anyone’s proposals on the SPX board">Sales lead</th>'+
     '<th class="num" title="How many of the powers below they can open">👁 sees</th>'+
     '<th class="num" title="How many of them they can change">✏ edits</th></tr>';
-  roster.forEach(p=>{
+  roster.forEach((p,i)=>{
     const c=permCount(p);
+    /* one heading where the team ends and the outside logins begin */
+    if(i===team.length&&svc.length)
+      h+='<tr><td colspan="8" style="background:#faf9f6;padding:9px 8px;font-size:11.5px;color:var(--muted)">'+
+         '<b style="color:var(--charcoal)">🔌 Service accounts</b> — outside companies with a login, not people on the team. '+
+         'They never appear in the roster, the holiday calendar or the clock — but the powers they hold are real, so they are counted in the list below. '+
+         'Everything else about them is managed here, exactly like anybody else.</td></tr>';
     /* the NAME, the caret AND the counts all open the per-person editable list —
        Belén 30 Jul: "how do I change what people see and edit? literally impossible".
        The click target existed (the name) but nothing SAID so; same discoverability
@@ -186,7 +200,8 @@ function renderPerms(){
     const open=_permOpen==p.id;
     h+='<tr><td><a href="#" data-perm="'+p.id+'" style="font-weight:700;color:var(--charcoal)" title="'+(open?'Fold the list':'Open the see/edit list — every cell is a tick you can change')+'">'+
         '<span style="color:var(--orange)">'+(open?'▾':'▸')+'</span> '+esc(p.name)+'</a>'+
-        '<div style="font-size:11px;color:var(--muted)">'+esc(p.role||'')+(isBelenP(p)?' · you':'')+'</div></td>'+
+        '<div style="font-size:11px;color:var(--muted)">'+esc(p.role||'')+(isBelenP(p)?' · you':'')+
+          (isTeamAccount(p)?' · <span title="Outside login — never on the roster, the calendar or the clock">🔌 service account</span> · '+esc(p.email||''):'')+'</div></td>'+
       '<td><select data-pa="'+p.id+'" style="font:inherit;font-size:12px;padding:2px 4px">'+
         ACCESS.map(a=>'<option value="'+a+'"'+((p.access||'member')===a?' selected':'')+'>'+ACCESS_LABEL[a]+'</option>').join('')+'</select></td>'+
       tick(p,'hr','HR')+tick(p,'finance','Finance')+tick(p,'billing','Invoicing')+tick(p,'salesLead','Sales lead')+
@@ -230,9 +245,16 @@ function renderPerms(){
     '<tr><th style="width:105px">Where</th><th style="width:30%">What</th><th>👁 Can see</th><th>✏ Can edit</th></tr>';
   PERMS.forEach(perm=>{
     const s=whoHas(perm,'see'),e=whoHas(perm,'edit');
-    const all=roster.length;
+    /* Two shortcuts, because "everyone" stopped meaning one thing the day the first
+       service account arrived: every login there is, versus every person on the team
+       (the usual answer for the team-wide surfaces an outside login has no business in). */
+    const teamNames=team.map(p=>p.name);
+    const isAll=l=>l.length===roster.length;
+    const isTeam=l=>l.length===teamNames.length&&teamNames.every(n=>l.indexOf(n)>=0);
     const nm=(list,none)=>!list.length?'<span style="color:#c9c6bf">'+none+'</span>'
-      :(list.length===all?'<b>everyone</b>':esc(list.join(', ')));
+      :isAll(list)?'<b>everyone</b>'
+      :isTeam(list)?'<b>everyone on the team</b> <span style="color:var(--muted)">(not the service accounts)</span>'
+      :esc(list.join(', '));
     h+='<tr><td>'+esc(perm.area)+'</td><td style="white-space:normal"><b>'+esc(perm.label)+'</b></td>'+
       '<td style="white-space:normal">'+nm(s,'nobody')+'</td>'+
       '<td style="white-space:normal">'+nm(e,'nobody — it is computed')+'</td></tr>';

@@ -71,7 +71,7 @@ const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','De
 const TOPICS={'Renewables / AI':'#FF4A00','Storage':'#E84830','Biomethane':'#4C3079','Hydrogen':'#3E8C28','Data Centers':'#29ACE3','Investment':'#185FA5'};
 const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil:'BR','Dominican Rep.':'DO',Other:''};
 const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
-const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin','HR'];
+const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin','HR','Accounts'];
 /* access tiers (permission level, separate from job role): member = own lane; manager = stage/release; admin = everything */
 const ACCESS=['member','manager','admin'];
 const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
@@ -596,9 +596,26 @@ function missingWeeks(personId){
 }
 /* holiday approval chain: team manager → Belén → HR */
 function isBelenP(p){return !!p&&(p.email||'').toLowerCase()==='belen.gallego@ata.email';}
-/* the "Recursos Humanos" login is a TEAM inbox, not a person — no holiday allowance,
-   and it never appears in the holiday calendar / balances. */
-function isTeamAccount(p){return !!p&&(p.role==='HR'||(p.email||'').toLowerCase()==='rrhh@ata.email');}
+/* ---- SERVICE ACCOUNTS: a login that is not a person on the team ----
+   An outside company or freelancer who needs ONE part of the Dispatch and nothing else.
+   It never clocks in, never allocates its own hours, and never shows up in the roster,
+   the holiday calendar, a balance, a broadcast or the quick-jump people list — but it DOES
+   show in Belén's permissions panel, because that is where she manages it (Belén, 5 Aug
+   2026: "no appearance as a member to the team, but please do create it in the permissions
+   side so I can manage it"). Two of them so far:
+     HR       — Recursos Humanos, the external HR company (they keep time in their own system)
+     Accounts — the external accountant who invoices, and covers Jesús while he is away
+   The role IS the mechanism; the e-mails are a belt-and-braces so renaming a role can never
+   silently promote a service account into a team member. */
+const SERVICE_ROLES=['HR','Accounts'];
+const SERVICE_EMAILS=['rrhh@ata.email','cristina.raboso@ata.email'];
+function isTeamAccount(p){return !!p&&(SERVICE_ROLES.indexOf(p.role)>=0||SERVICE_EMAILS.indexOf((p.email||'').toLowerCase())>=0);}
+/* the one line each service account sees where a team member sees the clock / allocation */
+function serviceNote(p){
+  if(!isTeamAccount(p))return '';
+  if(p.role==='Accounts')return 'External accounts account — no clock in/out and no hour allocation here; you keep your own time. Invoicing is under 💶 Money.';
+  return 'External HR team account — no clock in/out needed here (your team keeps time in its own system). You will get an email at rrhh@ata.email whenever something needs HR action; the 🔔 panel on the right shows the same items.';
+}
 /* WHO APPROVES WHOM — Belén's explicit map (2026-07-15). Every chain then runs
    → Belén → HR. This is deliberately a hand-written table, not inferred from role or
    access: the old version guessed "a manager with the same role", which put Belén at the
@@ -2008,9 +2025,12 @@ const SEED_PEOPLE=[
  /* Logistics */
  {id:16,name:'Julian Uribe',role:'Logistics',access:'member',email:'julian.uribe@ata.email'},
  /* Administration */
- {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email',finance:true}, // Accounting — the finance editor
+ {id:17,name:'Jesús Jiménez',role:'Admin',access:'member',email:'jesus.jimenez@ata.email',finance:true,billing:true}, // Accounting — the finance + invoicing editor
  /* Human Resources — the final holiday approver (Belén + Jesús can also act) */
  {id:18,name:'Recursos Humanos',role:'HR',access:'member',email:'rrhh@ata.email',hr:true}, // HR access only; primary final approver
+ /* External accountant — invoices, and covers Jesús while he is away, so she carries his two
+    ticks. A SERVICE ACCOUNT: no clock, no roster, no holidays (Belén, 5 Aug 2026). */
+ {id:19,name:'Accounts',role:'Accounts',access:'member',email:'cristina.raboso@ata.email',finance:true,billing:true,holidayDays:0},
 ];
 function buildSeed(){
   /* seeded events are pre-approved for the money side — offline/demo mode should not open
@@ -3433,6 +3453,12 @@ const DB={
    access to the invoicing, but only Jesús and accounts can edit… but also there are things
    that are not for everybody's eyes". So each row answers both, per person. */
 const EVERYONE=p=>true, NOBODY=p=>false;
+/* "everyone who is actually on the team" — the team-wide surfaces (the event board, the
+   plan, the sales board) are not a service account's business, and saying so HERE rather
+   than in the navigation is what keeps the panel honest: the tab a person is offered and
+   the row Belén reads in this list come from the same predicate. Belén can still open any
+   of them for one person with the per-cell tick. */
+const TEAM_ONLY=p=>!isTeamAccount(p);
 /* Every entry carries a stable `key` — dc_people.perms (jsonb, Belén-only writable, like
    the four ticks) stores PER-CELL OVERRIDES on top of the derived defaults:
      perms = { "invoicing.book": {see:true, edit:true}, "money.insights": {see:false} }
@@ -3442,11 +3468,11 @@ const EVERYONE=p=>true, NOBODY=p=>false;
    person. `lock:true` = not overridable (this panel itself: RLS would refuse anyway). */
 const PERMS=[
   {key:'proj.board', area:'📅 Projects', label:'The event board — events, lanes, tasks', lock:true,
-   see:EVERYONE, edit:EVERYONE,
-   seeTxt:'Every event, every lane, every task', editTxt:'Their own tasks'},
+   see:TEAM_ONLY, edit:TEAM_ONLY,
+   seeTxt:'Every event, every lane, every task — the team; service accounts have no board', editTxt:'Their own tasks'},
   {key:'proj.plan', area:'📅 Projects', label:'Anyone’s task status & the plan itself',
-   see:EVERYONE, edit:p=>p.access==='admin'||p.access==='manager',
-   seeTxt:'Everyone sees the plan', editTxt:'Managers & admins (plus anyone on a non-RENMAD project)'},
+   see:TEAM_ONLY, edit:p=>p.access==='admin'||p.access==='manager',
+   seeTxt:'Everyone on the team sees the plan', editTxt:'Managers & admins (plus anyone on a non-RENMAD project)'},
   {key:'team.roster', area:'👥 Team', label:'The roster — people, roles, emails',
    see:EVERYONE, edit:p=>p.access==='admin',
    seeTxt:'The whole team list', editTxt:'Admins: add, edit, remove, set the tier'},
@@ -3463,8 +3489,8 @@ const PERMS=[
    see:EVERYONE, edit:p=>!!p.billing||p.access==='admin',
    seeTxt:'Whole roster — read, search, download', editTxt:'Accounting (invoicing tick) and admins'},
   {key:'spx.board', area:'💼 SPX', label:'The sales board & proposals',
-   see:EVERYONE, edit:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead',
-   seeTxt:'Whole roster', editTxt:'Sales roles, the sales-lead tick and admins'},
+   see:TEAM_ONLY, edit:p=>!!p.salesLead||p.access==='admin'||p.role==='Sales'||p.role==='Lead',
+   seeTxt:'Whole team — service accounts have no sales board', editTxt:'Sales roles, the sales-lead tick and admins'},
   {key:'hr.area', area:'🌴 HR', label:'The HR area (team holidays, allocation, the clock)',
    see:p=>!!p.hr||isBelenP(p)||!!p.finance, edit:p=>!!p.hr||isBelenP(p),
    seeTxt:'Belén, HR and the finance tick (for allocation)', editTxt:'Belén and HR'},
@@ -3498,9 +3524,11 @@ function permEdit(p,key){if(!p)return false;const o=permOverride(p,key);if(o&&o.
 /* what does THIS person hold? -> [{perm, canSee, canEdit, ovr}] (ovr = the stored override, if any) */
 function permsOf(p){return PERMS.map(x=>({perm:x,canSee:permSee(p,x.key),canEdit:permEdit(p,x.key),ovr:permOverride(p,x.key)}));}
 function permCount(p){const r=permsOf(p);return {see:r.filter(x=>x.canSee).length,edit:r.filter(x=>x.canEdit).length};}
-/* and the other way round: who can see / edit THIS permission (the audit view) */
+/* and the other way round: who can see / edit THIS permission (the audit view).
+   Service accounts ARE counted here: they hold real powers (Accounts edits the invoice
+   book), so leaving them out would make this table quietly lie about who can change what. */
 function whoHas(perm,which){
-  return DB.people.filter(p=>!isTeamAccount(p)&&(which==='see'?permSee(p,perm.key):permEdit(p,perm.key))).map(p=>p.name);
+  return DB.people.filter(p=>which==='see'?permSee(p,perm.key):permEdit(p,perm.key)).map(p=>p.name);
 }
 function personByEmail(email){if(!email)return null;email=(''+email).toLowerCase();return DB.people.find(p=>(p.email||'').toLowerCase()===email)||null;}
 /* delegate row colour — DERIVED, never stored: yellow = a reserved pass with no name yet,
@@ -3693,6 +3721,30 @@ async function boot(renderFn){
   ensureSubDefaults();
   try{const r=DB.ensureEventLines();if(r&&(r.items||r.projects||r.adopted||r.money||r.spx||r.resynced))DB.save();}catch(e){} // event → Money/item/project/SPX cascade (writes only for finance/billing/sales-lead logins)
   try{const nc=document.getElementById('nav-crm');if(nc&&DB.can('crm.leads','see'))nc.style.display='';}catch(e){} // CRM tab: Belén (grantable per-cell in the 🔐 panel)
+  /* A tab that is not offered must not be reachable by typing the URL either. A page
+     declares what it needs before boot: DC_NEEDS='<perm key>' (checked against the same
+     permission the 🔐 panel prints) or DC_TEAM_ONLY for the pages that have no permission
+     row of their own. Anyone without it is sent to their own page rather than shown a wall. */
+  try{
+    const lack=(window.DC_NEEDS&&!DB.can(window.DC_NEEDS,'see'))
+            || (window.DC_TEAM_ONLY&&isTeamAccount(DB.currentUser));
+    if(lack){location.replace('home.html');return;}
+  }catch(e){}
+  /* A SERVICE ACCOUNT is not on the team, so the team-wide tabs are not offered to it.
+     Projects and SPX read the SAME predicates the 🔐 permissions panel prints, so what
+     Belén sees in that list is exactly what the person is offered — tick a cell open there
+     and the tab comes back. Impact and Tools have no permission row of their own, so they
+     follow the plain "is this a team member" answer. Me / Team / Money / 🔔 stay: the
+     accountant needs Money (Invoicing), Team (hour allocation, on the finance tick), 🔔 to
+     hear back, and Me to change their own password. */
+  try{
+    const off=(id,ok)=>{const el=document.getElementById(id);if(el&&!ok)el.style.display='none';};
+    off('nav-projects',DB.can('proj.board','see'));
+    off('nav-spx',DB.can('spx.board','see'));
+    const onTeam=!isTeamAccount(DB.currentUser);
+    off('nav-impact',onTeam);
+    off('nav-tools',onTeam);
+  }catch(e){}
   /* HR is no longer its own nav tab — it lives inside 👥 Team (gated there by DB.canSeeHR) */
   renderFn();
   try{decorateNav();}catch(e){} // alarm badges on the nav (holiday approvals / missing hours)
@@ -3824,11 +3876,11 @@ function navBar(active){
   return '<div class="nav" id="dcNav"><button class="navburger" aria-label="Menu" onclick="document.getElementById(\'dcNav\').classList.toggle(\'open\')">☰ Menu</button>'+
          '<div class="navlinks" onclick="document.getElementById(\'dcNav\').classList.remove(\'open\')">'+
          '<a href="home.html" id="nav-home" style="white-space:nowrap" class="'+(active==='home'?'on':'')+'" title="Your day: clock, hours, to-dos, holidays — everything personal">🙋 Me</a>'+
-         '<a href="gantt.html" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
+         '<a href="gantt.html" id="nav-projects" style="white-space:nowrap" class="'+(active==='overview'?'on':'')+'">📅 Projects</a>'+
          '<a href="people.html" id="nav-team" style="white-space:nowrap" class="'+(active==='people'||active==='hr'?'on':'')+'" title="The roster + the team holiday calendar — HR admin lives here too">👥 Team</a>'+
          '<a href="dashboard.html" style="white-space:nowrap" class="'+(active==='dashboard'||active==='fact'?'on':'')+'" title="Everything money — Invoicing and Reporting">💶 Money</a>'+
          '<a href="spx.html" id="nav-spx" style="white-space:nowrap" class="'+(active==='spx'?'on':'')+'" title="Sponsorship sales — proposals, health-check, reporting">💼 SPX</a>'+
-         '<a href="impact.html" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
+         '<a href="impact.html" id="nav-impact" style="white-space:nowrap" class="'+(active==='impact'?'on':'')+'">📣 Impact</a>'+
          '<a href="tools.html" id="nav-tools" style="white-space:nowrap" class="'+(active==='tools'||active==='tickets'?'on':'')+'" title="Team tools — the Requests box lives here too">🧰 Tools</a>'+
          '<a href="crm.html" id="nav-crm" style="white-space:nowrap;display:none" class="'+(active==='crm'?'on':'')+'" title="Leads CRM — private, only Belén sees this tab">📇 CRM</a>'+
          '<a href="#" id="dcThemeBtn" onclick="dcThemeToggle();return false" style="white-space:nowrap" title="Dark mode">'+(dcTheme()==='dark'?'☀️':'🌙')+'</a>'+
