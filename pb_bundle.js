@@ -3624,9 +3624,9 @@ window.PB = {
     },
     {
       id: "E061", tag: "DATACENTERS & IA", date_s: "MARTES 13 OCTUBRE", name: "Datacenters Off-Grid",
-      hours: "9:15 – 13:30 · Sede de PwC, Madrid",
-      kick: "MARTES 13 OCTUBRE 2026 · 9:15 – 13:30 · SEDE DE PWC, MADRID",
-      sub: "Off-grid, energía firme y financiación para el boom de los datacenters de IA",
+      hours: "10:00 – 15:30 · Sede de PwC, Madrid",
+      kick: "MARTES 13 OCTUBRE 2026 · 10:00 – 15:30 · SEDE DE PWC, MADRID",
+      sub: "Off-grid, energía firme y financiación para el boom de los datacenters y la IA",
       pitch: "Construir un datacenter lleva 12-18 meses; conectarlo a la red, entre 5 y 7 años. Con hasta la " +
              "mitad del pipeline español en riesgo por falta de punto de conexión, generar la energía in situ " +
              "deja de ser exótico: ya hay ~2 GW behind-the-meter en marcha y 90 GW anunciados en EE. UU. Una " +
@@ -3634,17 +3634,17 @@ window.PB = {
       aud: "Hyperscalers y operadores de DC · promotores energéticos · fondos de infraestructura · utilities · asesores",
       ses: "Off-grid y cola de conexión · campus a gigavatio · energía firme 24/7 · España, hub del dato · financiación",
       agenda: [
-        ["9:15", "Bienvenida e inauguración (ATA + PwC España)", "—"],
-        ["9:30", "La cola que asfixia a la nube · off-grid", "Panel"],
-        ["10:20", "El valle de los datos · campus a gigavatio", "Panel estrella"],
-        ["11:10", "El reto de los 24/7 · energía firme", "Ponencia"],
-        ["11:30", "Pausa activa con café · encuestas en directo", "Pausa"],
-        ["12:00", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
-        ["12:20", "Energía propia, riesgo propio · financiación", "Masterclass"],
-        ["13:10", "Modelos de negocio y hoja de ruta", "Cierre"],
-        ["13:30", "Networking con aperitivo", "—"]
+        ["10:00", "Bienvenida e inauguración (ATA + PwC España)", "—"],
+        ["10:15", "La cola que asfixia a la nube · off-grid", "Panel"],
+        ["11:00", "El valle de los datos · campus a gigavatio", "Panel estrella"],
+        ["11:45", "El reto de los 24/7 · energía firme", "Ponencia"],
+        ["12:05", "Pausa activa con café · encuestas en directo", "Pausa"],
+        ["12:20", "¿Tenemos el enchufe? · España, hub del dato", "Ponencia"],
+        ["12:40", "Energía propia, riesgo propio · financiación", "Masterclass"],
+        ["13:25", "Modelos de negocio y hoja de ruta", "Cierre"],
+        ["13:45", "Networking con aperitivo", "—"]
       ],
-      note: "Inicio 9:15 · la pausa activa mantiene la energía · cierre con networking y aperitivo en la sede de PwC."
+      note: "Inicio 10:00 · la pausa activa mantiene la energía · cierre con networking y aperitivo en la sede de PwC."
     }
   ];
 
