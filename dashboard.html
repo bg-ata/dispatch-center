@@ -220,7 +220,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=116"></script>
+<script src="store.js?v=117"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -374,7 +374,10 @@ function render(){
   document.getElementById('tabs').innerHTML=visTabs().map(([k,l])=>'<button class="'+(k===tab?'on':'')+'" data-tab="'+k+'">'+l+'</button>').join('');
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab;render();});
   const warn=document.getElementById('warnbox');warn.innerHTML='';
-  if(tab==='year'&&!DB.financeReady()){warn.innerHTML='<div class="warn">The finance module is not active yet — run <b>dispatch_finance.sql</b> in Supabase, then reload.</div>';}
+  /* AUDIT 6 ago 2026: this warned but did NOT stop, so renderYear() ran on an empty
+     finance array and printed "No figures for this year yet" — a confident business
+     statement about a failed load. Money must fail closed, like the two lines below. */
+  if(tab==='year'&&!DB.financeReady()){warn.innerHTML='<div class="warn">The finance figures could not be loaded, so nothing is shown here. Reload; if it persists, tell Belén.</div>';document.getElementById('content').innerHTML='';return;}
   if(tab==='spx'&&!DB.spxReady()){warn.innerHTML='<div class="warn">The SPX module is not active yet.</div>';document.getElementById('content').innerHTML='';return;}
   if(tab!=='year'&&tab!=='spx'&&!DB.weeklyReady()){warn.innerHTML='<div class="warn">The weekly data module is not active yet — run <b>dispatch_weekly.sql</b> + <b>dispatch_weekly_seed.sql</b> in Supabase, then reload.</div>';document.getElementById('content').innerHTML='';return;}
   ({year:renderYear,spx:renderSpxStatus,week:renderWeek,detail:renderDetail,compare:renderCompare,insights:renderInsights})[tab]();
@@ -826,7 +829,7 @@ function renderYear(){
 function openFinModal(){
   const sel=document.getElementById('f_link');
   sel.innerHTML='<option value="">— past event (not on the board) —</option>'+
-    DB.events.map(e=>'<option value="'+e.id+'">'+e.name+' · '+dateRange(e)+'</option>').join('');
+    DB.events.map(e=>'<option value="'+e.id+'">'+esc(e.name)+' · '+dateRange(e)+'</option>').join('');
   /* linked → name, where, when, PM and sales all CASCADE from the timeline and are
      locked here, exactly as they are in the table (Belén, 3 Aug: one source of truth) */
   const CASC=[['f_name','name'],['f_city','city'],['f_when','dates'],['f_pm','PM'],['f_sales','salesperson']];
@@ -984,7 +987,7 @@ function drawHeat(ms){
   let h='<table><tr><th></th>'+WEEKS.filter(w=>w<=0).map(w=>'<th>'+(w%4===0?('W'+w):'')+'</th>').join('')+'<th style="text-align:left;padding-left:8px">so far / target</th></tr>';
   up.forEach(e=>{
     const c=curve(e);
-    h+='<tr><td class="lab">'+e.name+'</td>';
+    h+='<tr><td class="lab">'+esc(e.name)+'</td>';
     WEEKS.filter(w=>w<=0).forEach((w,i)=>{
       const v=c[i];let cls='';
       if(v==null||(+v===0&&(e.lastData==null||e.rows.find(r=>r.week===w&&(r.date||'')>new Date().toISOString().slice(0,10)))))cls='';
@@ -1131,7 +1134,7 @@ function heroSelHtml(ms,id){
   const byEv=(a,b)=>(a.evDate||a.lastDate||'').localeCompare(b.evDate||b.lastDate||'');
   const groups={'Upcoming':ms.filter(e=>!e.completed).slice().sort(byEv),
                 'Past':ms.filter(e=>e.completed).slice().sort((a,b)=>byEv(b,a))};
-  return '<select id="'+id+'">'+Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+e.name+'</option>').join('')+'</optgroup>').join('')+'</select>';
+  return '<select id="'+id+'">'+Object.keys(groups).map(g=>'<optgroup label="'+g+'">'+groups[g].map(e=>'<option value="'+e.code+'" '+(e.code===heroCode?'selected':'')+'>'+esc(e.name)+'</option>').join('')+'</optgroup>').join('')+'</select>';
 }
 /* the default edition is THE NEXT ONE TO COME (Belén, 4 Aug: "if you must show numbers
    without picking an event, please make it the next event to come"). ms is sorted by the
@@ -1389,11 +1392,11 @@ function renderCompare(){
     compareAnalysis(ms,ms.find(e=>e.code===heroCode));
   document.getElementById('heroSel').onchange=e=>{heroCode=e.target.value;renderCompare();};
   const cs=document.getElementById('cmpSel');
-  cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+e.name+'</option>').join('');
+  cs.innerHTML='<option value="">+ compare with…</option>'+ms.slice().reverse().filter(e=>e.code!==heroCode&&!cmpCodes.includes(e.code)).map(e=>'<option value="'+e.code+'">'+esc(e.name)+'</option>').join('');
   cs.onchange=()=>{if(cs.value){cmpCodes.push(cs.value);renderCompare();}};
   const bar=document.getElementById('cmpbar');
   bar.innerHTML=cmpCodes.map((c,i)=>{const e=ms.find(x=>x.code===c);if(!e)return'';
-    return '<span class="chip2"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+e.name+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
+    return '<span class="chip2"><span class="sw" style="background:'+PAL[i%PAL.length]+'"></span>'+esc(e.name)+'<button class="x" data-uncmp="'+c+'">×</button></span>';}).join('');
   bar.querySelectorAll('[data-uncmp]').forEach(b=>b.onclick=()=>{cmpCodes=cmpCodes.filter(c=>c!==b.dataset.uncmp);renderCompare();});
   drawHero(ms);drawComposition(ms);
 }

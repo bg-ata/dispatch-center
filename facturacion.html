@@ -96,7 +96,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=116"></script>
+<script src="store.js?v=117"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -281,7 +281,7 @@ function render(){
     '<div class="ytabs">'+yearTabsHtml()+'</div>'+
     '<div class="flt">'+
       '<select id="f_item"><option value="all">— item —</option>'+itemOpts+'</select>'+
-      '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('')+'</select>'+
+      '<select id="f_prod"><option value="all">— product —</option>'+PRODUCTOS.map(p=>'<option value="'+p+'" '+(flt.prod===p?'selected':'')+'>'+esc(PRODUCTO_LABEL[p]||p)+'</option>').join('')+'</select>'+
       '<select id="f_st"><option value="all">— estado —</option>'+Object.keys(INV_STATUS).map(s=>'<option value="'+s+'" '+(flt.status===s?'selected':'')+'>'+INV_STATUS[s]+'</option>').join('')+'</select>'+
       '<input id="f_txt" placeholder="buscar: empresa, nº factura, pedido, comentario…" value="'+esc(flt.text)+'" style="width:250px">'+
       '<span class="hint">from</span><input id="f_from" type="date" value="'+flt.from+'"><span class="hint">to</span><input id="f_to" type="date" value="'+flt.to+'">'+
@@ -323,8 +323,8 @@ function filtered(){
 /* which products live on an invoice — line products first, invoice product as legacy fallback */
 function prodCell(i){
   const set={},out=[];
-  DB.allocsFor(i.id).forEach(a=>{const p=lineProd(a,i);if(p&&!set[p]){set[p]=1;out.push(PRODUCTO_LABEL[p]||p);}});
-  if(!out.length&&i.producto)out.push(PRODUCTO_LABEL[i.producto]||i.producto);
+  DB.allocsFor(i.id).forEach(a=>{const p=lineProd(a,i);if(p&&!set[p]){set[p]=1;out.push(esc(PRODUCTO_LABEL[p]||p));}});
+  if(!out.length&&i.producto)out.push(esc(PRODUCTO_LABEL[i.producto]||i.producto));
   return out.join(' + ');
 }
 /* ---------- Excel-style column sort (Jesús, 28 jul: "¿se puede poner el ordenar columnas
@@ -820,7 +820,7 @@ function renderLines(){
   /* retired items stay selectable only where they are already in use, so history edits
      never lose their código while new lines only see the live list */
   const itemOpts=sel=>'<option value="">— item —</option>'+codsForPicker(sel).map(c=>'<option value="'+c.id+'" '+(c.id==sel?'selected':'')+'>'+esc(codLabel(c))+(c.archived?' · retired':'')+'</option>').join('');
-  const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+PRODUCTO_LABEL[p]+'</option>').join('');
+  const prodOpts=sel=>'<option value="">—</option>'+PRODUCTOS.filter(p=>p!=='abono').map(p=>'<option value="'+p+'" '+(p===sel?'selected':'')+'>'+esc(PRODUCTO_LABEL[p]||p)+'</option>').join('');
   const paseOpts=sel=>'<option value="">—</option>'+Object.keys(TIPO_PASES).map(t=>'<option value="'+t+'" '+(t===sel?'selected':'')+'>'+t.charAt(0).toUpperCase()+t.slice(1)+' ('+TIPO_PASES[t]+')</option>').join('');
   const usd=document.getElementById('m_usd')&&document.getElementById('m_usd').checked;
   let h='<tr><th style="min-width:120px">Producto *</th><th style="width:110px">Tipo de pase</th><th style="width:56px" class="num">Cant.</th><th style="width:84px" class="num">Precio '+(usd?'US$':'€')+'</th><th style="width:92px" class="num">Importe '+(usd?'US$':'€')+'</th><th style="min-width:170px">Item *</th><th style="width:80px">Código</th><th style="width:64px" class="num">Pases</th><th style="width:24px"></th></tr>';

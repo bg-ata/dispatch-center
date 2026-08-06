@@ -1261,6 +1261,20 @@ async function flushPendingPunches(){
     if(saved)window.dispatchEvent(new Event('dc-remote'));
   }finally{_punchFlushing=false;}
 }
+/* AUDIT 6 ago 2026: the registro horario is a legal record — if it did not load, say so
+   loudly. Silence here reads on screen as "you have no punches", which invites a duplicate
+   clock-in and makes the monthly export look complete when it is empty. */
+function renderTcLoadBanner(){
+  let el=document.getElementById('tcLoadBar');
+  if(!USE_SUPABASE||!_tcLoadError){if(el)el.remove();return;}
+  if(!el){el=document.createElement('div');el.id='tcLoadBar';document.body.prepend(el);}
+  el.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:#D32230;color:#fff;padding:8px 16px;font:13px Segoe UI,system-ui,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 2px 10px rgba(0,0,0,.25)';
+  el.innerHTML='<b>⚠ The time clock could not be loaded</b>'+
+    '<span style="opacity:.92">Your hours are NOT missing — this screen just could not read them, so what you see below is incomplete.</span>'+
+    '<span style="opacity:.8">Do not clock in again from this page. Reload; if it persists, tell Belén. ('+esc(_tcLoadError)+')</span>'+
+    '<button id="tcReload" style="margin-left:auto;background:#fff;color:#D32230;border:none;border-radius:7px;padding:5px 12px;font-weight:700;cursor:pointer;font:inherit">Reload</button>';
+  document.getElementById('tcReload').onclick=()=>location.reload();
+}
 function renderPunchBanner(){
   const q=USE_SUPABASE?pendingPunches():[];
   let el=document.getElementById('punchPendingBar');
@@ -2565,6 +2579,7 @@ const COLS={
   /* the conversation on a person's page: personId = whose thread it is (not the sender) */
   pmsgs:['id','personId','byId','byName','text','created'],
 };
+let _tcLoadError='';   // AUDIT 6 ago 2026: why the registro horario failed to load, '' when healthy
 let _pmsgReady=false,_prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
 let _stageLayReady=false,_venueReady=false,_reqReady=false; // logistics round, 6 Aug 2026
 /* ---- module flags travel WITH the snapshot (30 Jul fix) ----
@@ -2770,8 +2785,17 @@ const DB={
           D.timeclock=out;
           const rp=await sb.from('dc_tcreports').select('*').eq('deleted',false).order('id');
           if(rp.error)throw rp.error;D.tcreports=rp.data||[];
-          _tcReady=true;
-        }catch(e){console.warn('time clock module not ready:',e.message||e);}
+          _tcReady=true;_tcLoadError='';window._tcLoadError='';
+        }catch(e){
+          /* AUDIT 6 ago 2026: this catch used to swallow the failure into a console.warn.
+             With _tcReady false the sync loop skips the time clock entirely and D.timeclock
+             stays [], so the screens — and the monthly registro-horario export — would show
+             an empty record as if the worker had never clocked. A legal record must never
+             fail quietly: keep the message and let renderTcLoadBanner() put it on screen. */
+          _tcLoadError=(e&&(e.message||e.msg))||String(e)||'unknown error';
+          window._tcLoadError=_tcLoadError;   // hr.html reads this before writing any export
+          console.warn('time clock module not ready:',_tcLoadError);
+        }
       })();
 
       /* "at an event" away-days (tolerant — app runs fine before dispatch_hr8_events.sql) */
@@ -2913,6 +2937,7 @@ const DB={
       })();
 
       await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPmsg,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg,pStageLay,pVenue,pReq]);
+      renderTcLoadBanner();
       if(!D.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');

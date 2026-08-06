@@ -97,7 +97,7 @@
   <div id="warnbox"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=116"></script>
+<script src="store.js?v=117"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('hr');
 /* today's device logins (dc_logins) — loaded once at boot, Belén/HR-only via RLS.
@@ -1197,7 +1197,19 @@ function renderTcQueue(){
     DB.save();renderTcQueue();renderTeamMonth();renderPersonHistory();refreshPendingBadge();
   });
 }
+/* AUDIT 6 ago 2026: never write a registro-horario file from a time clock that failed to
+   load — an empty sheet handed to a labour inspector is worse than no sheet at all. */
+function tcExportGuard(){
+  if(window._tcLoadError){
+    alert('The time clock did not load on this device ('+window._tcLoadError+').\n\n'+
+          'No file has been written: it would be empty or incomplete, and this is the legal '+
+          'registro de jornada. Reload the page and try again.');
+    return false;
+  }
+  return true;
+}
 function exportTcMonth(){
+  if(!tcExportGuard())return;
   const y=tcM.getFullYear(),m=tcM.getMonth();
   const last=new Date(y,m+1,0).getDate(),today=toISO(new Date());
   const rows=[],raw=[];
@@ -1218,6 +1230,7 @@ function exportTcMonth(){
   exportXLSX('RENMAD_timeclock_'+y+'-'+String(m+1).padStart(2,'0')+'.xlsx',[{name:'Month',rows},{name:'Raw entries',rows:raw}]);
 }
 function exportTcArchive(){
+  if(!tcExportGuard())return;
   const rows=DB.timeclock.slice().sort((a,b)=>a.id-b.id).map(e=>({
     Id:e.id,Person:DB.personName(e.personId),Day:e.day,Time:e.time,Kind:e.kind,Manual:e.manual?'yes':'',
     Amends:e.amends||'',Reason:e.reason||'',ReportId:e.reportId||'',
