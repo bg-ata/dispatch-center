@@ -151,10 +151,10 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=110"></script>
+<script src="store.js?v=112"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
-const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
+/* STCOL now lives in store.js — the shared Me/Team task list needs it too (6 Aug 2026) */
 let _clockTick=null;
 let weekISO=toISO(monday(new Date()));   // allocation week being edited
 let tcM=new Date();tcM.setDate(1);       // month shown in "My month"
@@ -296,6 +296,12 @@ function render(){
     '</div>'+
     /* 🔔 first, full-width: the one block that must never be below the fold (29 Jul UX round) */
     '<div class="panel" id="alarmPanel"></div>'+
+    /* ⏳ PENDING, then the calendar right under it — Belén, 6 Aug 2026, after the logistics
+       meeting: "un bloque de Pending más arriba en la página Mí, y el calendario justo
+       debajo". The point is that you can change a status from here: until today you had to
+       go into the event, then the lane, then the stage, project by project. */
+    (svcAcct?'':'<div class="panel" id="pendPanel"></div>')+
+    (svcAcct?'':'<div class="panel" id="calPanel"></div>')+
     /* the rest are collapsible rows — Belén, 29 Jul: "you see all options and pick what
        you need, all in one easy line of sight, even on the phone". Headers always visible,
        each carries a live one-line summary; open/closed choices are remembered per person. */
@@ -306,10 +312,97 @@ function render(){
     '</div>'+
     (svcAcct?'':'<div class="panel mefold" id="evPanel"></div>');
   /* panels isolated (20 Jul 2026 outage): one broken panel must not kill the ones after it */
-  for(const f of [renderClock,renderAllocPanel,renderAlarms,renderMsgPanel,renderTodo,renderHolPanel,renderEvents,
+  for(const f of [renderClock,renderAllocPanel,renderAlarms,renderPending,renderMyCalendar,renderMsgPanel,renderTodo,renderHolPanel,renderEvents,
                   renderAwayFold,renderReportFold,renderMonthFold,renderProfFold,wireFolds,wirePanelFolds]){
     try{f();}catch(e){console.error((f.name||'panel')+' failed',e);if(typeof showJsErrBar==='function')showJsErrBar((f.name||'panel')+': '+(e&&e.message));}
   }
+}
+
+/* ================= ⏳ PENDING — everything waiting on me =================
+   Belén, 6 Aug 2026: a Pending block higher up the page, and the status editable from
+   here instead of "event → logistics → stage → etc." The list is the tasks that are not
+   Done, soonest first, with the overdue ones called out; status and notes are inline.
+   Requests you raised that have been answered sit on top of it, because an answer nobody
+   reads is the failure mode the whole request flow exists to kill. */
+function renderPending(){
+  const me=DB.currentUser,box=document.getElementById('pendPanel');if(!me||!box)return;
+  const openT=DB.tasksOf(me.id).filter(t=>t.status!=='Done');
+  const mon=+monday(new Date());
+  const late=openT.filter(t=>(+taskDate(t))<mon);
+  const thisWk=openT.filter(t=>{const d=+taskDate(t);return d>=mon&&d<mon+7*86400000;});
+  /* requests I asked for that logistics has come back on */
+  let answered=[];
+  try{if(DB.reqReady())answered=DB.requests.filter(r=>!r.deleted&&r.personId==me.id&&r.status==='answered');}catch(e){}
+  /* requests waiting on ME, if I am the logistics desk */
+  let toAnswer=[];
+  try{if(DB.reqReady()&&DB.canLogistics())toAnswer=DB.requests.filter(r=>!r.deleted&&r.status==='open');}catch(e){}
+  /* events created recently that I have not looked at — see newEventNotices() */
+  const fresh=newEventNotices(me);
+
+  let h='<h3>⏳ Pending'+visBadge('you')+' <span class="hint" style="font-weight:400">— '+
+    (openT.length?(openT.length+' open task'+(openT.length===1?'':'s')+
+      (late.length?(' · <b style="color:var(--orange)">'+late.length+' overdue</b>'):'')+
+      (thisWk.length?(' · '+thisWk.length+' this week'):'')):'nothing open')+'</span></h3>';
+
+  const notes=[];
+  /* the weekly digest, in the app. Belén ruled out one email per task (200 material tasks
+     land at once) and ruled out a per-task "notify? yes/no" tick, because you can never
+     tell whether it actually went out. One summary, always current, always here. */
+  let dig='';try{dig=digestText(me.id);}catch(e){}
+  if(dig)notes.push('<b>This week:</b> '+esc(dig)+'.');
+  if(fresh.length)notes.push('<b>'+fresh.length+' new event'+(fresh.length===1?'':'s')+'</b> on the board: '+
+    fresh.map(e=>'<a href="event.html?id='+e.id+'">'+esc(e.name)+'</a>').join(', ')+
+    ' — worth moving your stages onto '+(fresh.length===1?'it':'them')+'. <a href="#" id="pendSeen">Got it</a>');
+  if(toAnswer.length)notes.push('<b>'+toAnswer.length+' request'+(toAnswer.length===1?' is':'s are')+' waiting on logistics</b>: '+
+    toAnswer.slice(0,4).map(r=>'<a href="event.html?id='+r.eventId+'#req">'+esc(r.title)+'</a>').join(', ')+
+    (toAnswer.length>4?' …':''));
+  if(answered.length)notes.push('<b>Logistics answered you</b> on '+
+    answered.map(r=>'<a href="event.html?id='+r.eventId+'#req">'+esc(r.title)+'</a>').join(', ')+'.');
+  if(notes.length)h+='<div style="background:#FFF3EC;border:1px solid #F3D9B8;border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:13px">'+
+    notes.map(n=>'<div style="margin:2px 0">'+n+'</div>').join('')+'</div>';
+
+  h+='<p class="hint">Change a status or jot a note right here — you no longer have to open the event, the lane and the stage to tick something off.</p>';
+  h+=dcTaskListHtml(me.id,{tasks:openT,limit:20,empty:'Nothing open — all done. 🎉'});
+  box.innerHTML=h;
+  wireTaskList(box,()=>{renderPending();renderMyCalendar();renderEvents();});
+  const seen=document.getElementById('pendSeen');
+  if(seen)seen.onclick=e=>{e.preventDefault();markEventsSeen(me);renderPending();};
+}
+/* ---- "there is a new event" (Belén, 6 Aug) ----
+   When Carlos creates an event, logistics wants to know so they can start moving their
+   stages. Kept as a mark-as-seen list per person in localStorage rather than a new table:
+   it is a nudge, not a record, and it must never become another thing to administer. */
+function newEventNotices(me){
+  try{
+    if(!me)return [];
+    const key='dcEvSeen:'+me.id;
+    let seen={};try{seen=JSON.parse(localStorage.getItem(key)||'{}')||{};}catch(e){seen={};}
+    const first=localStorage.getItem(key)===null;
+    const mine=DB.events.filter(e=>!e.deleted&&evKind(e)!=='external');
+    if(first){ /* do not shout about every event that already existed the first time */
+      const all={};mine.forEach(e=>all[e.id]=1);
+      try{localStorage.setItem(key,JSON.stringify(all));}catch(e){}
+      return [];
+    }
+    return mine.filter(e=>!seen[e.id]).sort((a,b)=>ymd(a.date)-ymd(b.date));
+  }catch(e){return [];}
+}
+function markEventsSeen(me){
+  try{const key='dcEvSeen:'+me.id,all={};
+    DB.events.forEach(e=>{if(!e.deleted)all[e.id]=1;});
+    localStorage.setItem(key,JSON.stringify(all));}catch(e){}
+}
+/* ================= 📅 my calendar, directly under Pending =================
+   The same view as a person's page in 👥 Team — the one Belén liked ("la semana del 10 de
+   agosto y no se te escapa"). One implementation, in store.js, so the two cannot drift. */
+function renderMyCalendar(){
+  const me=DB.currentUser,box=document.getElementById('calPanel');if(!me||!box)return;
+  box.innerHTML='<h3>📅 My calendar'+visBadge('everyone')+' <span class="hint" style="font-weight:400">— '+
+    'every task you own, on the week it falls in</span></h3><div id="calHost"></div>'+
+    '<p class="hint" style="margin-top:8px">Hover a bar for the detail · click it to open the event · '+
+    '<a href="person.html?id='+me.id+'">your full page →</a></p>';
+  try{dcTaskCalendar(document.getElementById('calHost'),me.id);}
+  catch(e){document.getElementById('calHost').innerHTML='<p class="empty">The calendar could not be drawn: '+esc(e.message||e)+'</p>';}
 }
 
 /* ================= 💬 my messages =================
@@ -1122,15 +1215,12 @@ function renderEvents(){
   let h='<h3>📅 My events &amp; tasks'+visBadge('everyone')+'</h3>';
   if(!events.length){box.innerHTML=h+'<p class="empty">No events assigned to you yet.</p>';return;}
   h+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="dot" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
-  const openT=myTasks.filter(t=>t.status!=='Done').sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
-  h+='<table style="margin-top:10px"><tr><th>Task</th><th>Event</th><th>When</th><th>Status</th></tr>';
-  if(!openT.length)h+='<tr><td colspan="4" class="empty">No open tasks — all done. 🎉</td></tr>';
-  openT.slice(0,18).forEach(t=>{const e=DB.event(t.eventId);
-    h+='<tr><td style="font-weight:600;color:var(--charcoal)">'+esc(t.title)+'</td><td>'+esc(e?e.name:'—')+'</td>'+
-      '<td>'+(t.deadline?('due '+deIso(t.deadline)):('wk '+fmtD(taskDate(t))))+'</td>'+
-      '<td><span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+t.status+'</span></td></tr>';});
-  h+='</table>'+(openT.length>18?'<p class="hint" style="margin-top:6px">Showing 18 of '+openT.length+' — <a href="person.html?id='+me.id+'">see all →</a></p>':'');
+  /* the whole list, done included — ⏳ Pending above already carries what is still open,
+     so this one is the record rather than the to-do (6 Aug 2026) */
+  h+='<p class="hint" style="margin-top:10px">Everything on your plate for these events, finished included. What is still open — and editable — is in ⏳ Pending at the top.</p>';
+  h+=dcTaskListHtml(me.id,{tasks:myTasks,limit:20,empty:'No tasks assigned to you yet.'});
   box.innerHTML=h;
+  wireTaskList(box,()=>{renderPending();renderMyCalendar();renderEvents();});
 }
 
 /* ================= 📣 at an event (fold; logic ported from the old renderAway) ================= */

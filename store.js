@@ -73,6 +73,9 @@ const COUNTRIES={Spain:'ES',Poland:'PL',Italy:'IT',Mexico:'MX',Chile:'CL',Brazil
 const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
 const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin','HR','Accounts'];
 /* access tiers (permission level, separate from job role): member = own lane; manager = stage/release; admin = everything */
+/* task-status colours. Lifted out of home.html on 6 Aug 2026 so the shared task list
+   (🙋 Me and 👥 Team) can use them — it was the only page that owned them. */
+const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
 const ACCESS=['member','manager','admin'];
 const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
 const STATUS=['To do','In progress','Done'];
@@ -116,6 +119,23 @@ const STAGES={
  ],
 };
 const ALERT_DEFS=[{key:'LD',name:'Launch Discount',off:16,optional:true},{key:'SE',name:'Super Early',off:12},{key:'EB',name:'Early Bird',off:8},{key:'LC',name:'Last Chance',off:4,ext:true}];
+/* ---------------- THE VENUE CHECKLIST every event is born with ----------------
+   Valeria's list, sent 6 Aug 2026 15:04, translated to English (the rulebook: team-wide
+   surfaces are English). Loaded into an event the first time its Venue tab is opened, so
+   the lines that are always there — there is always a screen — are already waiting; each
+   one deletes with a single ×, and new categories and items are added at any time.
+   Interpretation appears twice ON PURPOSE and that is not a mistake: the BOOTHS are an AV
+   line item, the INTERPRETER is a supplier. Whether the interpreter should be its own
+   category is still open — logistics said they'd think about it (in Spain it is contracted
+   and paid separately; in many countries the AV company brings them). */
+const VENUE_DEFAULTS=[
+  {name:'Venue',              items:['Venue','Special rate','Dinner','Networking drinks']},
+  {name:'AV',                 items:['Screen / projector','Microphones','Video production','Audio recording','Comfort screen','Interpretation booths','Wifi']},
+  {name:'Materials & branding',items:['Banners / roll-up (event)','Banners / roll-up (sponsors)','Bottles','Badges','Notebooks','Lanyards','Printed photocall','Table signs','QR codes']},
+  {name:'Tech',               items:['Registration QR','Event app','Slido']},
+  {name:'Suppliers',          items:['Photography','Interpretation']},
+  {name:'Other',              items:['Awards','Sponsored pre-registration','Raffle tickets']},
+];
 /* An EXTERNAL project writes its OWN phases — Cristina's request of 17 Jul 2026: a
    non-RENMAD job must not inherit speaker recruitment, prospecting, venue sourcing & co.
    ev.stages = {lane:[{key,name,color,d}]}, edited on the project's own page.
@@ -140,11 +160,32 @@ function evStages(ev,lane){
    without it they fall back to the RENMAD catalogue, which is what every old call meant */
 function stageList(lane,ev){return ev?evStages(ev,lane):(STAGES[lane]||[]);}
 function stageColor(lane,key,ev){const s=stageList(lane,ev).find(s=>s.key===key);return s?s.color:'#b4b2a9';}
-function stageName(lane,key,ev){const s=stageList(lane,ev).find(s=>s.key===key);return s?s.name:key;}
+/* ---- per-event stage overrides (dc_stages, 6 Aug 2026) ----
+   Three things a team can now change about a stage on THEIR event without touching the
+   catalogue every event is born with: where it starts, how wide it is, what it is called.
+   Belén's warning to logistics: a NEW event is still created with the default names, so
+   if a stage should always be called something else, say so and the default changes. */
+function stageLayOf(ev,lane,key){
+  try{return (ev&&typeof DB!=='undefined'&&DB.stageLayFor)?DB.stageLayFor(ev.id,lane,key):null;}catch(e){return null;}
+}
+function stageName(lane,key,ev){
+  const L=stageLayOf(ev,lane,key);if(L&&L.name)return L.name;
+  const s=stageList(lane,ev).find(s=>s.key===key);return s?s.name:key;}
 function stageDef(lane,key,ev){return stageList(lane,ev).find(s=>s.key===key);}
-function stageDur(ev,lane,s){const o=(ev&&ev.dur&&ev.dur[lane])||{};return Math.max(1,+(o[s.key]||s.d)||1);}
+function stageDur(ev,lane,s){
+  const L=stageLayOf(ev,lane,s.key);if(L&&L.dur!=null)return Math.max(1,+L.dur||1);
+  const o=(ev&&ev.dur&&ev.dur[lane])||{};return Math.max(1,+(o[s.key]||s.d)||1);}
+/* where a stage's left edge sits, in weeks before the event. null = chain it behind the
+   one before it, the way every event has worked until now. */
+function stageStart(ev,lane,key){const L=stageLayOf(ev,lane,key);return (L&&L.start!=null)?+L.start:null;}
 /* shared timeline layout — both overview & event page call this, so they always mirror */
-function laneTotalPre(ev,lane){return evStages(ev,lane).filter(s=>s.phase==='pre').reduce((a,s)=>a+stageDur(ev,lane,s),0);}
+function laneTotalPre(ev,lane){
+  const pre=evStages(ev,lane).filter(s=>s.phase==='pre');
+  let total=pre.reduce((a,s)=>a+stageDur(ev,lane,s),0);
+  /* a stage dragged backwards can reach further than the plain chain — the board has to
+     be wide enough to show it, or it would render off the left edge */
+  pre.forEach(s=>{const st=stageStart(ev,lane,s.key);if(st!=null)total=Math.max(total,st);});
+  return total;}
 /* how far a project reaches AFTER its start week — external only; RENMAD post-stages are
    already covered by the fixed right-hand margins on both boards */
 function postExtent(ev){if(evKind(ev)!=='external')return 0;
@@ -158,11 +199,21 @@ function layLane(ev,lane,evIdx){
     let cur=evIdx;sts.forEach(s=>{const d=stageDur(ev,lane,s);bars.push({s,x:cur,w:d});cur+=d;});
     return bars;
   }
-  const pre=sts.filter(s=>s.phase==='pre');let cur=evIdx-pre.reduce((a,s)=>a+(dur[s.key]||s.d),0);
-  pre.forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:cur,w:d});cur+=d;});
-  const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:(dur[evs.key]||evs.d)});}
-  let c2=evIdx+(evs?(dur[evs.key]||evs.d):1);
-  sts.filter(s=>s.phase==='post').forEach(s=>{const d=dur[s.key]||s.d;bars.push({s,x:c2,w:d});c2+=d;});
+  /* A stage with its own start jumps there; the ones after it chain on from where it
+     actually landed, so pulling Materials in close to the event takes the stages behind
+     it along instead of leaving them overlapping. GAPS are allowed now (a stage can
+     genuinely not have started yet) — an OVERLAP never is, so each stage is floored at
+     the end of the one before it. The first stage has nothing before it and is therefore
+     free to reach as far back as it likes. */
+  const pre=sts.filter(s=>s.phase==='pre');
+  let cur=evIdx-pre.reduce((a,s)=>a+stageDur(ev,lane,s),0), prevEnd=null;
+  pre.forEach(s=>{const d=stageDur(ev,lane,s);const st=stageStart(ev,lane,s.key);
+    let x=(st!=null)?(evIdx-st):cur;
+    if(prevEnd!=null&&x<prevEnd)x=prevEnd;
+    bars.push({s,x:x,w:d});prevEnd=x+d;cur=x+d;});
+  const evs=sts.find(s=>s.phase==='event');if(evs){bars.push({s:evs,x:evIdx,w:stageDur(ev,lane,evs)});}
+  let c2=evIdx+(evs?stageDur(ev,lane,evs):1);
+  sts.filter(s=>s.phase==='post').forEach(s=>{const d=stageDur(ev,lane,s);bars.push({s,x:c2,w:d});c2+=d;});
   return bars;
 }
 const WEEKW_STD=55; // reference week-width used only to size default substage spans (page-independent)
@@ -183,7 +234,18 @@ function ensureSubDefaults(){let dirty=false;
 /* absolute Monday date a task sits on: explicit deadline wins, else its substage's week before the event */
 function taskDate(t){const ev=DB.event(t.eventId);if(!ev)return monday(new Date());
   if(t.deadline){return monday(ymd(t.deadline));}
-  const sub=DB.substages.find(s=>s.id==t.substageId);const wk=(sub&&sub.week!=null)?sub.week:0;
+  const sub=DB.substages.find(s=>s.id==t.substageId);
+  let wk=(sub&&sub.week!=null)?sub.week:null;
+  /* a task hanging straight off a stage (no substage) is placed at the END of that
+     stage — the moment it has to be finished by — so it still lands somewhere honest on
+     the person page and in the digest instead of collapsing onto W0. */
+  if(wk==null&&t.stage){
+    const st=stageStart(ev,t.lane,t.stage);
+    if(st!=null){const d=stageDef(t.lane,t.stage,ev);wk=Math.max(0,st-(d?stageDur(ev,t.lane,d):1));}
+    else{const evIdx=evIndex(ev),bars=layLane(ev,t.lane,evIdx),b=bars.find(b=>b.s.key===t.stage);
+      if(b)wk=Math.max(0,evIdx-(b.x+b.w));}
+  }
+  if(wk==null)wk=0;
   return addDays(monday(ymd(ev.date)),-wk*7);}
 
 /* ---- date helpers ---- */
@@ -1697,6 +1759,75 @@ function notifySend(to,kind,text,link){
    She is not told about her own edits. RLS is what makes this work for everyone else:
    dc_inbox lets any signed-in person write to another person's inbox, while letting them
    read only their own — so a PM's notification reaches her and nobody else sees it. */
+/* ---------------- the request thread (6 Aug 2026) ----------------
+   Same {who,when,text|sys} shape dc_tickets already uses, so the rendering is shared.
+   sys = something the system recorded (a status change), text = somebody typing. */
+function reqLog(req,sys,text){
+  if(!req)return;
+  const me=DB.currentUser;
+  req.thread=Array.isArray(req.thread)?req.thread.slice():[];
+  req.thread.push({who:(me&&me.name)||'system',when:toISO(new Date())+' '+nowHMS().slice(0,5),
+                   sys:sys||undefined,text:text||undefined});
+}
+/* who hears about a request: the asker and the logistics desk, minus whoever just typed.
+   Deliberately not "all" — this is the volume problem Belén flagged about task emails. */
+function reqNotify(req,text){
+  try{
+    if(!req||!DB.inboxReady()||!DB.currentUser)return 0;
+    const link='event.html?id='+req.eventId+'#req';
+    const desk=DB.people.filter(p=>!p.deleted&&(''+(p.role||'')).toLowerCase()==='logistics').map(p=>p.id);
+    const ids=desk.concat([req.personId]).filter((id,i,a)=>id!=DB.currentUser.id&&a.indexOf(id)===i);
+    return ids.length?notifySend(ids,'notice',text,link):0;
+  }catch(e){return 0;}
+}
+/* ================= THE WEEKLY DIGEST (Belén, 6 Aug 2026) =================
+   Logistics asked for an email every time a task is assigned. Belén said no, and was
+   right about why: "si se cargan 200 tareas de materiales de golpe, la gente acaba harta."
+   She also killed the obvious workaround — a "send a notice? yes/no" tick per task —
+   because "es terrible, tú piensas que está saliendo y a lo mejor no está saliendo."
+   What ships instead: ONE digest of everything that landed on you this week, plus the
+   in-app notice on 🙋 Me. Computed at read time from doneAt/updated_at — no queue to
+   drain, nothing to get out of step, and it says the same thing however often you look.
+   ⚠️ THE EMAIL LEG IS NOT BUILT. The Dispatch has no mail sender of any kind today
+   (verified 6 Aug: no Resend, no SMTP, and the only edge functions are stripe-webhook,
+   web-extractor and dc-events). Sending this as mail needs a sender first. */
+function weekStartISO(d){return toISO(monday(d||new Date()));}
+function digestFor(personId,fromISO){
+  const from=fromISO||weekStartISO();
+  const mine=DB.tasksOf(personId);
+  const isNew=t=>{
+    const u=(''+(t.updated_at||'')).slice(0,10);
+    return u&&u>=from;                       // landed on (or was changed for) you this week
+  };
+  const fresh=mine.filter(isNew);
+  const mon=+monday(new Date());
+  const open=mine.filter(t=>t.status!=='Done');
+  return {
+    from:from,
+    added:fresh,
+    open:open.length,
+    overdue:open.filter(t=>(+taskDate(t))<mon).length,
+    thisWeek:open.filter(t=>{const d=+taskDate(t);return d>=mon&&d<mon+7*86400000;}),
+    done:mine.filter(t=>t.status==='Done'&&(''+(t.doneAt||'')).slice(0,10)>=from).length,
+  };
+}
+/* one line per event, so "80 lanyard tasks" reads as one sentence and not eighty */
+function digestText(personId,fromISO){
+  const d=digestFor(personId,fromISO);
+  const byEvent={};
+  d.added.forEach(t=>{const e=DB.event(t.eventId);const k=e?e.name:'—';(byEvent[k]=byEvent[k]||[]).push(t);});
+  const parts=[];
+  const keys=Object.keys(byEvent);
+  /* "added or changed", not "added": dc_tasks has no createdAt, only updated_at, so a task
+     someone re-assigned counts too. Saying so is better than implying a precision we do
+     not have. */
+  if(keys.length)parts.push('added or changed — '+
+    keys.map(k=>byEvent[k].length+' on '+k).join(', '));
+  if(d.thisWeek.length)parts.push(d.thisWeek.length+' due this week');
+  if(d.overdue)parts.push(d.overdue+' overdue');
+  if(d.done)parts.push(d.done+' finished');
+  return parts.join(' · ');
+}
 function notifyBelen(text,link){
   try{
     if(!DB.inboxReady()||!DB.currentUser)return 0;
@@ -2120,7 +2251,9 @@ function buildSeed(){
    {id:15,item:'Biometano 27',codigo:'70321',eventId:null},
    {id:16,item:'Almacenamiento 27',codigo:'70322',eventId:null},
   ];
-  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,payments:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],spxFrags:[],nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
+  return {v:STORE_VERSION,events,people,substages:subs,tasks,finance,weekly:[],projects,holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],invoices:[],invalloc:[],delegates:[],codigos,payments:[],tickets:[],logins:[],spxProps:[],spxLines:[],spxTargets:[],companyMap:[],spxEventReg:[],spxFrags:[],
+    stageLay:[],venueCats:[],venueItems:[],requests:[],
+    nextEvent:7,nextPerson:19,nextSub:sid,nextTask:tid};
 }
 
 /* ---- Supabase config: if URL set => shared cloud database + login; else local browser storage ---- */
@@ -2149,13 +2282,31 @@ window.addEventListener('online',()=>{if(_syncFails)DB.syncNow();});
 
 /* per-entity tables; column whitelists = exactly what the app owns.
    Server-managed fields (updated_at/by, doneAt/By, deleted) are never pushed. */
-const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs'};
+const TABLES={events:'dc_events',people:'dc_people',substages:'dc_substages',tasks:'dc_tasks',finance:'dc_finance',weekly:'dc_weekly',projects:'dc_projects',holidays:'dc_holidays',timesheets:'dc_timesheets',timeclock:'dc_timeclock',tcreports:'dc_tcreports',eventaway:'dc_eventaway',invoices:'dc_invoices',invalloc:'dc_invoice_alloc',delegates:'dc_delegates',codigos:'dc_codigos',payments:'dc_invoice_payments',tickets:'dc_tickets',spxProps:'dc_spx_proposals',spxLines:'dc_spx_lines',spxTargets:'dc_spx_targets',companyMap:'dc_company_map',spxEventReg:'dc_spx_events',spxFrags:'dc_spx_fragments',todos:'dc_todos',inbox:'dc_inbox',holmsgs:'dc_holiday_msgs',productos:'dc_productos',pmsgs:'dc_person_msgs',
+  stageLay:'dc_stages',venueCats:'dc_venue_cats',venueItems:'dc_venue_items',requests:'dc_requests'};
 const COLS={
   events:['id','name','topic','pm','lead','sales','city','country','date','days','prov','milestones','alerts','dur','team','markers','kind','lanes','stages','ecode',
     'acode','moneyOk'], // moneyOk = Belén has OK'd wiring this event into Money/Invoicing/SPX (migration event_money_connection_needs_belen_ok, 3 Aug) // stages tolerant (1-line SQL: dispatch_projects_phases.sql); ecode = MARKETING code (E0xx, ActiveCampaign); acode = Jesús's ACCOUNTING code — different systems, both needed for time allocation (3 Aug)
   people:['id','name','role','access','email','finance','hr','billing','salesLead','holidayDays','photo','phone','startDate','workPlace','perms'], // startDate/workPlace/perms tolerant (SQL adds them)
   substages:['id','eventId','lane','stage','name','order','week','span','type'],
-  tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status'],
+  /* substageId null = the task hangs straight off the STAGE. Valeria, 5 Aug: with 80
+     material tasks, being forced to split them across substages just to file them is
+     visual noise — "click Materials and the task list unfolds". Substages stay for the
+     teams that use them as the steps of the stage; Belén: "os voy a dar los dos".
+     assignee = the primary owner (every alarm, person page and digest reads it);
+     assignees = the whole list, primary included. notes = the short note per task. */
+  tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status','assignees','notes'],
+  /* per-event stage overrides: where a stage STARTS (weeks before the event), how wide it
+     is, and what it is called here. Its own table rather than more jsonb on dc_events
+     because dc_events is manager-only writable and Julián is a member — a stage row
+     carries its lane, so RLS can let logistics move THEIR stages and nothing else. */
+  stageLay:['id','eventId','lane','stageKey','start','dur','name'],
+  /* the venue / event overview: Category → Item · Notes, the shape of Valeria's Excel */
+  venueCats:['id','eventId','name','sort'],
+  venueItems:['id','eventId','catId','item','notes','requestId','sort'],
+  /* internal requests to logistics, per event: ask → quote in the thread → confirm →
+     the item lands in that event's venue list; closing keeps it as history */
+  requests:['id','eventId','personId','title','description','status','thread','reservedUntil','possibleSponsor','costEur','category','venueItemId','created'],
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch',
     'signedEur','signedAcc'], // signed-but-not-yet-invoiced money (migration signed_money_won_details_accounting_code, 3 Aug)
@@ -2226,6 +2377,7 @@ const COLS={
   pmsgs:['id','personId','byId','byName','text','created'],
 };
 let _pmsgReady=false,_prodReady=false,_finReady=false,_weeklyReady=false,_hrReady=false,_tcReady=false,_eventReady=false,_billReady=false,_payReady=false,_tickReady=false,_spxReady=false,_spxEvReady=false,_spxFragReady=false,_todoReady=false,_inboxReady=false,_holmsgReady=false; // optional tables (tolerant: app works without them)
+let _stageLayReady=false,_venueReady=false,_reqReady=false; // logistics round, 6 Aug 2026
 /* ---- module flags travel WITH the snapshot (30 Jul fix) ----
    A snapshot boot used to render with every flag still false, so pages showed
    "module not active — run X.sql in Supabase" although Supabase had everything;
@@ -2234,6 +2386,7 @@ let _pmsgReady=false,_prodReady=false,_finReady=false,_weeklyReady=false,_hrRead
 function _modFlags(){return {fin:_finReady,weekly:_weeklyReady,hr:_hrReady,tc:_tcReady,event:_eventReady,
   bill:_billReady,pay:_payReady,tick:_tickReady,spx:_spxReady,spxEv:_spxEvReady,spxFrag:_spxFragReady,
   todo:_todoReady,inbox:_inboxReady,holmsg:_holmsgReady,pmsg:_pmsgReady,prod:_prodReady,
+  stageLay:_stageLayReady,venue:_venueReady,req:_reqReady,
   w:{_extColsMissing:window._extColsMissing,_phaseColMissing:window._phaseColMissing,_tzReady:window._tzReady,
      _permsColReady:window._permsColReady,_holYearColMissing:window._holYearColMissing,_projEvReady:window._projEvReady,
      _claimReady:window._claimReady,_inv2Ready:window._inv2Ready,_tzColsReady:window._tzColsReady,_tdColorMissing:window._tdColorMissing}};}
@@ -2242,6 +2395,7 @@ function _setModFlags(f){if(!f)return;
   _billReady=!!f.bill;_payReady=!!f.pay;_tickReady=!!f.tick;_spxReady=!!f.spx;_spxEvReady=!!f.spxEv;
   _spxFragReady=!!f.spxFrag;_todoReady=!!f.todo;_inboxReady=!!f.inbox;_holmsgReady=!!f.holmsg;
   _pmsgReady=!!f.pmsg;_prodReady=!!f.prod;
+  _stageLayReady=!!f.stageLay;_venueReady=!!f.venue;_reqReady=!!f.req;
   Object.keys(f.w||{}).forEach(k=>{if(f.w[k]!==undefined)window[k]=f.w[k];});}
 function pickRow(r,key){const o={};COLS[key].forEach(c=>{o[c]=(r[c]===undefined?null:r[c]);});return o;}
 let _shadow=null; // last-synced picture, per table, id -> JSON string of picked row
@@ -2280,6 +2434,7 @@ const DB={
     if(!this.data.payments)this.data.payments=[]; // tolerant: older local stores predate the ledger
     if(!this.data.productos)this.data.productos=[]; // …and predate the custom-product list
     if(!this.data.pmsgs)this.data.pmsgs=[];         // …and the per-person conversation
+    ['stageLay','venueCats','venueItems','requests'].forEach(k=>{if(!this.data[k])this.data[k]=[];}); // …and the 6 Aug logistics round
     rebuildProductos();
     return this.data;
   },
@@ -2327,7 +2482,8 @@ const DB={
         projects:[],holidays:[],timesheets:[],timeclock:[],tcreports:[],eventaway:[],
         invoices:[],invalloc:[],delegates:[],codigos:[],payments:[],tickets:[],
         todos:[],inbox:[],holmsgs:[],spxProps:[],spxLines:[],spxTargets:[],
-        companyMap:[],spxFrags:[],spxEventReg:[],productos:[],pmsgs:[]};
+        companyMap:[],spxFrags:[],spxEventReg:[],productos:[],pmsgs:[],
+        stageLay:[],venueCats:[],venueItems:[],requests:[]};
       /* paged: Supabase caps a select at 1000 rows and TRUNCATES SILENTLY (audit Critical 4) */
       const paged=async tbl=>{const out=[];let from=0,page=1000;
         for(;;){const r=await sb.from(tbl).select('*').eq('deleted',false).order('id').range(from,from+page-1);
@@ -2488,6 +2644,29 @@ const DB={
         }catch(e){console.warn('requests module not ready:',e.message||e);}
       })();
 
+      /* ---- the logistics round (6 Aug 2026), all three tolerant like everything above ---- */
+      _stageLayReady=false;
+      const pStageLay=(async()=>{
+        try{const r=await sb.from('dc_stages').select('*').eq('deleted',false).order('id');
+          if(r.error)throw r.error;D.stageLay=r.data||[];_stageLayReady=true;
+        }catch(e){console.warn('stage layout not ready:',e.message||e);}
+      })();
+      _venueReady=false;
+      const pVenue=(async()=>{
+        try{const [c,i]=await Promise.all([
+            sb.from('dc_venue_cats').select('*').eq('deleted',false).order('sort'),
+            sb.from('dc_venue_items').select('*').eq('deleted',false).order('sort')]);
+          if(c.error)throw c.error;if(i.error)throw i.error;
+          D.venueCats=c.data||[];D.venueItems=i.data||[];_venueReady=true;
+        }catch(e){console.warn('venue module not ready:',e.message||e);}
+      })();
+      _reqReady=false;
+      const pReq=(async()=>{
+        try{const r=await sb.from('dc_requests').select('*').eq('deleted',false).order('id');
+          if(r.error)throw r.error;D.requests=r.data||[];_reqReady=true;
+        }catch(e){console.warn('event requests not ready:',e.message||e);}
+      })();
+
       /* personal to-dos + notifications inbox (tolerant — run dispatch_me_inbox.sql to enable) */
       _todoReady=false;
       const pTodo=(async()=>{
@@ -2544,7 +2723,7 @@ const DB={
         }catch(e){console.warn('SPX event registry not ready:',e.message||e);}
       })();
 
-      await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPmsg,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg]);
+      await Promise.all([pCore,pClaim,pFin,pWeekly,pHr,pTc,pAway,pBill,pInv2,pProd,pPmsg,pPay,pTick,pTodo,pInbox,pHolmsg,pSpx,pFrag,pReg,pStageLay,pVenue,pReq]);
       if(!D.people.length){
         let em='';try{const {data}=await sb.auth.getUser();em=(data&&data.user&&data.user.email)||'';}catch(e){}
         throw new Error('No data is visible for your login'+(em?' ('+em+')':'')+'. Either your email is not in the personnel roster yet — ask Belén to add it (exactly as you log in) — or, if this is everyone, dispatch_upgrade.sql has not been run in Supabase.');
@@ -2770,7 +2949,29 @@ const DB={
   subsFor(eventId,lane,stage){return this.data.substages.filter(s=>s.eventId==eventId&&s.lane===lane&&s.stage===stage).sort((a,b)=>a.order-b.order);},
   tasksForSub(subId){return this.data.tasks.filter(t=>t.substageId==subId);},
   tasksFor(eventId){return this.data.tasks.filter(t=>t.eventId==eventId);},
-  tasksOf(personId){return this.data.tasks.filter(t=>t.assignee==personId);},
+  /* ---- multi-assignee (Valeria, 5 Aug: "@JulianUribe, @CintiaHernandez") ----
+     assignee is still the primary owner. taskPeople is the full list, and it is what
+     every "is this mine?" question must ask from now on, or a co-assignee would never
+     see the task on their own page. */
+  taskPeople(t){
+    const out=[];
+    if(t&&t.assignee!=null&&t.assignee!=='')out.push(+t.assignee);
+    (Array.isArray(t&&t.assignees)?t.assignees:[]).forEach(id=>{if(id!=null&&out.indexOf(+id)<0)out.push(+id);});
+    return out;
+  },
+  taskIsMine(t,personId){return this.taskPeople(t).indexOf(+personId)>=0;},
+  tasksOf(personId){return this.data.tasks.filter(t=>this.taskIsMine(t,personId));},
+  /* every task filed under a stage — the ones hanging straight off it AND the ones
+     inside its substages. This is what "click Materials and see the whole list" means. */
+  tasksForStage(eventId,lane,stageKey){
+    const subIds=this.substages.filter(s=>!s.deleted&&s.eventId==eventId&&s.lane===lane&&s.stage===stageKey).map(s=>s.id);
+    return this.data.tasks.filter(t=>t.eventId==eventId&&t.lane===lane&&t.stage===stageKey
+      && (t.substageId==null||subIds.indexOf(t.substageId)>=0));
+  },
+  /* only the ones with no substage — the flat list Valeria asked for */
+  tasksOnStage(eventId,lane,stageKey){
+    return this.data.tasks.filter(t=>t.eventId==eventId&&t.lane===lane&&t.stage===stageKey&&t.substageId==null);
+  },
   currentUser:null,
   get finance(){return this.data.finance||[];},
   financeFor(eventId){return (this.data.finance||[]).find(f=>f.eventId==eventId);},
@@ -2846,6 +3047,101 @@ const DB={
   /* ---- team request box (tickets about the Dispatch Center itself) ---- */
   get tickets(){return this.data.tickets||[];},
   tickReady(){return !USE_SUPABASE||_tickReady;},
+
+  /* ================= THE LOGISTICS ROUND (6 Aug 2026) =================
+     Belén, after the meeting with Julián and Valeria: the logistics timeline is
+     theirs. Everyone READS it — "anybody can check any time" is the whole point of
+     the Dispatch — but only the two of them and Belén MOVE it, so that next year,
+     with Biometano sitting on top of everything else, nobody drags someone else's
+     stage by accident. Mirrors dc_can_logistics() in SQL, override included, so the
+     buttons the page shows are exactly the writes the server will accept. */
+  canLogistics(){
+    const o=permOverride(this.currentUser,'logistics.plan');
+    if(o&&o.edit!=null)return !!o.edit;
+    const u=this.currentUser;
+    return !!(u&&((''+(u.role||'')).toLowerCase()==='logistics'||isBelenP(u)));
+  },
+  /* the one question every timeline control asks. An external project is still run by
+     its own team, exactly as dc_substages/dc_tasks already allow. */
+  canEditLane(lane,ev){
+    if(ev&&evKind(ev)==='external')return true;
+    if(lane==='logistics')return this.canLogistics();
+    return this.canManage();
+  },
+  /* per-event stage overrides (start week / width / name) */
+  get stageLay(){return this.data.stageLay||[];},
+  stageLayReady(){return !USE_SUPABASE||_stageLayReady;},
+  stageLayFor(eventId,lane,stageKey){
+    return this.stageLay.find(s=>!s.deleted&&s.eventId==eventId&&s.lane===lane&&s.stageKey===stageKey)||null;
+  },
+  /* get-or-create — every stage edit goes through here so the row shape stays in one place */
+  stageLayRow(eventId,lane,stageKey){
+    let r=this.stageLayFor(eventId,lane,stageKey);
+    if(!r){r={id:this.newId(),eventId:+eventId,lane:lane,stageKey:stageKey,start:null,dur:null,name:null};
+      this.data.stageLay=this.data.stageLay||[];this.data.stageLay.push(r);}
+    return r;
+  },
+  /* venue / event overview */
+  get venueCats(){return this.data.venueCats||[];},
+  get venueItems(){return this.data.venueItems||[];},
+  venueReady(){return !USE_SUPABASE||_venueReady;},
+  venueCatsFor(eventId){return this.venueCats.filter(c=>!c.deleted&&c.eventId==eventId).sort((a,b)=>(a.sort||0)-(b.sort||0)||a.id-b.id);},
+  venueItemsFor(catId){return this.venueItems.filter(i=>!i.deleted&&i.catId==catId).sort((a,b)=>(a.sort||0)-(b.sort||0)||a.id-b.id);},
+  /* event requests */
+  get requests(){return this.data.requests||[];},
+  reqReady(){return !USE_SUPABASE||_reqReady;},
+  requestsFor(eventId){return this.requests.filter(r=>!r.deleted&&r.eventId==eventId).sort((a,b)=>b.id-a.id);},
+  /* open = still waiting on logistics. Answered counts: the asker has an answer but the
+     line is not in the venue list yet, so by Belén's rule it is not yet asked-and-settled. */
+  requestsOpen(eventId){return this.requestsFor(eventId).filter(r=>r.status==='open'||r.status==='answered');},
+  /* the default checklist, dropped into an event the first time somebody opens its Venue
+     tab. Returns how many lines it wrote so the page can say so. Never runs twice: an
+     event that already has a category is one somebody has already worked on. */
+  seedVenue(eventId){
+    if(!this.canLogistics())return 0;
+    if(this.venueCatsFor(eventId).length)return 0;
+    let n=0;
+    VENUE_DEFAULTS.forEach((c,ci)=>{
+      const cat={id:this.newId(),eventId:+eventId,name:c.name,sort:(ci+1)*10};
+      this.data.venueCats=this.data.venueCats||[];this.data.venueCats.push(cat);
+      c.items.forEach((it,ii)=>{
+        this.data.venueItems=this.data.venueItems||[];
+        this.data.venueItems.push({id:this.newId(),eventId:+eventId,catId:cat.id,item:it,notes:'',requestId:null,sort:(ii+1)*10});
+        n++;});
+    });
+    return n;
+  },
+  addVenueCat(eventId,name){
+    const sort=(this.venueCatsFor(eventId).reduce((a,c)=>Math.max(a,c.sort||0),0))+10;
+    const cat={id:this.newId(),eventId:+eventId,name:name||'New category',sort:sort};
+    this.data.venueCats=this.data.venueCats||[];this.data.venueCats.push(cat);return cat;
+  },
+  addVenueItem(eventId,catId,item,notes,requestId){
+    const sort=(this.venueItemsFor(catId).reduce((a,i)=>Math.max(a,i.sort||0),0))+10;
+    const row={id:this.newId(),eventId:+eventId,catId:+catId,item:item||'',notes:notes||'',requestId:requestId||null,sort:sort};
+    this.data.venueItems=this.data.venueItems||[];this.data.venueItems.push(row);return row;
+  },
+  /* the whole point of the request flow: when logistics confirms, the thing that was
+     asked for stops living in a conversation and becomes a line on the event.
+     Belén: "si no está ahí, no está pedido." */
+  confirmRequest(req,catId){
+    if(!req||!this.canLogistics())return null;
+    let cid=catId;
+    if(!cid){
+      const cats=this.venueCatsFor(req.eventId);
+      const want=(req.category||'Other').toLowerCase();
+      const hit=cats.find(c=>(c.name||'').toLowerCase()===want);
+      cid=hit?hit.id:(cats.length?cats[cats.length-1].id:this.addVenueCat(req.eventId,'Other').id);
+    }
+    const money=(req.costEur!=null&&req.costEur!=='')
+      ? (typeof finFmt==='function'?finFmt(req.costEur):(req.costEur+' €')) : '';
+    const notes=[req.description,money,req.reservedUntil?('held until '+deIso(req.reservedUntil)):'']
+                 .filter(Boolean).join(' · ');
+    const row=this.addVenueItem(req.eventId,cid,req.title,notes,req.id);
+    req.venueItemId=row.id;req.status='confirmed';
+    reqLog(req,'confirmed — added to the venue list');
+    return row;
+  },
   /* personal to-dos + notifications inbox */
   get todos(){return this.data.todos||[];},
   todoReady(){return !USE_SUPABASE||_todoReady;},
@@ -3101,6 +3397,35 @@ const DB={
       if(!g.deleted&&fins.indexOf(g.financeId)>=0)keys[(''+g.eventKey).trim().toLowerCase()]=1;});
     const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
     return this.spxWonDealsWhere(l=>!!(keys[nk(l.eventKey)]||(l.eventId!=null&&fins.indexOf(+l.eventId)>=0)));},
+  /* the same walk WITHOUT the Won gate — every contract touching this event whatever
+     stage it is at. Belén, 6 Aug 2026: the block inside the event that says who has sold
+     what disappeared when the SPX tab was gated on Won (v99), so an event with proposals
+     out and nothing signed yet showed no tab at all and you had to go to reporting to
+     find the responsables. Won rows are still the ones that carry delivery details. */
+  dealsForEvent(evId){
+    if(!this.spxReady||!this.spxReady()||evId==null)return [];
+    const fins=(this.finance||[]).filter(f=>!f.deleted&&f.eventId==evId).map(f=>f.id);
+    if(!fins.length)return [];
+    const keys={};(this.spxEventReg||[]).forEach(g=>{
+      if(!g.deleted&&fins.indexOf(g.financeId)>=0)keys[(''+g.eventKey).trim().toLowerCase()]=1;});
+    const nk=k=>(''+(k==null?'':k)).trim().toLowerCase();
+    const match=l=>!!(keys[nk(l.eventKey)]||(l.eventId!=null&&fins.indexOf(+l.eventId)>=0));
+    const out=[];
+    (this.spxProps||[]).forEach(p=>{
+      if(p.active===false||p.superseded)return;
+      let eur=0,hit=false;
+      (this.spxLinesFor(p.id)||[]).forEach(l=>{if(!match(l))return;hit=true;eur+=(+l.valueEur||0);});
+      if(!hit)return;
+      const won=(p.stage==='Won'||p.salesStatus==='Confirmed');
+      out.push({id:p.id,company:p.company||'—',owner:p.responsableName||p.responsable||'',
+        eur:eur,won:won,stage:p.stage||p.salesStatus||'',lost:p.stage==='Lost',
+        sentAt:p.fechaEnvio||null,followAt:p.fechaSeguimiento||null,
+        signedAt:p.signedAt||null,contents:p.contents||'',packageTier:p.packageTier||'',
+        branding:p.branding||'',attendeesN:p.attendeesN,speakersN:p.speakersN,
+        stand:p.stand,brandedItems:p.brandedItems||'',notes:p.wonNotes||'',
+        complete:won?this.spxDeliveryComplete(p):false});
+    });
+    return out.sort((a,b)=>(b.won?1:0)-(a.won?1:0)||(b.eur||0)-(a.eur||0));},
   /* by SPX REGISTRY event (Money → Sponsorship, where the rows ARE registry events) */
   wonDealsForSpxKey(key){
     const nk=k=>(''+(k==null?'':k)).trim().toLowerCase(),want=nk(key);
@@ -3441,7 +3766,9 @@ const DB={
      (all of this is also enforced server-side by row-level security) */
   canEditStatus(t){if(this.canManage())return true;
     const e=t&&this.event(t.eventId);if(e&&evKind(e)==='external')return true; // a project's team runs its own tasks
-    return !!(t&&this.currentUser&&t.assignee==this.currentUser.id);},
+    if(t&&t.lane==='logistics'&&this.canLogistics())return true;
+    /* a co-assignee owns the task as much as the primary one does */
+    return !!(t&&this.currentUser&&this.taskIsMine(t,this.currentUser.id));},
 };
 /* ================= 🔐 THE PERMISSION REGISTRY (Belén only) =================
    Belén, 29 Jul: "I'd like a list of the permissions each person has, and what they can
@@ -3473,6 +3800,15 @@ const PERMS=[
   {key:'proj.plan', area:'📅 Projects', label:'Anyone’s task status & the plan itself',
    see:TEAM_ONLY, edit:p=>p.access==='admin'||p.access==='manager',
    seeTxt:'Everyone on the team sees the plan', editTxt:'Managers & admins (plus anyone on a non-RENMAD project)'},
+  /* Belén, 6 Aug 2026, after the meeting with Julián and Valeria: the logistics lane,
+     the Venue list and the request box are theirs. Everyone reads them; only the two
+     logistics people and Belén move them — deliberately NOT every manager, and not
+     every admin, so next year nobody drags Biometano's stages by accident.
+     Change your mind about a person here and dc_can_logistics() honours it too. */
+  {key:'logistics.plan', area:'📅 Projects', label:'The logistics lane, the Venue list & requests',
+   see:TEAM_ONLY, edit:p=>(''+(p.role||'')).toLowerCase()==='logistics'||isBelenP(p),
+   seeTxt:'Everyone on the team — anybody can check what is booked, any time',
+   editTxt:'Logistics (Julián, Valeria) and Belén — no other manager or admin'},
   {key:'team.roster', area:'👥 Team', label:'The roster — people, roles, emails',
    see:EVERYONE, edit:p=>p.access==='admin',
    seeTxt:'The whole team list', editTxt:'Admins: add, edit, remove, set the tier'},
@@ -3594,6 +3930,9 @@ function subscribeRealtime(){
       if((k==='invoices'||k==='invalloc'||k==='delegates'||k==='codigos')&&!_billReady)return;
       if(k==='payments'&&!_payReady)return;
       if(k==='tickets'&&!_tickReady)return;
+      if(k==='stageLay'&&!_stageLayReady)return;
+      if((k==='venueCats'||k==='venueItems')&&!_venueReady)return;
+      if(k==='requests'&&!_reqReady)return;
       if((((k==='spxProps'||k==='spxLines'||k==='spxTargets'||k==='companyMap')&&!_spxReady)||(k==='spxEventReg'&&!_spxEvReady)))return;
       ch.on('postgres_changes',{event:'*',schema:'public',table:TABLES[k]},payload=>applyRemote(k,payload.new));
     });
@@ -4011,6 +4350,191 @@ function resizeImage(file,cb,size){size=size||160;const rd=new FileReader();
     const s=Math.min(img.width,img.height),cv=document.createElement('canvas');cv.width=cv.height=size;
     const cx=cv.getContext('2d');cx.drawImage(img,(img.width-s)/2,(img.height-s)/2,s,s,0,0,size,size);
     cb(cv.toDataURL('image/jpeg',0.82));};img.onerror=()=>cb(null);img.src=e.target.result;};
+  rd.onerror=()=>cb(null);rd.readAsDataURL(file);}
+/* ================= 📅 THE TASK CALENDAR (shared, 6 Aug 2026) =================
+   The horizontal "week of 10 August and it does not escape you" view. It used to live
+   only on a person's page in 👥 Team; Belén asked for it on 🙋 Me too, right under the
+   pending block. Lifted here rather than copied so the two can never drift (rulebook:
+   prefer lifting the helper into store.js). It injects its own scoped CSS, so it works
+   on any page without that page owning a stylesheet for it.
+   Rows = events, bars = that person's tasks placed by taskDate(). */
+const DCTC_W=24, DCTC_TASKH=17, DCTC_TGAP=3, DCTC_ROWPAD=7, DCTC_TOPH=34;
+function dctcCss(){
+  if(document.getElementById('dctcCss'))return;
+  const s=document.createElement('style');s.id='dctcCss';
+  s.textContent=
+  '.dctc-wrap{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow-x:auto;overflow-y:hidden}'+
+  '.dctc{position:relative;font-size:12px}'+
+  '.dctc-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}.dctc-row:last-child{border-bottom:none}'+
+  '.dctc-corner{flex:0 0 200px;position:sticky;left:0;z-index:6;background:var(--card);border-right:2px solid var(--line)}'+
+  '.dctc-head{position:sticky;left:0;z-index:5;flex:0 0 200px;background:var(--card);border-right:2px solid var(--line);padding:7px 10px;display:flex;flex-direction:column;gap:2px;justify-content:center}'+
+  '.dctc-head .nm{font-weight:700;font-size:13px;line-height:1.15;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--charcoal)}'+
+  '.dctc-head .nm:hover .t{text-decoration:underline;color:var(--orange)}'+
+  '.dctc-head .chip{width:10px;height:10px;border-radius:3px;flex:0 0 auto}'+
+  '.dctc-head .ln{font-size:10px;color:var(--muted)}'+
+  '.dctc-hbody{position:relative}'+
+  '.dctc-mlabel{position:absolute;top:2px;height:16px;font-size:11px;color:var(--charcoal);font-weight:600;padding-left:4px;white-space:nowrap;border-left:1px solid var(--line)}'+
+  '.dctc-wtick{position:absolute;top:20px;height:14px;font-size:9px;color:#a9a79f;text-align:center;border-left:1px solid #efece5}'+
+  '.dctc-body{position:relative;flex:1 1 auto}'+
+  '.dctc-bg{position:absolute;inset:0;z-index:0}'+
+  '.dctc-band{position:absolute;top:0;bottom:0;z-index:1;background:repeating-linear-gradient(45deg,rgba(150,147,140,.14) 0 5px,rgba(150,147,140,0) 5px 10px)}'+
+  '.dctc-band.skip{background:repeating-linear-gradient(45deg,rgba(120,118,112,.24) 0 5px,rgba(120,118,112,.04) 5px 10px)}'+
+  '.dctc-w0{position:absolute;z-index:3;width:2px;background:#111}'+
+  '.dctc-w0lab{position:absolute;z-index:4;background:#111;color:#fff;font-size:8px;font-weight:800;padding:0 3px;border-radius:2px}'+
+  '.dctc-task{position:absolute;z-index:5;height:17px;border-radius:3px;font-size:10px;font-weight:600;line-height:17px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border:1px solid rgba(0,0,0,.18)}'+
+  '.dctc-task.done{opacity:.55;text-decoration:line-through}'+
+  '.dctc-task.prog{box-shadow:inset 3px 0 0 var(--orange)}'+
+  '.dctc-today{position:absolute;z-index:7;width:2px;background:var(--orange);top:0}'+
+  '.dctc-todaylab{position:absolute;z-index:9;background:var(--orange);color:#fff;font-size:8px;font-weight:800;padding:0 4px;border-radius:2px;top:1px}'+
+  '.dctc-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center;margin:6px 0 8px}'+
+  '.dctc-legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-2px;margin-right:4px}'+
+  '#dctcTip{position:fixed;z-index:50;background:#2b2b2b;color:#fff;font-size:11px;padding:4px 8px;border-radius:5px;pointer-events:none;display:none;white-space:nowrap;max-width:340px;line-height:1.4}'+
+  /* the shared task list carries its own table styling so it looks the same on any page */
+  '.dctl{width:100%;border-collapse:collapse;font-size:13px}'+
+  '.dctl th,.dctl td{text-align:left;padding:6px 9px;border-bottom:1px solid #efede8;vertical-align:top}'+
+  '.dctl th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}'+
+  '.dctl input,.dctl select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);width:100%}'+
+  '.dctl .st{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;color:#fff;white-space:nowrap}'+
+  '.dctl .empty{color:var(--muted);font-style:italic}'+
+  '.dctl .hint{font-size:11px;color:var(--muted)}';
+  document.head.appendChild(s);
+  const t=document.createElement('div');t.id='dctcTip';document.body.appendChild(t);
+}
+function dctcTip(x,y,html){const t=document.getElementById('dctcTip');if(!t)return;
+  t.innerHTML=html;t.style.display='block';t.style.left=(x+13)+'px';t.style.top=(y+14)+'px';}
+function dctcHideTip(){const t=document.getElementById('dctcTip');if(t)t.style.display='none';}
+/* which events belong on this person's calendar */
+function dctcEvents(personId){
+  const p=DB.person(personId);
+  const mine=DB.tasksOf(personId);
+  const ids=new Set(mine.map(t=>t.eventId));
+  DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==personId))ids.add(ev.id);});
+  if(p&&p.access==='admin')DB.events.forEach(e=>ids.add(e.id));   // admins oversee every event
+  return DB.events.filter(e=>ids.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
+}
+function dcTaskCalendar(host,personId,opts){
+  opts=opts||{};
+  if(!host)return;
+  dctcCss();
+  const mine=DB.tasksOf(personId), events=dctcEvents(personId);
+  if(!events.length){host.innerHTML='<p class="empty" style="padding:14px">No events or tasks assigned yet.</p>';return;}
+  const legend='<div class="dctc-legend"><span><span class="sw" style="background:#A9CBEE"></span>PM</span>'+
+    '<span><span class="sw" style="background:#FFC9A3"></span>Marketing</span>'+
+    '<span><span class="sw" style="background:#BFE0A0"></span>Sales</span>'+
+    '<span><span class="sw" style="background:#ECCA46"></span>Logistics</span>'+
+    '<span><span class="sw" style="background:#111"></span>Event week</span>'+
+    '<span style="color:#b9b6ad">✓ done · line = today</span></div>';
+  host.innerHTML=legend+'<div class="dctc-wrap"><div class="dctc"></div></div>';
+  const wrap=host.querySelector('.dctc-wrap'), grid=host.querySelector('.dctc');
+  const W=DCTC_W;
+  const dts=[];mine.forEach(t=>dts.push(+taskDate(t)));events.forEach(e=>dts.push(+monday(ymd(e.date))));dts.push(+monday(new Date()));
+  const start=addDays(monday(new Date(Math.min.apply(null,dts))),-2*7);
+  const end=addDays(monday(new Date(Math.max.apply(null,dts))),3*7);
+  const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*W;
+  const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
+  const wcol=d=>Math.round((+monday(d)-+start)/(7*86400000));
+
+  const hrow=document.createElement('div');hrow.className='dctc-row';
+  hrow.innerHTML='<div class="dctc-corner" style="min-height:'+DCTC_TOPH+'px"></div>';
+  const hb=document.createElement('div');hb.className='dctc-hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+DCTC_TOPH+'px';
+  for(let w=0;w<NW;w++){const d=addDays(start,w*7);
+    if(d.getDate()<=7){const ml=document.createElement('div');ml.className='dctc-mlabel';ml.style.left=(w*W)+'px';
+      ml.textContent=MON[d.getMonth()]+(d.getMonth()===0?" '"+String(d.getFullYear()).slice(2):'');hb.appendChild(ml);}
+    const wt=document.createElement('div');wt.className='dctc-wtick';wt.style.cssText='left:'+(w*W)+'px;width:'+W+'px';wt.textContent=d.getDate();hb.appendChild(wt);}
+  if(todayIdx>=0&&todayIdx<NW){const tl=document.createElement('div');tl.className='dctc-todaylab';tl.style.left=(todayIdx*W)+'px';tl.textContent='TODAY';hb.appendChild(tl);}
+  hrow.appendChild(hb);grid.appendChild(hrow);
+
+  events.forEach(ev=>{
+    const evCol=wcol(monday(ymd(ev.date)));
+    const rowTasks=mine.filter(t=>t.eventId===ev.id);
+    const items=rowTasks.map(t=>{const c=wcol(taskDate(t));return {t,c,x:c*W,w:Math.max((t.title||'').length*6+22,44)};}).sort((a,b)=>a.x-b.x);
+    const rowRight=[];items.forEach(it=>{let r=rowRight.findIndex(rr=>rr<=it.x-3);if(r<0){r=rowRight.length;rowRight.push(0);}rowRight[r]=it.x+it.w;it.row=r;});
+    const rows=Math.max(rowRight.length,1), bodyH=DCTC_ROWPAD+rows*(DCTC_TASKH+DCTC_TGAP);
+
+    const row=document.createElement('div');row.className='dctc-row';
+    const head=document.createElement('div');head.className='dctc-head';
+    head.innerHTML='<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span></div>'+
+      '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+' · '+rowTasks.length+' task'+(rowTasks.length===1?'':'s')+'</div>';
+    head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
+
+    const body=document.createElement('div');body.className='dctc-body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
+    const gb=document.createElement('div');gb.className='dctc-bg';
+    gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(W-1)+'px,#efece5 '+(W-1)+'px,#efece5 '+W+'px)';body.appendChild(gb);
+    for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);
+      if(c.w<1){const b=document.createElement('div');b.className='dctc-band'+(c.w===0?' skip':'');
+        b.style.cssText+=';left:'+(w*W)+'px;width:'+W+'px';b.title=c.why;body.appendChild(b);}}
+    if(evCol>=0&&evCol<NW){const w0=document.createElement('div');w0.className='dctc-w0';w0.style.cssText='left:'+(evCol*W)+'px;height:'+bodyH+'px';body.appendChild(w0);
+      const w0l=document.createElement('div');w0l.className='dctc-w0lab';w0l.style.cssText='left:'+(evCol*W+3)+'px;top:2px';w0l.textContent='EVENT';body.appendChild(w0l);}
+    if(todayIdx>=0&&todayIdx<NW){const tln=document.createElement('div');tln.className='dctc-today';tln.style.cssText='left:'+(todayIdx*W)+'px;height:'+bodyH+'px';body.appendChild(tln);}
+    items.forEach(it=>{const t=it.t, col=stageColor(t.lane,t.stage,ev);
+      const el=document.createElement('div');el.className='dctc-task'+(t.status==='Done'?' done':t.status==='In progress'?' prog':'');
+      el.style.cssText='left:'+(it.x+2)+'px;top:'+(DCTC_ROWPAD+it.row*(DCTC_TASKH+DCTC_TGAP))+'px;width:'+(it.w)+'px;height:'+DCTC_TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
+      el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
+      const sub=DB.substages.find(s=>s.id==t.substageId);
+      const who=DB.taskPeople(t).map(id=>DB.personName(id)).join(', ');
+      el.addEventListener('mousemove',e=>dctcTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage,ev))+
+        (sub?' · '+esc(sub.name):'')+'<br>'+(t.deadline?('due '+deIso(t.deadline)):('week of '+fmtD(taskDate(t))))+' · '+esc(t.status)+
+        (who?('<br>'+esc(who)):'')+(t.notes?('<br><i>'+esc(t.notes)+'</i>'):'')));
+      el.addEventListener('mouseleave',dctcHideTip);
+      el.onclick=()=>location.href='event.html?id='+ev.id;
+      body.appendChild(el);});
+    row.appendChild(head);row.appendChild(body);grid.appendChild(row);
+  });
+  /* open on today, the way every other timeline in the app does */
+  if(opts.scroll!==false)wrap.scrollLeft=Math.max(0,todayIdx*W-40);
+}
+
+/* ---- the editable task list, shared by 🙋 Me and 👥 Team (Belén, 6 Aug 2026) ----
+   "desde ahí no se puede cambiar el estatus — hay que entrar proyecto por proyecto."
+   Status and notes are editable right here; everything else stays where it is decided. */
+function dcTaskListHtml(personId,opts){
+  opts=opts||{};
+  const tasks=(opts.tasks||DB.tasksOf(personId)).slice()
+    .sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
+  const lim=opts.limit||0;
+  const shown=lim?tasks.slice(0,lim):tasks;
+  let h='<table class="dctl"><tr><th>Task</th><th>Event</th><th style="width:110px">When</th>'+
+    '<th style="width:170px">Notes</th><th style="width:120px">Status</th></tr>';
+  if(!shown.length)h+='<tr><td colspan="5" class="empty">'+(opts.empty||'Nothing open — all done. 🎉')+'</td></tr>';
+  shown.forEach(t=>{
+    const e=DB.event(t.eventId), canS=DB.canEditStatus(t);
+    const late=t.status!=='Done'&&(+taskDate(t))<(+monday(new Date()));
+    const others=DB.taskPeople(t).filter(id=>id!=personId);
+    h+='<tr>'+
+      '<td style="font-weight:600;color:var(--charcoal)"><a href="event.html?id='+t.eventId+'" style="color:inherit;text-decoration:none">'+esc(t.title||'')+'</a>'+
+        (others.length?'<div class="hint" style="font-weight:400">with '+esc(others.map(id=>DB.personName(id)).join(', '))+'</div>':'')+'</td>'+
+      '<td>'+esc(e?e.name:'—')+'</td>'+
+      '<td'+(late?' style="color:var(--orange);font-weight:600"':'')+'>'+(t.deadline?('due '+deIso(t.deadline)):('wk '+fmtD(taskDate(t))))+'</td>'+
+      '<td>'+(canS?'<input data-dtl="notes" data-id="'+t.id+'" value="'+esc(t.notes||'')+'" placeholder="short note">'
+                  :(t.notes?esc(t.notes):'<span class="empty">—</span>'))+'</td>'+
+      '<td>'+(canS?('<select data-dtl="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>')
+                  :('<span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+esc(t.status||'')+'</span>'))+'</td></tr>';
+  });
+  h+='</table>';
+  if(lim&&tasks.length>lim)h+='<p class="hint" style="margin-top:6px">Showing '+lim+' of '+tasks.length+
+    ' — <a href="person.html?id='+personId+'">see all →</a></p>';
+  return h;
+}
+function wireTaskList(box,after){
+  if(!box)return;
+  box.querySelectorAll('[data-dtl]').forEach(el=>el.onchange=async()=>{
+    const t=DB.tasks.find(x=>x.id==el.dataset.id);if(!t)return;
+    t[el.dataset.dtl]=el.value;
+    await DB.saveNow();
+    if(typeof after==='function')after();
+  });
+}
+/* resizeImage() centre-CROPS to a square, which is right for an avatar and wrong for
+   anything you actually have to read. This one fits the whole image inside maxDim and
+   keeps its shape — floor plans, room photos (6 Aug 2026). */
+function resizeImageFit(file,cb,maxDim){maxDim=maxDim||1400;const rd=new FileReader();
+  rd.onload=e=>{const img=new Image();img.onload=()=>{
+    const sc=Math.min(1,maxDim/Math.max(img.width,img.height));
+    const w=Math.max(1,Math.round(img.width*sc)),h=Math.max(1,Math.round(img.height*sc));
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+    const cx=cv.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,w,h);   // a transparent PNG plan must not go black
+    cx.drawImage(img,0,0,w,h);
+    cb(cv.toDataURL('image/jpeg',0.85));};img.onerror=()=>cb(null);img.src=e.target.result;};
   rd.onerror=()=>cb(null);rd.readAsDataURL(file);}
 /* avatar HTML: the photo, or a coloured initials circle */
 function avatarHtml(p,px){px=px||34;const init=(p.name||'?').split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();

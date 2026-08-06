@@ -99,12 +99,17 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=110"></script>
+<script src="store.js?v=112"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
 const id=+new URLSearchParams(location.search).get('id');
 let ev=null, selSub=null, dragMk=null, dragW0=null, dragSub=null, expandedLane=null, curTab='time', delFilter='all';
+/* 6 Aug 2026 — a STAGE can now be selected (click it to get its whole task list, no
+   substage required) and dragged (move the whole stage earlier or later). selStage is
+   {lane,key}; the two selections are exclusive — you are either looking at a stage or at
+   one of its substages. */
+let selStage=null, dragStage=null;
 let ZOOM=(parseFloat(localStorage.getItem('evZoom'))||1);
 let WEEKW=Math.round(55*ZOOM), WD=WEEKW/5;
 const TOPH=30, STGH=21, SUBH=21, GAP=1, LANEPAD=3;
@@ -149,6 +154,17 @@ function canEditPlan(){
   if(o&&o.edit!=null)return !!o.edit||evKind(ev)==='external';   // per-cell grant/revoke from the 🔐 panel
   return DB.canManage()||evKind(ev)==='external';
 }
+/* Per-LANE from 6 Aug 2026. The logistics lane belongs to logistics: everyone reads it,
+   only Julián, Valeria and Belén move it. Every control on the timeline asks this instead
+   of canEditPlan() so what the page offers is exactly what RLS will accept — the rule that
+   keeps the diff-sync out of a retry loop. */
+function canEditLane(lane){
+  if(evKind(ev)==='external')return true;                  // a project's own team runs it
+  if(lane==='logistics')return DB.canLogistics();
+  return canEditPlan();
+}
+/* the Venue list and the request answers are the logistics desk's, on every event */
+function canVenue(){return evKind(ev)==='external'?canEditPlan():DB.canLogistics();}
 function phasesOf(lane){return evStages(ev,lane).map(s=>Object.assign({},s));}
 function writePhases(lane,arr){
   ev.stages=ev.stages||{};
@@ -230,9 +246,14 @@ function render(){
       return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
       (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
     '<div class="etabs"><button class="on" data-et="time">Timeline</button>'+(evKind(ev)!=='external'?'<button data-et="eur">€ Results</button>'+
-      /* rulebook: no tab ships empty — the SPX tab appears once something is sold */
-      (wonDeals().length?'<button data-et="spx">💼 SPX</button>':'')+
-      '<button data-et="imp">Impact</button><button data-et="del">Delegates</button>':'')+'</div>'+
+      /* 6 Aug 2026: the Won gate is GONE. It was the rulebook's "no tab ships empty" read
+         too literally — an event with proposals out and nothing signed yet showed no tab,
+         and Belén had to go to reporting to find who was selling it. The tab now appears
+         as soon as sales has touched the event at all, Won or not. */
+      (dealsAny().length?'<button data-et="spx">💼 Sales</button>':'')+
+      '<button data-et="imp">Impact</button><button data-et="del">Delegates</button>'+
+      '<button data-et="ven">🏛 Venue</button>'+
+      '<button data-et="req">🙋 Requests'+reqBadge()+'</button>':'')+'</div>'+
     '<div id="sec-time">'+
     '<div class="panel"><h3>Team</h3><div class="team" id="team"></div>'+
       '<div class="addmem"><select id="newp"></select><select id="newr">'+ROLES.map(r=>'<option>'+r+'</option>').join('')+'</select><button class="btn sm" id="addmem">+ Attach person</button></div></div>'+
@@ -242,28 +263,28 @@ function render(){
       '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
       '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
-    '</div><div id="sec-eur" style="display:none"></div><div id="sec-spx" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>';
+    '</div><div id="sec-eur" style="display:none"></div><div id="sec-spx" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>'+
+    '<div id="sec-ven" style="display:none"></div><div id="sec-req" style="display:none"></div>';
+  const SECS=['time','eur','spx','imp','del','ven','req'];
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
     curTab=b.dataset.et;
     /* hash-routed (29 Jul UX round) — keeps ?id= intact, makes tabs linkable */
     try{history.replaceState(null,'',location.pathname+location.search+'#'+curTab);}catch(e){}
     document.querySelectorAll('[data-et]').forEach(x=>x.classList.toggle('on',x===b));
-    document.getElementById('sec-time').style.display=b.dataset.et==='time'?'':'none';
-    document.getElementById('sec-eur').style.display=b.dataset.et==='eur'?'':'none';
-    document.getElementById('sec-spx').style.display=b.dataset.et==='spx'?'':'none';
-    document.getElementById('sec-imp').style.display=b.dataset.et==='imp'?'':'none';
-    document.getElementById('sec-del').style.display=b.dataset.et==='del'?'':'none';
+    SECS.forEach(s=>{const el=document.getElementById('sec-'+s);if(el)el.style.display=(b.dataset.et===s?'':'none');});
     if(b.dataset.et==='eur')renderEuroTab();
     if(b.dataset.et==='spx')renderSpxTab();
     if(b.dataset.et==='imp')renderImpactTab();
     if(b.dataset.et==='del')renderDelegatesTab();
+    if(b.dataset.et==='ven')renderVenueTab();
+    if(b.dataset.et==='req')renderReqTab();
   });
   renderTeam(); renderPhases(); renderAddBar(); renderTimeline(); renderTasks(); wire();
   document.getElementById('zOut').onclick=()=>setZoom(ZOOM-0.2);
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
   // deep link: #eur/#imp/#del opens that tab directly (29 Jul UX round)
   const hh=location.hash.replace('#','');
-  if(curTab==='time'&&['eur','spx','imp','del'].includes(hh))curTab=hh;
+  if(curTab==='time'&&['eur','spx','imp','del','ven','req'].includes(hh))curTab=hh;
   // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
   if(curTab!=='time'){const b=document.querySelector('[data-et="'+curTab+'"]');if(b)b.click();}
 }
@@ -277,11 +298,37 @@ function render(){
    board. Read-only here on purpose: the deal is the record and spx.html is where it
    is edited, so the two can never disagree (rulebook: one concept, one home, N views). */
 function wonDeals(){try{return DB.wonDealsForEvent(ev.id)||[];}catch(e){return [];}}
+/* every contract on this event, signed or not — see the note on DB.dealsForEvent */
+function dealsAny(){try{return DB.dealsForEvent(ev.id)||[];}catch(e){return [];}}
+function reqBadge(){try{const n=DB.reqReady()?DB.requestsOpen(ev.id).length:0;
+  return n?(' <span style="background:var(--orange);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;font-weight:700">'+n+'</span>'):'';}catch(e){return '';}}
 function renderSpxTab(){
   const S=document.getElementById('sec-spx');
   const deals=wonDeals();
-  if(!deals.length){S.innerHTML='<div class="panel"><span class="empty">Nothing signed for this event yet.</span></div>';return;}
   const money=v=>v==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v)+' €';
+  /* ---- who is selling this event (restored 6 Aug 2026) ----
+     The block Belén missed: the responsables, without having to open reporting. It shows
+     BEFORE anything is signed, which is the whole point — the Won-only view (v99) went
+     blank exactly when an event most needs to know who is on it. */
+  const open=dealsAny().filter(d=>!d.won&&!d.lost);
+  let pipe='';
+  if(open.length){
+    const owners=[];open.forEach(d=>{if(d.owner&&owners.indexOf(d.owner)<0)owners.push(d.owner);});
+    pipe='<div class="panel"><h3>In the pipeline <span class="hint">— '+open.length+' proposal'+(open.length===1?'':'s')+
+      ' out · '+money(open.reduce((a,d)=>a+(+d.eur||0),0))+' on the table'+
+      (owners.length?' · sold by '+esc(owners.join(', ')):'')+'</span></h3>'+
+      '<p class="hint">Nothing here is committed yet — it is who is working this event and what they have offered. '+
+      'It becomes a signed row below the moment sales marks it Won on the <a href="spx.html">SPX board</a>.</p>'+
+      '<div style="overflow-x:auto"><table><tr><th>Company</th><th class="num">Value</th><th>Stage</th><th>Sent</th><th>Follow-up</th><th>Sales</th></tr>'+
+      open.map(d=>'<tr><td><b>'+esc(d.company)+'</b></td><td class="num">'+money(d.eur)+'</td>'+
+        '<td>'+esc(d.stage||'—')+'</td>'+
+        '<td>'+(d.sentAt?esc(ddmmyyyy(d.sentAt)):'<span class="empty">—</span>')+'</td>'+
+        '<td>'+(d.followAt?esc(ddmmyyyy(d.followAt)):'<span class="empty">—</span>')+'</td>'+
+        '<td>'+esc(d.owner||'')+'</td></tr>').join('')+'</table></div></div>';
+  }
+  if(!deals.length){
+    S.innerHTML=pipe+'<div class="panel"><span class="empty">Nothing signed for this event yet'+
+      (open.length?' — the proposals above are still out.':'.')+'</span></div>';return;}
   const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
   const gaps=deals.filter(d=>!d.complete).length;
   const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
@@ -289,7 +336,7 @@ function renderSpxTab(){
   const stands=deals.filter(d=>d.stand).length;
   const yn=v=>v==null?'<span class="empty">—</span>':(v?'<b>Yes</b>':'No');
   const txt=v=>v?esc(v):'<span class="empty">—</span>';
-  let h='<div class="panel"><h3>Signed sponsors <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
+  let h=pipe+'<div class="panel"><h3>Signed sponsors <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
     ' · '+money(tot)+' committed</span></h3>'+
     '<p class="hint">What sales has sold and what logistics has to deliver. Totals below are what the event owes its sponsors: '+
     '<b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'. '+
@@ -324,6 +371,284 @@ function renderSpxTab(){
   S.innerHTML=h+'</table></div></div>';
 }
 function ddmmyyyy(iso){const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
+
+/* ================= 🏛 VENUE — what is booked for this event =================
+   Valeria, 5 Aug: "un apartado donde podamos tener de manera rápida y visual lo que está
+   contratado o pensamos contratar… algo simple como Item & Notes, con la categoría."
+   Decided in the 6 Aug meeting: COLLAPSIBLE CATEGORIES, not tabs — with tabs you have to
+   open every one to find out whether there is anything in it, most are empty, and on a big
+   event a single tab would be enormous. Open them all or just the one you need.
+   The venue CONTRACT is deliberately not uploaded: only the specific facts the rest of the
+   team needs (rate, parking, room name, capacity). Cancellation clauses are nobody else's
+   business and stay where they are.
+   Everyone reads this; only logistics and Belén write it. */
+let venOpen=null;   // Set of open category ids — survives a re-render
+let venFiles=null;  // lazily fetched: floor plans are big, they must not ride in the snapshot
+function renderVenueTab(){
+  const S=document.getElementById('sec-ven');
+  if(!DB.venueReady()){S.innerHTML='<div class="panel"><span class="empty">The venue list is not active yet.</span></div>';return;}
+  const mg=canVenue();
+  let cats=DB.venueCatsFor(ev.id);
+  if(!cats.length&&mg){
+    /* first open of an event: drop in the default checklist so the lines that are always
+       there are already waiting. Each one deletes with a single ×. */
+    const n=DB.seedVenue(ev.id);
+    if(n){DB.save();cats=DB.venueCatsFor(ev.id);}
+  }
+  if(venOpen===null){venOpen=new Set();
+    /* open whatever already has something in it — an empty category can stay shut */
+    cats.forEach(c=>{if(DB.venueItemsFor(c.id).some(i=>(i.notes||'').trim()))venOpen.add(c.id);});
+    if(!venOpen.size&&cats.length)venOpen.add(cats[0].id);
+  }
+  const filled=DB.venueItems.filter(i=>!i.deleted&&i.eventId==ev.id&&(i.notes||'').trim()).length;
+  const total=DB.venueItems.filter(i=>!i.deleted&&i.eventId==ev.id).length;
+  let h='<div class="panel"><h3>Venue &amp; event overview <span class="hint">— '+filled+' of '+total+' line'+(total===1?'':'s')+' filled in</span></h3>'+
+    '<p class="hint">What is booked, or what we mean to book. One line per thing, a note beside it. '+
+    (mg?'Add a category or an item at any time; the × removes one just as easily. '
+       :'Logistics keeps this — ask them, or raise it in <a href="#" data-goreq="1">Requests</a>, and it appears here once it is confirmed. ')+
+    '<b>The venue contract does not live here</b> — only the facts everyone needs.</p>';
+  if(mg)h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'+
+    '<button class="btn sm" id="venAddCat">+ Add category</button>'+
+    '<button class="btn sm" id="venOpenAll">Open all</button><button class="btn sm" id="venShutAll">Close all</button></div>';
+  if(!cats.length)h+='<p class="empty">Nothing here yet'+(mg?'.':' — logistics has not started this event.')+'</p>';
+  cats.forEach(c=>{
+    const items=DB.venueItemsFor(c.id);
+    const got=items.filter(i=>(i.notes||'').trim()).length;
+    const op=venOpen.has(c.id);
+    h+='<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden">'+
+      '<div class="vencat" data-cat="'+c.id+'" style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:#f6f5f1;cursor:pointer">'+
+        '<span style="color:var(--orange);font-weight:700">'+(op?'▾':'▸')+'</span>'+
+        '<b style="flex:1">'+esc(c.name)+'</b>'+
+        '<span class="hint">'+got+'/'+items.length+'</span>'+
+        (mg?'<button class="del" data-delcat="'+c.id+'" title="Remove this category and its lines">×</button>':'')+
+      '</div>';
+    if(op){
+      h+='<table style="margin:0"><tr><th>Item</th><th>Notes</th>'+(mg?'<th style="width:24px"></th>':'')+'</tr>';
+      if(!items.length)h+='<tr><td colspan="'+(mg?3:2)+'" class="empty">Nothing in this category yet.</td></tr>';
+      items.forEach(i=>{h+='<tr>'+
+        '<td>'+(mg?'<input data-vf="item" data-id="'+i.id+'" value="'+esc(i.item||'')+'">':esc(i.item||''))+'</td>'+
+        '<td>'+(mg?'<input data-vf="notes" data-id="'+i.id+'" value="'+esc(i.notes||'')+'" placeholder="e.g. 5x3m LED screen">'
+                  :(i.notes?esc(i.notes):'<span class="empty">—</span>'))+
+          (i.requestId?'<div class="hint">from a request</div>':'')+'</td>'+
+        (mg?'<td><button class="del" data-delitem="'+i.id+'">×</button></td>':'')+'</tr>';});
+      if(mg)h+='<tr><td colspan="'+(mg?3:2)+'"><button class="btn sm" data-additem="'+c.id+'">+ Add item</button></td></tr>';
+      h+='</table>';
+    }
+    h+='</div>';
+  });
+  h+='</div>';
+  /* floor plans — the one thing they DO want to hang here */
+  h+='<div class="panel"><h3>Floor plan &amp; room images</h3>'+
+     '<p class="hint">The room layout, so everyone can see it without asking for the file.</p>'+
+     '<div id="venFiles"><span class="empty">Loading…</span></div>'+
+     (mg?'<div style="margin-top:10px"><input type="file" id="venUp" accept="image/*" style="font-size:13px"> <span class="hint">images only — they are downscaled before they are stored</span></div>':'')+
+     '</div>';
+  S.innerHTML=h;
+
+  S.querySelectorAll('.vencat').forEach(d=>d.onclick=e=>{
+    if(e.target.closest('[data-delcat]'))return;
+    const id=+d.dataset.cat;if(venOpen.has(id))venOpen.delete(id);else venOpen.add(id);renderVenueTab();});
+  const ac=document.getElementById('venAddCat');
+  if(ac)ac.onclick=()=>{const n=prompt('New category name');if(!n||!n.trim())return;
+    const c=DB.addVenueCat(ev.id,n.trim());venOpen.add(c.id);DB.save();renderVenueTab();};
+  const oa=document.getElementById('venOpenAll');if(oa)oa.onclick=()=>{DB.venueCatsFor(ev.id).forEach(c=>venOpen.add(c.id));renderVenueTab();};
+  const sa=document.getElementById('venShutAll');if(sa)sa.onclick=()=>{venOpen.clear();renderVenueTab();};
+  S.querySelectorAll('[data-additem]').forEach(b=>b.onclick=()=>{DB.addVenueItem(ev.id,+b.dataset.additem,'','',null);DB.save();renderVenueTab();});
+  S.querySelectorAll('[data-vf]').forEach(el=>el.onchange=()=>{
+    const row=DB.venueItems.find(i=>i.id==el.dataset.id);if(!row)return;
+    row[el.dataset.vf]=el.value;DB.save();});
+  S.querySelectorAll('[data-delitem]').forEach(b=>b.onclick=()=>{
+    DB.data.venueItems=DB.venueItems.filter(i=>i.id!=b.dataset.delitem);DB.save();renderVenueTab();});
+  S.querySelectorAll('[data-delcat]').forEach(b=>b.onclick=e=>{e.stopPropagation();
+    const id=+b.dataset.delcat,n=DB.venueItemsFor(id).length;
+    if(!confirm('Remove this category'+(n?' and its '+n+' line'+(n===1?'':'s'):'')+'? (recoverable from the audit log)'))return;
+    DB.data.venueItems=DB.venueItems.filter(i=>i.catId!=id);
+    DB.data.venueCats=DB.venueCats.filter(c=>c.id!=id);DB.save();renderVenueTab();});
+  const gr=S.querySelector('[data-goreq]');if(gr)gr.onclick=e=>{e.preventDefault();const b=document.querySelector('[data-et="req"]');if(b)b.click();};
+  renderVenueFiles();
+  const up=document.getElementById('venUp');if(up)up.onchange=()=>uploadVenueFile(up.files&&up.files[0]);
+}
+/* floor plans live in their own table and are fetched on demand — a 400 KB room layout
+   must never ride along in the snapshot every page boot reads */
+async function renderVenueFiles(){
+  const box=document.getElementById('venFiles');if(!box)return;
+  if(venFiles===null){
+    if(!USE_SUPABASE){venFiles=[];}
+    else{try{const r=await sb.from('dc_venue_files').select('*').eq('deleted',false).eq('eventId',ev.id).order('id');
+      if(r.error)throw r.error;venFiles=r.data||[];}
+      catch(e){box.innerHTML='<span class="empty">Could not load the images: '+esc(e.message||e)+'</span>';return;}}
+  }
+  const mg=canVenue();
+  if(!venFiles.length){box.innerHTML='<span class="empty">No floor plan yet'+(mg?' — add one below.':'.')+'</span>';return;}
+  box.innerHTML=venFiles.map(f=>'<figure style="display:inline-block;margin:0 12px 12px 0;vertical-align:top;max-width:340px">'+
+    '<a href="'+f.data+'" target="_blank" rel="noopener"><img src="'+f.data+'" alt="'+esc(f.name||'floor plan')+'" style="max-width:340px;border:1px solid var(--line);border-radius:8px;display:block"></a>'+
+    '<figcaption class="hint" style="margin-top:4px">'+esc(f.name||'')+
+      (mg?' · <a href="#" data-delfile="'+f.id+'" style="color:#A32D2D">remove</a>':'')+'</figcaption></figure>').join('');
+  box.querySelectorAll('[data-delfile]').forEach(a=>a.onclick=async e=>{e.preventDefault();
+    if(!confirm('Remove this image?'))return;
+    const id=+a.dataset.delfile;
+    try{if(USE_SUPABASE){const r=await sb.from('dc_venue_files').update({deleted:true}).eq('id',id);if(r.error)throw r.error;}
+      venFiles=venFiles.filter(f=>f.id!==id);renderVenueFiles();}
+    catch(err){alert('Could not remove it: '+(err.message||err));}});
+}
+/* ================= 🙋 REQUESTS — ask logistics for something =================
+   The flow agreed on 6 Aug: someone asks ("a room for the sponsor workshop, with a TV"),
+   logistics answers IN THE TICKET with the quote (which room, capacity 50 in classroom
+   layout, it has a screen, it costs X, held until <date>), the conversation stays on the
+   record, and when it is confirmed the item moves into the event's Venue list. Closing a
+   ticket keeps it as history — nothing is deleted.
+   Belén's rule, and the reason this exists at all: "si no está ahí, no está pedido."
+   possibleSponsor is her addition: most of these come from an interested sponsor, so
+   somebody IS going to pay — the real question is whether it can be done and what it costs.
+   Deliberately NOT an approve/reject pair: Valeria asked for an open answer box, because
+   the answer is a quote, not a verdict. */
+let reqOpen=null;   // which ticket's thread is unfolded
+function renderReqTab(){
+  const S=document.getElementById('sec-req');
+  if(!DB.reqReady()){S.innerHTML='<div class="panel"><span class="empty">The request box is not active yet.</span></div>';return;}
+  const me=DB.currentUser, desk=DB.canLogistics();
+  const rows=DB.requestsFor(ev.id);
+  const open=rows.filter(r=>r.status==='open'||r.status==='answered');
+  const settled=rows.filter(r=>r.status!=='open'&&r.status!=='answered');
+  let h='<div class="panel"><h3>Requests to logistics <span class="hint">— '+open.length+' still open'+
+      (settled.length?(' · '+settled.length+' settled'):'')+'</span></h3>'+
+    '<p class="hint">Ask for anything this event needs and logistics answers here with what it is, what it costs and how long it is held for. '+
+    'When it is confirmed the line lands in <a href="#" data-goven="1">Venue</a>. <b>If it is not here, it is not asked for</b> — no side deals.</p>'+
+    '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;background:#faf9f6">'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">'+
+      '<input id="rqTitle" placeholder="What do you need? e.g. Room for the sponsor workshop" style="flex:1 1 320px">'+
+      '<select id="rqCat" style="flex:0 0 auto">'+['Venue','AV','Materials & branding','Tech','Suppliers','Other']
+        .map(c=>'<option>'+c+'</option>').join('')+'</select>'+
+      '</div>'+
+      '<textarea id="rqDesc" rows="2" placeholder="Anything logistics needs in order to price it — how many people, when, what it has to do" style="width:100%;margin-top:8px;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></textarea>'+
+      '<label style="display:flex;gap:7px;align-items:center;margin-top:8px;font-size:13px;cursor:pointer">'+
+        '<input type="checkbox" id="rqSponsor"> 💰 A sponsor is likely paying for this'+
+        '<span class="hint">— tick it and the question becomes “can we do it and what does it cost”, not “can we afford it”</span></label>'+
+      '<div style="margin-top:8px"><button class="btn primary sm" id="rqAdd">Send to logistics</button></div>'+
+    '</div>';
+  const card=r=>{
+    const mine=me&&r.personId==me.id;
+    const th=Array.isArray(r.thread)?r.thread:[];
+    const unfolded=(reqOpen===r.id);
+    const ST={open:{t:'waiting on logistics',c:'#C77800',b:'#FFF3E0'},answered:{t:'answered — needs confirming',c:'#185FA5',b:'#E8F0FA'},
+              confirmed:{t:'✓ confirmed — it is in Venue',c:'#3E8C28',b:'#E6F5E6'},
+              declined:{t:'not possible',c:'#A32D2D',b:'#FBEAEA'},closed:{t:'closed',c:'#8a8a86',b:'#F1F0EC'}};
+    const s=ST[r.status]||ST.open;
+    let c='<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
+      '<div class="reqhead" data-req="'+r.id+'" style="display:flex;gap:9px;align-items:center;padding:10px 12px;cursor:pointer;background:'+(unfolded?'#f6f5f1':'transparent')+'">'+
+        '<span style="color:var(--orange);font-weight:700">'+(unfolded?'▾':'▸')+'</span>'+
+        '<b style="flex:1 1 220px">'+esc(r.title||'')+'</b>'+
+        (r.possibleSponsor?'<span title="a sponsor is likely paying">💰</span>':'')+
+        '<span style="background:'+s.b+';color:'+s.c+';border-radius:20px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap">'+s.t+'</span>'+
+        '<span class="hint" style="white-space:nowrap">'+esc(DB.personName(r.personId))+(r.category?' · '+esc(r.category):'')+'</span>'+
+      '</div>';
+    if(unfolded){
+      c+='<div style="padding:0 12px 12px">';
+      if(r.description)c+='<p style="margin:2px 0 10px;white-space:pre-wrap">'+esc(r.description)+'</p>';
+      if(r.reservedUntil||r.costEur!=null&&r.costEur!==''){
+        c+='<p class="hint" style="margin:0 0 10px">'+
+          (r.costEur!=null&&r.costEur!==''?('<b>'+finFmt(r.costEur)+'</b>'):'')+
+          (r.reservedUntil?((r.costEur!=null&&r.costEur!==''?' · ':'')+'held until <b>'+deIso(r.reservedUntil)+'</b>'):'')+'</p>';
+      }
+      c+='<div style="max-height:240px;overflow:auto;margin-bottom:8px">'+
+        (th.length?th.map(m=>'<div style="margin-bottom:7px;padding:7px 10px;border-radius:9px;background:'+(m.sys?'#f1f0ec':'#FFF3EC')+';border:1px solid '+(m.sys?'var(--line)':'#F3D9B8')+'">'+
+          '<div class="hint" style="margin-bottom:2px">'+esc(m.who||'')+' · '+esc(m.when||'')+'</div>'+
+          '<div style="white-space:pre-wrap'+(m.sys?';font-style:italic;color:var(--muted)':'')+'">'+esc(m.sys||m.text||'')+'</div></div>').join('')
+              :'<span class="empty">No answer yet.</span>')+'</div>';
+      /* the open answer box Valeria asked for — anyone in the conversation can write */
+      if(desk||mine)c+='<div style="display:flex;gap:6px;margin-bottom:8px">'+
+        '<input data-rqmsg="'+r.id+'" placeholder="'+(desk?'Room name, capacity, what it includes, cost, until when…':'Add anything that helps them price it…')+'" style="flex:1">'+
+        '<button class="btn sm" data-rqsend="'+r.id+'">Reply</button></div>';
+      if(desk){
+        c+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:9px">'+
+          '<span class="hint">Quote:</span>'+
+          '<input type="number" step="0.01" data-rqcost="'+r.id+'" value="'+(r.costEur==null?'':r.costEur)+'" placeholder="cost €" style="width:110px">'+
+          '<input type="date" data-rquntil="'+r.id+'" value="'+(r.reservedUntil||'')+'" title="held until">'+
+          '<select data-rqcat="'+r.id+'">'+DB.venueCatsFor(ev.id).map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('')+'</select>'+
+          (r.status==='confirmed'?'<span class="hint">✓ already on the venue list</span>'
+            :'<button class="btn primary sm" data-rqok="'+r.id+'">Confirm → add to Venue</button>')+
+          (r.status==='declined'?'':'<button class="btn sm" data-rqno="'+r.id+'" style="color:#A32D2D;border-color:#f0c4c4">Not possible</button>')+
+          '</div>';
+      }
+      if(mine&&!desk&&(r.status==='open'||r.status==='answered'))
+        c+='<div style="margin-top:8px"><button class="btn sm" data-rqclose="'+r.id+'">Cancel this request</button></div>';
+      c+='</div>';
+    }
+    return c+'</div>';
+  };
+  h+=open.length?open.map(card).join(''):'<p class="empty">Nothing open — everything asked for has been settled.</p>';
+  if(settled.length)h+='<h3 style="margin:18px 0 8px;font-size:13px">Settled <span class="hint">— kept as history, nothing is deleted</span></h3>'+settled.map(card).join('');
+  S.innerHTML=h+'</div>';
+
+  const gv=S.querySelector('[data-goven]');if(gv)gv.onclick=e=>{e.preventDefault();const b=document.querySelector('[data-et="ven"]');if(b)b.click();};
+  S.querySelectorAll('.reqhead').forEach(d=>d.onclick=()=>{const id=+d.dataset.req;reqOpen=(reqOpen===id?null:id);renderReqTab();});
+  const add=document.getElementById('rqAdd');
+  if(add)add.onclick=async()=>{
+    const t=(document.getElementById('rqTitle').value||'').trim();
+    if(!t){alert('Say what you need — that is the whole request.');return;}
+    const r={id:DB.newId(),eventId:ev.id,personId:me?me.id:null,title:t,
+      description:(document.getElementById('rqDesc').value||'').trim(),
+      status:'open',thread:[],reservedUntil:null,
+      possibleSponsor:!!document.getElementById('rqSponsor').checked,
+      costEur:null,category:document.getElementById('rqCat').value,venueItemId:null,
+      created:toISO(new Date())+' '+nowHMS().slice(0,5)};
+    reqLog(r,'asked by '+((me&&me.name)||'someone'));
+    DB.data.requests=DB.requests.concat([r]);
+    await DB.saveNow();
+    reqNotify(r,'New request on '+ev.name+': '+t);
+    await DB.saveNow();
+    reqOpen=r.id;renderReqTab();render();   // the tab badge changes too
+  };
+  S.querySelectorAll('[data-rqsend]').forEach(b=>b.onclick=async()=>{
+    const r=DB.requests.find(x=>x.id==b.dataset.rqsend);
+    const inp=S.querySelector('[data-rqmsg="'+b.dataset.rqsend+'"]');
+    const txt=(inp&&inp.value||'').trim();if(!r||!txt)return;
+    reqLog(r,null,txt);
+    if(desk&&r.status==='open')r.status='answered';
+    await DB.saveNow();
+    reqNotify(r,(desk?'Logistics answered':'A note was added to')+' “'+r.title+'” on '+ev.name);
+    await DB.saveNow();renderReqTab();});
+  S.querySelectorAll('[data-rqcost]').forEach(el=>el.onchange=()=>{
+    const r=DB.requests.find(x=>x.id==el.dataset.rqcost);if(!r)return;
+    r.costEur=el.value===''?null:+el.value;DB.save();});
+  S.querySelectorAll('[data-rquntil]').forEach(el=>el.onchange=()=>{
+    const r=DB.requests.find(x=>x.id==el.dataset.rquntil);if(!r)return;
+    r.reservedUntil=el.value||null;reqLog(r,'held until '+(el.value?deIso(el.value):'—'));DB.save();renderReqTab();});
+  S.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{
+    const r=DB.requests.find(x=>x.id==b.dataset.rqok);if(!r)return;
+    const sel=S.querySelector('[data-rqcat="'+b.dataset.rqok+'"]');
+    if(!DB.venueCatsFor(ev.id).length)DB.seedVenue(ev.id);
+    DB.confirmRequest(r,sel&&sel.value?+sel.value:null);
+    await DB.saveNow();
+    reqNotify(r,'Confirmed on '+ev.name+': '+r.title+' — it is now on the venue list');
+    await DB.saveNow();renderReqTab();render();});
+  S.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{
+    const r=DB.requests.find(x=>x.id==b.dataset.rqno);if(!r)return;
+    const why=prompt('Why not? The person who asked will see this.');if(why===null)return;
+    r.status='declined';reqLog(r,'not possible',why||undefined);
+    await DB.saveNow();
+    reqNotify(r,'Not possible on '+ev.name+': '+r.title+(why?(' — '+why):''));
+    await DB.saveNow();renderReqTab();render();});
+  S.querySelectorAll('[data-rqclose]').forEach(b=>b.onclick=async()=>{
+    const r=DB.requests.find(x=>x.id==b.dataset.rqclose);if(!r)return;
+    if(!confirm('Cancel this request? It stays on the record as history.'))return;
+    r.status='closed';reqLog(r,'cancelled by '+((me&&me.name)||'the requester'));
+    await DB.saveNow();renderReqTab();render();});
+}
+
+async function uploadVenueFile(file){
+  if(!file)return;
+  const box=document.getElementById('venFiles');
+  if(!/^image\//.test(file.type)){alert('Images only — a floor plan, a room photo.');return;}
+  resizeImageFit(file,async data=>{
+    if(!data){alert('That image could not be read.');return;}
+    const row={id:DB.newId(),eventId:ev.id,name:file.name,kind:file.type,data:data,deleted:false};
+    try{
+      if(USE_SUPABASE){const r=await sb.from('dc_venue_files').insert([row]);if(r.error)throw r.error;}
+      venFiles=(venFiles||[]).concat([row]);renderVenueFiles();
+    }catch(e){alert('Could not save the image: '+(e.message||e));}
+  },1400);   // wide enough to actually read a room layout
+}
 
 /* ---- € Results tab: this event's finance summary + weekly money ---- */
 function evCode(){return DB.evCode(ev);} // ecode field first, legacy name prefix as fallback
@@ -535,7 +860,8 @@ function renderTimeline(){
     // default span for any substage missing one: wide enough to read the name
     const arr0=subs.map(s=>({s,c:evIdx-s.week})).sort((a,b)=>a.c-b.c);
     arr0.forEach((o,i)=>{if(o.s.span==null){const nextC=(i+1<arr0.length)?arr0[i+1].c:(evIdx+1);const gap=Math.max(1,nextC-o.c);const need=Math.max(1,Math.ceil(((o.s.name||'').length*6.6+34)/WEEKW));o.s.span=Math.min(need,gap);dirty=true;}});
-    if(dirty&&(!USE_SUPABASE||mg))DB.save(); // members never push layout defaults
+    const laneMg=canEditLane(lane);
+    if(dirty&&(!USE_SUPABASE||laneMg))DB.save(); // members never push layout defaults
     const expanded=(expandedLane===lane);
     // greedy pack substages into non-overlapping rows (only needed when open)
     let rows=[];
@@ -545,7 +871,7 @@ function renderTimeline(){
         for(const row of rows){if(row.every(x=> o.c>=x.c+x.span || o.c+o.span<=x.c )){row.push(o);placed=true;break;}}
         if(!placed)rows.push([o]);});
     }
-    const laneH=expanded?(STGH+GAP+Math.max(1,rows.length)*SUBROW+(mg?24:6)+2):COLLH;
+    const laneH=expanded?(STGH+GAP+Math.max(1,rows.length)*SUBROW+(laneMg?24:6)+2):COLLH;
     return {lane,bars,subs,expanded,rows,h:laneH};
   });
   let acc=TOPH;laneLay.forEach(L=>{L.y=acc;acc+=L.h+GAP;});
@@ -564,18 +890,60 @@ function renderTimeline(){
   if(todayIdx>=0&&todayIdx<NW){const t2=document.createElement('div');t2.className='today';t2.style.cssText='left:'+(todayIdx*WEEKW)+'px;top:'+TOPH+'px;height:'+(bodyH-TOPH)+'px';tl.appendChild(t2);}
 
   const btnLayer=document.createElement('div');btnLayer.style.cssText='position:absolute;inset:0;z-index:9;pointer-events:none';tl.appendChild(btnLayer);
-  function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+STGH+'px;pointer-events:auto';b.onclick=e=>{e.stopPropagation();const o=ev.dur[lane];o[key]=Math.max(1,(o[key]||1)+delta);if(lane==='project'&&key==='scaling')ev.milestones.launch=o.scaling;DB.save();renderTimeline();};btnLayer.appendChild(b);}
+  /* stage resize. It writes the width to the stage's OWN row (dc_stages) rather than to
+     ev.dur, because dc_events is manager-only writable and logistics has to be able to
+     stretch its own stages — Julián is a member. ev.dur stays readable as the legacy
+     default via stageDur(). */
+  function addBtn(x,y,lane,key,delta,label){const b=document.createElement('button');b.className='rb';b.textContent=label;
+    b.style.cssText='left:'+x+'px;top:'+y+'px;width:13px;height:'+STGH+'px;pointer-events:auto';
+    b.title=(delta<0?'shorten ':'lengthen ')+stageName(lane,key,ev);
+    b.onmousedown=e=>e.stopPropagation();   // resizing is not dragging the stage
+    b.onclick=e=>{e.stopPropagation();
+      const def=stageDef(lane,key,ev),cur=def?stageDur(ev,lane,def):1;
+      let want=Math.max(1,cur+delta);
+      /* growing a stage must not shove the ones after it past the event: a T-minus lane
+         ends on W0, and a stage rendered after the event is just wrong */
+      if(delta>0&&def&&def.phase==='pre'){
+        const bars=layLane(ev,lane,evIdx),pre=bars.filter(b=>b.s.phase==='pre');
+        const i=pre.findIndex(b=>b.s.key===key);
+        if(i>=0){let after=0;for(let k=i+1;k<pre.length;k++)after+=pre[k].w;
+          const room=evIdx-after-pre[i].x;
+          if(want>room){alert('“'+stageName(lane,key,ev)+'” cannot grow any further without pushing '+
+            (i+1<pre.length?('“'+stageName(lane,pre[i+1].s.key,ev)+'” and the stages after it'):'this lane')+
+            ' past the event. Shorten one of those first.');return;}}
+      }
+      const row=DB.stageLayRow(ev.id,lane,key);row.dur=want;
+      /* the launch milestone rides on the scaling stage — only a manager can write it */
+      if(lane==='project'&&key==='scaling'&&canEditPlan())ev.milestones.launch=row.dur;
+      DB.save();renderTimeline();};
+    btnLayer.appendChild(b);}
   function stageAtCol(bars,c){for(const b of bars){if(c>=b.x&&c<b.x+b.w)return b.s;}return bars[bars.length-1].s;}
 
   laneLay.forEach(L=>{
     const lane=L.lane, y=L.y;
     const ll=document.createElement('div');ll.className='ll';ll.style.top=(y+2)+'px';ll.textContent=LANE_LETTER[lane];tl.appendChild(ll);
     // ---- stage bars (always shown — the overview look) ----
-    L.bars.forEach(bar=>{
+    const laneEdit=canEditLane(lane);
+    L.bars.forEach((bar,bi)=>{
       const x=bar.x*WEEKW, w=Math.max(bar.w*WEEKW,10);
-      const seg=document.createElement('div');seg.className='stg';seg.style.cssText='left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+STGH+'px;background:'+bar.s.color;seg.title=bar.s.name;tl.appendChild(seg);
-      const sl=document.createElement('div');sl.className='stglab';sl.style.cssText='left:'+(x+15)+'px;top:'+(y+4)+'px;max-width:'+(w-30)+'px;color:'+(bar.s.color==='#111111'?'#fff':'#3a3844');sl.textContent=bar.s.name;tl.appendChild(sl);
-      if(mg){addBtn(x,y,lane,bar.s.key,-1,'−'); addBtn(x+w-13,y,lane,bar.s.key,1,'+');}
+      const nm=stageName(lane,bar.s.key,ev);
+      const sel=(selStage&&selStage.lane===lane&&selStage.key===bar.s.key);
+      const seg=document.createElement('div');seg.className='stg';
+      seg.style.cssText='left:'+x+'px;top:'+y+'px;width:'+w+'px;height:'+STGH+'px;background:'+bar.s.color+
+        (sel?';outline:2px solid var(--orange);outline-offset:-2px':'')+';cursor:'+(laneEdit?'grab':'pointer');
+      seg.title=nm+(laneEdit?' — drag to move the whole stage · click to see its tasks':' — click to see its tasks');
+      /* the stage itself is now the handle: mousedown starts a drag, a click that never
+         moved opens the task list. Same gesture the substages already use, so there is
+         one thing to learn, not two. Valeria, 5 Aug: "click Materials and the task list
+         unfolds, instead of a substage." */
+      seg.addEventListener('mousedown',e=>{
+        if(bar.s.phase!=='pre'||!laneEdit){toggleStage(lane,bar.s.key);return;}  // W0 and post-event stages are fixed to the event
+        dragStage={lane,key:bar.s.key,startX:e.clientX,dx:0,el:seg,lab:null,bars:L.bars,idx:bi,evIdx:evIdx,moved:false};
+        e.preventDefault();});
+      tl.appendChild(seg);
+      const sl=document.createElement('div');sl.className='stglab';sl.style.cssText='left:'+(x+15)+'px;top:'+(y+4)+'px;max-width:'+(w-30)+'px;color:'+(bar.s.color==='#111111'?'#fff':'#3a3844')+';pointer-events:none';sl.textContent=nm;tl.appendChild(sl);
+      if(dragStage&&dragStage.lane===lane&&dragStage.key===bar.s.key)dragStage.lab=sl;
+      if(laneEdit){addBtn(x,y,lane,bar.s.key,-1,'−'); addBtn(x+w-13,y,lane,bar.s.key,1,'+');}
     });
     // ---- substages: only the OPEN lane unfolds them, packed into rows for room ----
     if(L.expanded){
@@ -587,12 +955,13 @@ function renderTimeline(){
           const fill=darken(subColor(sub,st.color),0.78);
           const pill=document.createElement('div');pill.className='subpill open'+(selSub===sub.id?' sel':'');
           pill.style.cssText='left:'+x+'px;top:'+sy+'px;width:'+pw+'px;height:'+(OPENH-4)+'px;background:'+fill+';color:'+(lum(fill)<0.5?'#fff':'#2b2b2b')+';z-index:10';
-          pill.textContent=sub.name;pill.title=sub.name+(mg?' — drag to move · +/− to resize · click to edit tasks':' — click to see tasks');
+          pill.textContent=sub.name;pill.title=sub.name+(laneEdit?' — drag to move · +/− to resize · click to edit tasks':' — click to see tasks');
           pill.addEventListener('mousedown',e=>{
-            if(!mg){selSub=(selSub===sub.id?null:sub.id);renderTimeline();renderTasks();return;} // members: click opens tasks, no dragging (server would refuse the move)
+            e.stopPropagation();   // a substage sits on top of its stage — do not start a stage drag too
+            if(!laneEdit){selStage=null;selSub=(selSub===sub.id?null:sub.id);renderTimeline();renderTasks();return;} // members: click opens tasks, no dragging (server would refuse the move)
             dragSub={sub,startX:e.clientX,dx:0,el:pill,baseWeek:sub.week,moved:false};e.preventDefault();});
           tl.appendChild(pill);
-          if(mg){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+(OPENH-4)+'px;line-height:'+(OPENH-8)+'px';b.title=tip+' '+sub.name;
+          if(laneEdit){const rb=(left,label,delta,tip)=>{const b=document.createElement('button');b.className='pb';b.textContent=label;b.style.cssText='left:'+left+'px;top:'+sy+'px;height:'+(OPENH-4)+'px;line-height:'+(OPENH-8)+'px';b.title=tip+' '+sub.name;
             b.addEventListener('mousedown',e=>e.stopPropagation());
             b.onclick=e=>{e.stopPropagation();let ns=Math.max(1,(sub.span||1)+delta);
               if(delta>0)ns=Math.min(ns,Math.max(1,evIdx-c+1)); // rows resolve overlaps, so grow up to the event edge
@@ -600,9 +969,10 @@ function renderTimeline(){
             rb(x,'−',-1,'shorten'); rb(x+pw-12,'+',1,'lengthen');}
         });
       });
-      if(mg){const ax=((L.bars[0]?L.bars[0].x:0)*WEEKW)+2, ay=sy0+Math.max(1,L.rows.length)*SUBROW;
+      if(laneEdit){const ax=((L.bars[0]?L.bars[0].x:0)*WEEKW)+2, ay=sy0+Math.max(1,L.rows.length)*SUBROW;
         const ab=document.createElement('button');ab.className='addsub';ab.textContent='+ add item';
         ab.style.cssText='left:'+ax+'px;top:'+ay+'px;height:17px;z-index:8';
+        ab.onmousedown=e=>e.stopPropagation();
         ab.onclick=e=>{e.stopPropagation();addSubstage(lane);};tl.appendChild(ab);}
     }
   });
@@ -642,19 +1012,57 @@ function renderTimeline(){
     t.onclick=()=>{const nl=(expandedLane===L.lane?null:L.lane);
       const ss=selSub&&DB.substages.find(s=>s.id===selSub);
       if(!ss||ss.lane!==nl){selSub=null;renderTasks();} // switching/closing a lane deselects a substage not in it
+      if(selStage&&selStage.lane!==nl){selStage=null;renderTasks();}
       expandedLane=nl;renderTimeline();};
     rail.appendChild(t);
   });
 }
 
+/* ---- one task row, used by both the stage list and the substage list ----
+   Columns as Valeria wrote the example: Lanyards > deadline > @Julián @Cintia > "logo Huawei".
+   NOTES are editable by whoever can tick the status — the person doing the task is the one
+   who knows what to write, and the database guard agrees (dc_task_guard leaves notes out
+   of its deny-list on purpose). */
+function taskRow(t,mg,showWhere){
+  const canS=DB.canEditStatus(t);
+  const who=DB.taskPeople(t);
+  const sub=t.substageId?DB.substages.find(s=>s.id==t.substageId):null;
+  return '<tr>'+
+    '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+esc(t.title||'')+'">':esc(t.title||''))+
+      (showWhere?'<div class="hint" style="margin-top:2px">'+(sub?esc(sub.name||'item'):'directly on the stage')+'</div>':'')+'</td>'+
+    '<td>'+(mg?('<div class="whobox" data-who="'+t.id+'">'+peopleChecks(t)+'</div>')
+              :(who.length?who.map(id=>'<a href="person.html?id='+id+'" style="color:inherit">'+esc(DB.personName(id))+'</a>').join(', ')
+                          :'<span class="empty">—</span>'))+'</td>'+
+    '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline?deIso(t.deadline):'—'))+'</td>'+
+    '<td>'+(canS?('<input data-tf="notes" data-id="'+t.id+'" value="'+esc(t.notes||'')+'" placeholder="short note">')
+                :(t.notes?esc(t.notes):'<span class="empty">—</span>'))+'</td>'+
+    '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>')
+                :('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
+    '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';
+}
+/* several owners per task. A dropdown cannot hold two names, so the cell is the primary
+   owner plus a "+ more" pop-out of tick boxes; the first person ticked stays the primary
+   one, because that is the field every alarm, digest and person page already reads. */
+function peopleChecks(t){
+  const who=DB.taskPeople(t);
+  const names=who.map(id=>esc(DB.personName(id))).join(', ');
+  return '<button class="btn sm whobtn" data-whobtn="'+t.id+'" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+
+    (names||'— assign —')+' ▾</button>';
+}
+function taskHeadRow(mg){
+  return '<tr><th>Task</th><th style="width:190px">Responsible</th><th style="width:140px">Deadline</th>'+
+    '<th style="width:170px">Notes</th><th style="width:120px">Status'+
+    (mg?'':' <span style="text-transform:none;letter-spacing:0;color:#b4b1a8">· you can tick your own</span>')+'</th><th style="width:24px"></th></tr>';
+}
 function renderTasks(){
   const p=document.getElementById('tkpanel');
-  if(!selSub){p.innerHTML='<span class="empty">Click a substage in the timeline to rename it, set its week/type, and edit its tasks &amp; owners.</span>';return;}
+  if(selStage)return renderStageTasks(p);
+  if(!selSub){p.innerHTML='<span class="empty">Click a <b>stage</b> in the timeline to see and add its tasks, or open a lane and click one of its items.</span>';return;}
   const sub=DB.substages.find(s=>s.id===selSub);
   if(!sub){selSub=null;p.innerHTML='';return;}
   const tks=DB.tasksForSub(sub.id);
-  const mg=canEditPlan(); // managers & admins edit everything; members tick the status of their OWN tasks (a project's own team edits it fully)
-  let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+stageName(sub.lane,sub.stage,ev)+'</b>'+
+  const mg=canEditLane(sub.lane); // the lane's owners edit everything; everyone else ticks the status of their OWN tasks
+  let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+esc(stageName(sub.lane,sub.stage,ev))+'</b>'+
     (mg?'<input id="subname" value="'+esc(sub.name||'')+'" placeholder="Name / short description — type as much as you need" style="width:min(560px,100%);flex:1 1 320px">'
        :'<span style="font-weight:600">'+esc(sub.name||'')+'</span>');
   if(sub.lane==='marketing'){h+=mg?('<select id="subtype">'+['','Content','Product','Sales','Webinar'].map(t=>'<option '+(t===(sub.type||'')?'selected':'')+'>'+(t||'— type —')+'</option>').join('')+'</select>')
@@ -663,31 +1071,182 @@ function renderTasks(){
   if(mg)h+='<button class="btn sm" id="delsub" style="color:#A32D2D;border-color:#f0c4c4">Delete substage</button>'+
     '<button class="btn sm" id="addtask" style="margin-left:auto">+ Add task</button>';
   h+='</div>';
-  h+='<table><tr><th>Task</th><th style="width:160px">Responsible</th><th style="width:140px">Deadline</th><th style="width:120px">Status'+(mg?'':' <span style="text-transform:none;letter-spacing:0;color:#b4b1a8">· you can tick your own</span>')+'</th><th style="width:24px"></th></tr>';
-  if(!tks.length)h+='<tr><td colspan="5" class="empty">No tasks yet'+(mg?' — add one.':'.')+'</td></tr>';
-  tks.forEach(t=>{const canS=DB.canEditStatus(t);h+='<tr>'+
-    '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+esc(t.title||'')+'">':esc(t.title||''))+'</td>'+
-    '<td>'+(mg?'<select data-tf="assignee" data-id="'+t.id+'">'+peopleOpts(t.assignee)+'</select>':(t.assignee?'<a href="person.html?id='+t.assignee+'" style="color:inherit">'+esc(DB.personName(t.assignee))+'</a>':''))+'</td>'+
-    '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline?deIso(t.deadline):'—'))+'</td>'+
-    '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>'):('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
-    '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';});
+  h+='<table>'+taskHeadRow(mg);
+  if(!tks.length)h+='<tr><td colspan="6" class="empty">No tasks yet'+(mg?' — add one.':'.')+'</td></tr>';
+  tks.forEach(t=>{h+=taskRow(t,mg,false);});
   h+='</table>';
+  h+='<p class="hint" style="margin-top:8px">This is one item inside <b>'+esc(stageName(sub.lane,sub.stage,ev))+
+     '</b> — click the stage bar itself to see everything filed under it at once.</p>';
   p.innerHTML=h;
   const sn=document.getElementById('subname');if(sn)sn.onchange=e=>{sub.name=e.target.value;DB.save();renderTimeline();};
   const ts=document.getElementById('subtype');if(ts)ts.onchange=e=>{sub.type=e.target.value.startsWith('—')?'':e.target.value;DB.save();renderTimeline();};
   const ds=document.getElementById('delsub');if(ds)ds.onclick=()=>{const n=DB.tasksForSub(sub.id).length;if(!confirm('Delete this substage'+(n?' and its '+n+' task'+(n>1?'s':''):'')+'? (recoverable from the audit log)'))return;DB.data.substages=DB.substages.filter(s=>s.id!==sub.id);DB.data.tasks=DB.tasks.filter(t=>t.substageId!==sub.id);selSub=null;DB.save();renderTimeline();renderTasks();};
-  const at=document.getElementById('addtask');if(at)at.onclick=()=>{DB.tasks.push({id:DB.newId(),eventId:ev.id,lane:sub.lane,stage:sub.stage,substageId:sub.id,title:'New task',assignee:null,deadline:'',status:'To do'});DB.save();renderTasks();};
-  p.querySelectorAll('[data-tf]').forEach(el=>el.onchange=()=>{const t=DB.tasks.find(x=>x.id==el.dataset.id);let v=el.value;if(el.dataset.tf==='assignee')v=v?+v:null;t[el.dataset.tf]=v;DB.save();});
+  const at=document.getElementById('addtask');if(at)at.onclick=()=>{newTask(sub.lane,sub.stage,sub.id);};
+  wireTaskRows(p);
+}
+/* ---- click a STAGE: its whole task list, no substage required ----
+   Valeria, 5 Aug: "si en Materiales hay 80 tareas, tener que repartirlas en 3 substages
+   genera ruido visual… mejor que al dar click en Materiales se desglose la lista de tasks."
+   Belén kept both: substages stay as the steps of the stage, and tasks can also hang
+   straight off it. So this panel shows the flat list first, then anything filed inside a
+   substage, clearly marked — one place to look, nothing hidden. */
+function renderStageTasks(p){
+  const {lane,key}=selStage;
+  const def=stageDef(lane,key,ev);
+  if(!def){selStage=null;p.innerHTML='';return;}
+  const mg=canEditLane(lane);
+  const flat=DB.tasksOnStage(ev.id,lane,key);
+  const all=DB.tasksForStage(ev.id,lane,key);
+  const nested=all.filter(t=>t.substageId!=null);
+  const done=all.filter(t=>t.status==='Done').length;
+  const st=stageStart(ev,lane,key);
+  const wide=def?stageDur(ev,lane,def):1;
+  let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+(LANE_LABEL[lane]||lane)+'</b>'+
+    (mg?'<input id="stgname" value="'+esc(stageName(lane,key,ev))+'" placeholder="Stage name" style="font-weight:700;width:min(320px,100%)">'
+       :'<span style="font-weight:700;font-size:15px">'+esc(stageName(lane,key,ev))+'</span>')+
+    '<span class="hint">'+(st!=null?('starts W-'+st):'follows the stage before it')+' · '+wide+' wk'+(wide===1?'':'s')+
+      ' · '+all.length+' task'+(all.length===1?'':'s')+(all.length?(' · '+done+' done'):'')+'</span>';
+  if(mg)h+='<button class="btn sm" id="addstagetask" style="margin-left:auto">+ Add task</button>';
+  h+='</div>';
+  if(mg){
+    h+='<p class="hint" style="margin:-4px 0 8px">Drag the stage bar to move the whole stage earlier or later; +/− makes it wider or narrower. '+
+      'Renaming it changes it <b>on this event only</b> — a new event is still created with the default names, so if a stage should '+
+      'always be called something else, tell Belén and the default changes.</p>';
+    /* why a drag sometimes will not go any further — better said out loud than felt as a
+       dead gesture (the lesson of 30 Jul: if it is not obvious, say it) */
+    if(def.phase==='pre'){
+      const evIdx=evIndex(ev),bars=layLane(ev,lane,evIdx),pre=bars.filter(b=>b.s.phase==='pre');
+      const i=pre.findIndex(b=>b.s.key===key);
+      if(i>=0){let after=0;for(let k=i+1;k<pre.length;k++)after+=pre[k].w;
+        if(evIdx-after-pre[i].w-pre[i].x<=0&&i+1<pre.length)
+          h+='<p class="hint" style="margin:-4px 0 8px;color:var(--orange)">This stage cannot move any closer to the event until '+
+            '<b>'+esc(stageName(lane,pre[i+1].s.key,ev))+'</b> or one of the stages after it is shortened — the lane has to finish on the event itself.</p>';}
+    }
+  }
+  h+='<table>'+taskHeadRow(mg);
+  if(!flat.length)h+='<tr><td colspan="6" class="empty">No tasks directly on this stage'+(mg?' — add one, no substage needed.':'.')+'</td></tr>';
+  flat.forEach(t=>{h+=taskRow(t,mg,false);});
+  h+='</table>';
+  if(nested.length){
+    h+='<h3 style="margin:16px 0 6px;font-size:13px">Also filed inside this stage’s items <span class="hint">— '+nested.length+' task'+(nested.length===1?'':'s')+'</span></h3>'+
+      '<table>'+taskHeadRow(mg);
+    nested.forEach(t=>{h+=taskRow(t,mg,true);});
+    h+='</table>';
+  }
+  p.innerHTML=h;
+  const sn=document.getElementById('stgname');
+  if(sn)sn.onchange=e=>{const v=(e.target.value||'').trim();
+    const row=DB.stageLayRow(ev.id,lane,key);
+    row.name=v&&v!==(def?def.name:'')?v:null;   // back to blank = back to the catalogue name
+    DB.save();renderTimeline();renderTasks();};
+  const at=document.getElementById('addstagetask');if(at)at.onclick=()=>{newTask(lane,key,null);};
+  wireTaskRows(p);
+}
+/* one place that makes a task, so a stage-level one and a substage one can never drift */
+function newTask(lane,stage,substageId){
+  const t={id:DB.newId(),eventId:ev.id,lane:lane,stage:stage,substageId:substageId,
+           title:'New task',assignee:null,assignees:[],deadline:'',status:'To do',notes:''};
+  DB.tasks.push(t);DB.save();renderTasks();
+}
+function wireTaskRows(p){
+  p.querySelectorAll('[data-tf]').forEach(el=>el.onchange=()=>{
+    const t=DB.tasks.find(x=>x.id==el.dataset.id);if(!t)return;
+    let v=el.value;if(el.dataset.tf==='assignee')v=v?+v:null;
+    t[el.dataset.tf]=v;DB.save();});
   p.querySelectorAll('[data-deltask]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this task?'))return;DB.data.tasks=DB.tasks.filter(t=>t.id!=b.dataset.deltask);DB.save();renderTasks();});
+  p.querySelectorAll('[data-whobtn]').forEach(b=>b.onclick=e=>{e.stopPropagation();openWhoPicker(b,DB.tasks.find(x=>x.id==b.dataset.whobtn));});
+}
+/* the "several people on one task" pop-out */
+function openWhoPicker(btn,t){
+  if(!t)return;
+  document.querySelectorAll('.whopop').forEach(x=>x.remove());
+  const who=DB.taskPeople(t);
+  const pop=document.createElement('div');pop.className='whopop';
+  pop.style.cssText='position:absolute;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:10px;'+
+    'box-shadow:0 8px 24px rgba(0,0,0,.14);padding:8px;max-height:260px;overflow:auto;min-width:210px';
+  pop.innerHTML='<div class="hint" style="margin-bottom:6px">Tick everyone on this task. The first one is the main owner.</div>'+
+    DB.people.filter(pp=>!pp.deleted&&!isTeamAccount(pp)).map(pp=>
+      '<label style="display:flex;gap:7px;align-items:center;padding:3px 2px;cursor:pointer">'+
+      '<input type="checkbox" data-wp="'+pp.id+'"'+(who.indexOf(pp.id)>=0?' checked':'')+'>'+esc(pp.name)+'</label>').join('');
+  document.body.appendChild(pop);
+  const r=btn.getBoundingClientRect();
+  pop.style.left=Math.min(r.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-pop.offsetWidth-12)+'px';
+  pop.style.top=(r.bottom+window.scrollY+4)+'px';
+  pop.querySelectorAll('[data-wp]').forEach(cb=>cb.onchange=()=>{
+    const id=+cb.dataset.wp;
+    let list=DB.taskPeople(t);
+    if(cb.checked){if(list.indexOf(id)<0)list.push(id);}else list=list.filter(x=>x!==id);
+    t.assignees=list.slice();
+    t.assignee=list.length?list[0]:null;   // the primary owner is the first one ticked
+    DB.save();renderTasks();
+    const nb=document.querySelector('[data-whobtn="'+t.id+'"]');if(nb)openWhoPicker(nb,t);
+  });
+  const close=e=>{if(pop.contains(e.target))return;pop.remove();document.removeEventListener('mousedown',close);};
+  setTimeout(()=>document.addEventListener('mousedown',close),0);
 }
 
-/* drag: milestones/discounts (mirror), W0 (reschedule), substages (move week / click to open) */
+/* ---------------- selecting and moving a whole STAGE (6 Aug 2026) ----------------
+   Valeria: "poder mover las stages — ahora no podemos adelantar o atrasar las stages."
+   Materials in particular sits much closer to the event than the five weeks the default
+   template gives it. Belén's condition: stages still must not OVERLAP. Gaps are fine
+   (a stage can now genuinely be "not started yet"); an overlap is not, so a drag is
+   clamped between the stage before and the stage after in the same lane. */
+function toggleStage(lane,key){
+  const same=selStage&&selStage.lane===lane&&selStage.key===key;
+  selStage=same?null:{lane:lane,key:key};
+  if(selStage)selSub=null;                       // one thing selected at a time
+  if(selStage&&expandedLane!==lane)expandedLane=lane;
+  renderTimeline();renderTasks();
+}
+/* How far this stage may travel, in COLUMNS.
+   BACK: only as far as the end of the stage before it — a gap opens, nothing overlaps.
+   FORWARD: as far as it likes, PROVIDED everything that comes after it still fits before
+   the event. Dragging Materials towards the event pushes Travel, Venue ops and Prep along
+   with it and stops when the last of them reaches W0 — the stages after it are not
+   silently shoved past the day the event happens. */
+function stageDragLimits(d){
+  const pre=d.bars.filter(b=>b.s.phase==='pre');
+  const me=d.bars[d.idx], i=pre.indexOf(me);
+  if(i<0)return {min:0,max:0};
+  const prev=i>0?pre[i-1]:null;
+  const lo=prev?(prev.x+prev.w):(me.x-52);        // no neighbour behind it: a year of room is plenty
+  let after=0;for(let k=i+1;k<pre.length;k++)after+=pre[k].w;
+  const hi=d.evIdx-after-me.w;                    // the last stage in the lane still ends at W0
+  return {min:lo-me.x,max:Math.max(lo-me.x,hi-me.x)};
+}
+/* drag: milestones/discounts (mirror), W0 (reschedule), substages (move week / click to open),
+   whole stages (move earlier/later, clamped so they never overlap) */
 document.addEventListener('mousemove',e=>{
+  if(dragStage){
+    dragStage.dx=e.clientX-dragStage.startX;
+    if(Math.abs(dragStage.dx)>3)dragStage.moved=true;
+    const lim=stageDragLimits(dragStage);
+    let cols=Math.round(dragStage.dx/WEEKW);
+    cols=Math.max(lim.min,Math.min(lim.max,cols));
+    dragStage.cols=cols;
+    const px=cols*WEEKW;
+    dragStage.el.style.transform='translateX('+px+'px)';
+    if(dragStage.lab)dragStage.lab.style.transform='translateX('+px+'px)';
+    return;
+  }
   if(dragMk){dragMk.dx=e.clientX-dragMk.startX;const px=Math.round(dragMk.dx/WEEKW)*WEEKW;dragMk.band.style.transform='translateX('+px+'px)';dragMk.chip.style.transform='translateX('+px+'px)';}
   else if(dragW0){dragW0.dx=e.clientX-dragW0.startX;const px=Math.round(dragW0.dx/WEEKW)*WEEKW;dragW0.band.style.transform='translateX('+px+'px)';dragW0.chip.style.transform='translateX('+px+'px)';}
   else if(dragSub){dragSub.dx=e.clientX-dragSub.startX;if(Math.abs(dragSub.dx)>3)dragSub.moved=true;dragSub.el.style.transform='translateX('+(Math.round(dragSub.dx/WEEKW)*WEEKW)+'px)';}
 });
 document.addEventListener('mouseup',()=>{
+  if(dragStage){
+    const d=dragStage;dragStage=null;
+    if(d.moved&&d.cols){
+      const me=d.bars[d.idx];
+      /* stored as weeks BEFORE the event, which is how every other position on this
+         board is stored — so it survives the event being rescheduled */
+      const row=DB.stageLayRow(ev.id,d.lane,d.key);
+      row.start=d.evIdx-(me.x+d.cols);
+      if(row.dur==null){const def=stageDef(d.lane,d.key,ev);row.dur=def?stageDur(ev,d.lane,def):me.w;}
+      DB.save();
+    }else if(!d.moved){toggleStage(d.lane,d.key);return;}
+    renderTimeline();renderTasks();return;
+  }
   if(dragMk){const wks=Math.round((dragMk.dx||0)/WEEKW);if(wks){dragMk.ev.milestones&&dragMk.kind==='mile'?(dragMk.ev.milestones[dragMk.field]=Math.max(0,dragMk.ev.milestones[dragMk.field]-wks)):(dragMk.ev.alerts[dragMk.field].off=Math.max(0,dragMk.ev.alerts[dragMk.field].off-wks));if(dragMk.field==='launch'){const off=dragMk.ev.milestones.launch;dragMk.ev.dur.project.scaling=Math.max(1,off);dragMk.ev.dur.marketing.onmarket=Math.max(1,off);}DB.save();}dragMk=null;renderTimeline();}
   else if(dragW0){const wks=Math.round((dragW0.dx||0)/WEEKW);if(wks){dragW0.ev.date=toISO(addDays(ymd(dragW0.ev.date),wks*7));dragW0.ev.prov=false;DB.save();}dragW0=null;renderTimeline();}
   else if(dragSub){const s=dragSub;if(s.moved){const wks=Math.round((s.dx||0)/WEEKW);s.sub.week=s.baseWeek-wks;s.sub.stage=stageKeyAtWeek(s.sub.lane,s.sub.week)||s.sub.stage;DB.save();renderTimeline();if(selSub===s.sub.id)renderTasks();}else{selSub=(selSub===s.sub.id?null:s.sub.id);renderTimeline();renderTasks();}dragSub=null;}
@@ -695,7 +1254,16 @@ document.addEventListener('mouseup',()=>{
 
 function wire(){
   document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(ev.name.replace(/[^\w]+/g,'_')+'.xlsx',[
-    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);return{Lane:t.lane,Stage:stageName(t.lane,t.stage,ev),Substage:s?s.name:'',Task:t.title,Responsible:DB.personName(t.assignee),Deadline:deIso(t.deadline||''),Status:t.status};})},
+    {name:'Tasks',rows:DB.tasksFor(ev.id).map(t=>{const s=DB.substages.find(x=>x.id==t.substageId);
+      return{Lane:t.lane,Stage:stageName(t.lane,t.stage,ev),Substage:s?s.name:'',Task:t.title,
+        Responsible:DB.taskPeople(t).map(id=>DB.personName(id)).join(', '),
+        Deadline:deIso(t.deadline||''),Status:t.status,Notes:t.notes||''};})},
+    /* the venue list travels with the export — it is the sheet logistics used to keep by hand */
+    {name:'Venue',rows:DB.venueReady()?DB.venueCatsFor(ev.id).reduce((rows,c)=>{
+        const items=DB.venueItemsFor(c.id);
+        if(!items.length)rows.push({Category:c.name,Item:'',Notes:''});
+        items.forEach(i=>rows.push({Category:c.name,Item:i.item||'',Notes:i.notes||''}));
+        return rows;},[]):[]},
     {name:'Team',rows:ev.team.map(m=>({Name:DB.personName(m.personId),Role:m.role}))}]);};
   document.getElementById('addmem').onclick=()=>{const v=document.getElementById('newp').value;if(!v)return;ev.team.push({personId:+v,role:document.getElementById('newr').value});DB.save();renderTeam();};
 }

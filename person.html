@@ -54,7 +54,7 @@
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
 <div id="tip"></div>
-<script src="store.js?v=110"></script>
+<script src="store.js?v=112"></script>
 <script>
 const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
 document.getElementById('nav').innerHTML=navBar('people');
@@ -83,8 +83,15 @@ function render(){
     '<p class="sub">'+esc(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' in progress) across '+events.length+' events'+
     ' &nbsp;·&nbsp; <a href="people.html">← Personnel</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>';
   head+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="chip" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
-  head+='<div class="legend"><span><span class="sw" style="background:#A9CBEE"></span>PM</span><span><span class="sw" style="background:#FFC9A3"></span>Marketing</span><span><span class="sw" style="background:#BFE0A0"></span>Sales</span><span><span class="sw" style="background:#ECCA46"></span>Logistics</span><span><span class="sw" style="background:#111"></span>Event week</span><span style="color:#b9b6ad">✓ done · line = today</span></div>';
-  head+='<div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>';
+  /* the lane legend used to be written out here — dcTaskCalendar draws its own now */
+  /* the calendar and the task list both come from store.js now (6 Aug 2026) — 🙋 Me shows
+     exactly the same two things, and one implementation means they cannot drift apart */
+  head+='<div id="calHost"></div>';
+  head+='<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:16px">'+
+    '<h3 style="margin:0 0 4px;font-size:15px;color:var(--charcoal)">✅ Their tasks</h3>'+
+    '<p class="hint" style="margin:0 0 8px;font-size:12px;color:var(--muted)">Status and notes are editable here — '+
+    (DB.canManage()?'you do not have to open each event to move something along.':'you can tick the ones that are yours.')+'</p>'+
+    '<div id="ptasks">'+dcTaskListHtml(person.id,{empty:'No tasks assigned yet.'})+'</div></div>';
   /* 💬 one conversation per person + what is open about them elsewhere (Belén, 29 Jul).
      Only the person, admins and HR can see it — the server says the same. */
   if(canSeePersonThread(person.id))
@@ -112,68 +119,17 @@ function render(){
   document.getElementById('xls').onclick=e=>{e.preventDefault();exportXLSX(person.name.replace(/[^\w]+/g,'_')+'_tasks.xlsx',[
     {name:'Tasks',rows:myTasks.map(t=>{const e=DB.event(t.eventId);const s=DB.substages.find(x=>x.id==t.substageId);return{Event:e?e.name:'',Lane:t.lane,Stage:stageName(t.lane,t.stage,e),Substage:s?s.name:'',Task:t.title,When:toISO(taskDate(t)),Deadline:t.deadline||'',Status:t.status};})}]);};
 
-  const grid=document.getElementById('grid');
-  if(!events.length){grid.innerHTML='<div class="empty">No events or tasks assigned yet.</div>';return;}
-
-  // axis bounds across all this person's task dates + event dates + today
-  const dts=[]; myTasks.forEach(t=>dts.push(+taskDate(t))); events.forEach(e=>dts.push(+monday(ymd(e.date)))); dts.push(+monday(new Date()));
-  const start=addDays(monday(new Date(Math.min(...dts))),-2*7);
-  const end=addDays(monday(new Date(Math.max(...dts))),3*7);
-  const NW=Math.round((+end-+start)/(7*86400000))+1, BW=NW*WEEKW;
-  const todayIdx=Math.round((+monday(new Date())-+start)/(7*86400000));
-  const wcol=d=>Math.round((+monday(d)-+start)/(7*86400000));
-
-  // header row
-  const hrow=document.createElement('div');hrow.className='row';hrow.innerHTML='<div class="corner" style="min-height:'+TOPH+'px"></div>';
-  const hb=document.createElement('div');hb.className='hbody';hb.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+TOPH+'px';
-  for(let w=0;w<NW;w++){const d=addDays(start,w*7);
-    if(d.getDate()<=7){const ml=document.createElement('div');ml.className='mlabel';ml.style.left=(w*WEEKW)+'px';ml.textContent=MON[d.getMonth()]+(d.getMonth()===0?" '"+String(d.getFullYear()).slice(2):'');hb.appendChild(ml);}
-    const wt=document.createElement('div');wt.className='wtick';wt.style.cssText='left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';wt.textContent=d.getDate();hb.appendChild(wt);}
-  if(todayIdx>=0&&todayIdx<NW){const tl=document.createElement('div');tl.className='todaylab';tl.style.left=(todayIdx*WEEKW)+'px';tl.textContent='TODAY';hb.appendChild(tl);}
-  hrow.appendChild(hb);grid.appendChild(hrow);
-
-  events.forEach(ev=>{
-    const evCol=wcol(monday(ymd(ev.date)));
-    const rowTasks=myTasks.filter(t=>t.eventId===ev.id);
-    // pack into non-overlapping rows
-    const items=rowTasks.map(t=>{const c=wcol(taskDate(t));return {t,c,x:c*WEEKW,w:Math.max((t.title||'').length*6+22,44)};}).sort((a,b)=>a.x-b.x);
-    const rowRight=[];items.forEach(it=>{let r=rowRight.findIndex(rr=>rr<=it.x-3);if(r<0){r=rowRight.length;rowRight.push(0);}rowRight[r]=it.x+it.w;it.row=r;});
-    const rows=Math.max(rowRight.length,1), bodyH=ROWPAD+rows*(TASKH+TGAP);
-
-    const row=document.createElement('div');row.className='row';
-    const head=document.createElement('div');head.className='head';
-    head.innerHTML='<div class="nm"><span class="chip" style="background:'+(TOPICS[ev.topic]||'#999')+'"></span><span class="t">'+esc(ev.name)+'</span></div>'+
-      '<div class="ln">'+esc(ev.city||'')+(ev.city&&ev.country?', ':'')+esc(ev.country||'')+' · '+dateRange(ev)+' · '+rowTasks.length+' task'+(rowTasks.length===1?'':'s')+'</div>';
-    head.querySelector('.nm').onclick=()=>location.href='event.html?id='+ev.id;
-
-    const body=document.createElement('div');body.className='body';body.style.cssText='flex:0 0 '+BW+'px;width:'+BW+'px;height:'+bodyH+'px';
-    const gb=document.createElement('div');gb.className='gridbg';gb.style.background='repeating-linear-gradient(to right,transparent 0,transparent '+(WEEKW-1)+'px,#efece5 '+(WEEKW-1)+'px,#efece5 '+WEEKW+'px)';body.appendChild(gb);
-    for(let w=0;w<NW;w++){const m=addDays(start,w*7);const c=capacity(m);if(c.w<1){const b=document.createElement('div');b.className='band'+(c.w===0?' skip':'');b.style.cssText+=';left:'+(w*WEEKW)+'px;width:'+WEEKW+'px';b.title=c.why;body.appendChild(b);}}
-    // event-week (W0) marker
-    if(evCol>=0&&evCol<NW){const w0=document.createElement('div');w0.className='w0';w0.style.cssText='left:'+(evCol*WEEKW)+'px;height:'+bodyH+'px';body.appendChild(w0);
-      const w0l=document.createElement('div');w0l.className='w0lab';w0l.style.cssText='left:'+(evCol*WEEKW+3)+'px;top:2px';w0l.textContent='EVENT';body.appendChild(w0l);}
-    // today line
-    if(todayIdx>=0&&todayIdx<NW){const tln=document.createElement('div');tln.className='today';tln.style.cssText='left:'+(todayIdx*WEEKW)+'px;height:'+bodyH+'px';body.appendChild(tln);}
-    // task bars
-    items.forEach(it=>{const t=it.t, col=stageColor(t.lane,t.stage,ev);
-      const el=document.createElement('div');el.className='task'+(t.status==='Done'?' done':t.status==='In progress'?' prog':'');
-      el.style.cssText='left:'+(it.x+2)+'px;top:'+(ROWPAD+it.row*(TASKH+TGAP))+'px;width:'+(it.w)+'px;height:'+TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
-      el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
-      const sub=DB.substages.find(s=>s.id==t.substageId);
-      el.addEventListener('mousemove',e=>showTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage,ev))+(sub?' · '+esc(sub.name):'')+'<br>'+(t.deadline?('due '+deIso(t.deadline)):('week of '+fmtD(taskDate(t))))+' · '+esc(t.status)));
-      el.addEventListener('mouseleave',hideTip);
-      el.onclick=()=>location.href='event.html?id='+ev.id;
-      body.appendChild(el);});
-    row.appendChild(head);row.appendChild(body);grid.appendChild(row);
-  });
+  /* the calendar and the task list are drawn by store.js — see dcTaskCalendar /
+     dcTaskListHtml. The 45 lines of grid-building that used to sit here moved there on
+     6 Aug 2026 so that 🙋 Me could show the same thing without a second copy. */
+  try{dcTaskCalendar(document.getElementById('calHost'),person.id);}
+  catch(e){document.getElementById('calHost').innerHTML='<div class="empty">The calendar could not be drawn: '+esc(e.message||e)+'</div>';}
+  const pt=document.getElementById('ptasks');
+  wireTaskList(pt,()=>{const b=document.getElementById('ptasks');if(b){b.innerHTML=dcTaskListHtml(person.id,{empty:'No tasks assigned yet.'});wireTaskList(b,null);}});
 }
-function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const start=null;
-  // recompute today's column using the same bounds as render
-  const myTasks=DB.tasksOf(person.id);const evIds=new Set(myTasks.map(t=>t.eventId));DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==person.id))evIds.add(ev.id);});
-  if(person.access==='admin')DB.events.forEach(e=>evIds.add(e.id));
-  const dts=[];myTasks.forEach(t=>dts.push(+taskDate(t)));DB.events.filter(e=>evIds.has(e.id)).forEach(e=>dts.push(+monday(ymd(e.date))));dts.push(+monday(new Date()));
-  if(!dts.length)return;const s=addDays(monday(new Date(Math.min(...dts))),-2*7);
-  const todayIdx=Math.round((+monday(new Date())-+s)/(7*86400000));wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
+/* dcTaskCalendar opens itself on today — this stays as a no-op so the boot call, and any
+   other page that learned to call it, keeps working */
+function scrollToToday(){}
 </script>
 </body>
 </html>
