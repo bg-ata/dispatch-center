@@ -1762,6 +1762,45 @@ function evPaceCard(f){
   const tgt=(+f.target||+f.stretch||0)||null;
   return {code,cur,prev,medShare,tgt,finishedN:finished.length};
 }
+/* ---- the accumulated pace chart, drawn from evPaceCard ----
+   This edition (orange) · the previous edition of the franchise (grey) · a typical event
+   scaled to this target (dashed blue) · the target itself (dotted).
+   Lifted out of dashboard.html on 6 Aug 2026 when the event page's € Results tab needed
+   the same picture: it was already the third place that wanted it, and three copies of a
+   chart is how the three quietly start disagreeing.
+   ⚠ KEEP IN SYNC with spx.html drawHcPace — that one is the board's own health check and
+   is still separate on purpose (different axis, different question). */
+const _dcCharts={};
+function dcPaceChart(canvasId,f,opts){
+  opts=opts||{};
+  const el=document.getElementById(canvasId);
+  if(!el)return null;
+  /* replace the CANVAS, never the parent's innerHTML: today every caller happens to wrap
+     the canvas on its own, but the first one that puts a caption in that wrapper would
+     have it silently eaten */
+  const bail=msg=>{el.outerHTML='<p class="hint" style="margin:0">'+msg+'</p>';return null;};
+  if(!window.Chart)return bail('The chart library did not load — the figures above are still correct.');
+  const pace=evPaceCard(f);
+  if(!pace.cur.length&&!pace.prev)
+    return bail('No week-by-week history for this event yet — the curve appears once the weekly figures start landing.');
+  const wmin=Math.min(-26,...pace.cur.map(r=>+r.week),...(pace.prev?pace.prev.rows.map(r=>+r.week):[0]));
+  const weeks=[];for(let w=Math.max(-40,wmin);w<=1;w++)weeks.push(w);
+  const series=rows=>weeks.map(w=>{const r=rows.find(x=>+x.week===w);return (r&&r.soFarEur!=null&&r.soFarEur!=='')?+r.soFarEur:null;});
+  const plabel=p=>((''+p.name)+((p.year&&!(''+p.name).includes(''+p.year))?' '+p.year:'')).trim();
+  const ds=[{label:'This edition',data:series(pace.cur),borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,spanGaps:true,tension:.25}];
+  if(pace.prev)ds.push({label:plabel(pace.prev),data:series(pace.prev.rows),borderColor:'#9a978e',backgroundColor:'#9a978e',borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
+  if(pace.tgt&&pace.finishedN){
+    ds.push({label:'Typical event → target',data:weeks.map(w=>{const s=pace.medShare(w);return s==null?null:s*pace.tgt;}),
+             borderColor:'#29ACE3',borderDash:[6,4],borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
+    ds.push({label:'Target',data:weeks.map(()=>pace.tgt),borderColor:'#2B2B2B',borderDash:[2,3],borderWidth:1.5,pointRadius:0});
+  }
+  if(_dcCharts[canvasId]){try{_dcCharts[canvasId].destroy();}catch(e){}}
+  _dcCharts[canvasId]=new Chart(el,{type:'line',data:{labels:weeks.map(w=>'W'+w),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{boxWidth:14,font:{size:10}}}},
+      scales:{y:{ticks:{callback:v=>finFmt(v)}},x:{ticks:{maxTicksLimit:14}}}}});
+  return pace;
+}
 let _wkAutoTimer=null;
 /* called from syncNow with the set of tables the sync just pushed */
 function weeklyAutoHook(touched){

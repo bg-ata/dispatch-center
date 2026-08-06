@@ -99,7 +99,10 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=114"></script>
+<!-- the € Results tab draws the sales health-check curve (dcPaceChart in store.js).
+     Same version as dashboard.html and spx.html so browsers reuse the cached copy. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="store.js?v=115"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
@@ -254,7 +257,11 @@ function render(){
          tab is always there, and when it is empty it says so in words. (External projects
          are not sold, so they keep no SPX tab.) */
       '<button data-et="spx">💼 SPX</button>'+
-      '<button data-et="imp">Impact</button><button data-et="del">Delegates</button>'+
+      /* Delegates removed 6 Aug 2026 — Belén: "for now you can delete the tab
+         'delegates' as it looks like we won't be using the dispatch for this".
+         renderDelegatesTab() is left in place, unhooked, so switching it back on is
+         one line rather than a rebuild. */
+      '<button data-et="imp">Impact</button>'+
       '<button data-et="ven">🏛 Venue</button>'+
       '<button data-et="req">🙋 Requests'+reqBadge()+'</button>':'')+'</div>'+
     '<div id="sec-time">'+
@@ -266,9 +273,9 @@ function render(){
       '<div style="margin-left:auto;display:flex;align-items:center;gap:5px"><span class="hint">Zoom</span><button class="btn sm" id="zOut">−</button><span id="zLbl" class="hint" style="min-width:40px;text-align:center;font-weight:600">'+Math.round(ZOOM*100)+'%</span><button class="btn sm" id="zIn">+</button></div></div>'+
       '<div class="tlflex"><div class="lanerail" id="lanerail"></div><div class="tlwrap"><div class="tl" id="tl"></div></div></div></div>'+
     '<div class="panel" id="tkpanel"></div>'+
-    '</div><div id="sec-eur" style="display:none"></div><div id="sec-spx" style="display:none"></div><div id="sec-imp" style="display:none"></div><div id="sec-del" style="display:none"></div>'+
+    '</div><div id="sec-eur" style="display:none"></div><div id="sec-spx" style="display:none"></div><div id="sec-imp" style="display:none"></div>'+
     '<div id="sec-ven" style="display:none"></div><div id="sec-req" style="display:none"></div>';
-  const SECS=['time','eur','spx','imp','del','ven','req'];
+  const SECS=['time','eur','spx','imp','ven','req'];   // 'del' retired 6 Aug 2026
   document.querySelectorAll('[data-et]').forEach(b=>b.onclick=()=>{
     curTab=b.dataset.et;
     /* hash-routed (29 Jul UX round) — keeps ?id= intact, makes tabs linkable */
@@ -278,7 +285,6 @@ function render(){
     if(b.dataset.et==='eur')renderEuroTab();
     if(b.dataset.et==='spx')renderSpxTab();
     if(b.dataset.et==='imp')renderImpactTab();
-    if(b.dataset.et==='del')renderDelegatesTab();
     if(b.dataset.et==='ven')renderVenueTab();
     if(b.dataset.et==='req')renderReqTab();
   });
@@ -287,7 +293,8 @@ function render(){
   document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
   // deep link: #eur/#imp/#del opens that tab directly (29 Jul UX round)
   const hh=location.hash.replace('#','');
-  if(curTab==='time'&&['eur','spx','imp','del','ven','req'].includes(hh))curTab=hh;
+  /* an old #del bookmark must not land on a tab that no longer exists — it falls to Timeline */
+  if(curTab==='time'&&['eur','spx','imp','ven','req'].includes(hh))curTab=hh;
   // live updates (dc-remote) rebuild the page — put the user back on the tab they were on
   if(curTab!=='time'){const b=document.querySelector('[data-et="'+curTab+'"]');if(b)b.click();}
 }
@@ -305,91 +312,138 @@ function wonDeals(){try{return DB.wonDealsForEvent(ev.id)||[];}catch(e){return [
 function dealsAny(){try{return DB.dealsForEvent(ev.id)||[];}catch(e){return [];}}
 function reqBadge(){try{const n=DB.reqReady()?DB.requestsOpen(ev.id).length:0;
   return n?(' <span style="background:var(--orange);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;font-weight:700">'+n+'</span>'):'';}catch(e){return '';}}
+/* ---- sortable tables (Belén, 6 Aug 2026: "like the SPX pipeline, make it orderable
+   alphabetically, by date etc") ----
+   One generic sorter for both tables on this tab. A column declares how to READ its value
+   for sorting and how to RENDER it, so the two can never drift — the bug where a column
+   sorts by the displayed string ("1.200 €" before "800 €") cannot happen here. */
+let spxSort={signed:{col:'signedAt',dir:-1},pipe:{col:'eur',dir:-1}};
+function sortDeals(rows,cols,st){
+  const c=cols.find(x=>x.key===st.col)||cols[0];
+  return rows.slice().sort((a,b)=>{
+    let x=c.val(a),y=c.val(b);
+    const blankX=(x==null||x===''),blankY=(y==null||y==='');
+    if(blankX&&blankY)return 0;
+    if(blankX)return 1;                 // empties always sink, whichever way you sort
+    if(blankY)return -1;
+    if(c.type==='num'){x=+x||0;y=+y||0;return (x-y)*st.dir;}
+    return (''+x).localeCompare(''+y,'es',{sensitivity:'base'})*st.dir;
+  });
+}
+function dealTable(rows,cols,which,tot){
+  const st=spxSort[which];
+  let h='<div style="overflow-x:auto"><table><tr>'+
+    cols.map(c=>'<th'+(c.num?' class="num"':'')+(c.title?(' title="'+c.title+'"'):'')+
+      ' data-sort="'+which+':'+c.key+'" style="cursor:pointer;user-select:none">'+c.label+
+      (st.col===c.key?('<span style="color:var(--orange)"> '+(st.dir>0?'▲':'▼')+'</span>'):'<span style="opacity:.25"> ⇅</span>')+
+      '</th>').join('')+'</tr>';
+  sortDeals(rows,cols,st).forEach(d=>{
+    h+='<tr'+(d.won&&!d.complete?' style="background:#FFF6EF"':'')+'>'+
+      cols.map(c=>'<td'+(c.num?' class="num"':'')+(c.style?(' style="'+c.style(d)+'"'):'')+'>'+c.cell(d)+'</td>').join('')+'</tr>';
+  });
+  if(tot)h+='<tr style="font-weight:700;border-top:2px solid var(--line)">'+
+    cols.map(c=>'<td'+(c.num?' class="num"':'')+'>'+(tot[c.key]||'')+'</td>').join('')+'</tr>';
+  return h+'</table></div>';
+}
 function renderSpxTab(){
   const S=document.getElementById('sec-spx');
   const deals=wonDeals();
   const money=v=>v==null?'—':new Intl.NumberFormat('es-ES',{maximumFractionDigits:0}).format(v)+' €';
-  /* ---- who is selling this event (restored 6 Aug 2026) ----
-     The block Belén missed: the responsables, without having to open reporting. It shows
-     BEFORE anything is signed, which is the whole point — the Won-only view (v99) went
-     blank exactly when an event most needs to know who is on it. */
-  const open=dealsAny().filter(d=>!d.won&&!d.lost);
-  let pipe='';
-  if(open.length){
-    const owners=[];open.forEach(d=>{if(d.owner&&owners.indexOf(d.owner)<0)owners.push(d.owner);});
-    pipe='<div class="panel"><h3>In the pipeline <span class="hint">— '+open.length+' proposal'+(open.length===1?'':'s')+
-      ' out · '+money(open.reduce((a,d)=>a+(+d.eur||0),0))+' on the table'+
-      (owners.length?' · sold by '+esc(owners.join(', ')):'')+'</span></h3>'+
-      '<p class="hint">Nothing here is committed yet — it is who is working this event and what they have offered. '+
-      'It becomes a signed row below the moment sales marks it Signed on the <a href="spx.html">SPX board</a>.</p>'+
-      '<div style="overflow-x:auto"><table><tr><th>Company</th><th class="num">Value</th><th>Stage</th><th>Sent</th><th>Follow-up</th><th>Sales</th></tr>'+
-      open.map(d=>'<tr><td><b>'+esc(d.company)+'</b></td><td class="num">'+money(d.eur)+'</td>'+
-        /* the stored stage is still 'Won'; everyone reads "Signed" (keep in sync with spx.html stageLabel) */
-        '<td>'+esc(d.stage==='Won'?'Signed':(d.stage||'—'))+'</td>'+
-        '<td>'+(d.sentAt?esc(ddmmyyyy(d.sentAt)):'<span class="empty">—</span>')+'</td>'+
-        '<td>'+(d.followAt?esc(ddmmyyyy(d.followAt)):'<span class="empty">—</span>')+'</td>'+
-        '<td>'+esc(d.owner||'')+'</td></tr>').join('')+'</table></div></div>';
-  }
-  if(!deals.length){
-    S.innerHTML=pipe+'<div class="panel"><h3>Signed sponsors</h3><span class="empty">Nothing signed for this event yet'+
-      (open.length?' — the proposals above are still out.':'. When sales signs one, it lands here with everything logistics needs to deliver it.')+
-      '</span><p class="hint" style="margin-top:8px">Selling happens on the <a href="spx.html">💼 SPX board</a>.</p></div>';return;}
-  const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
-  const gaps=deals.filter(d=>!d.complete).length;
-  const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
-  const spk=deals.reduce((a,d)=>a+(+d.speakersN||0),0);
-  const stands=deals.filter(d=>d.stand).length;
   const yn=v=>v==null?'<span class="empty">—</span>':(v?'<b>Yes</b>':'No');
   const txt=v=>v?esc(v):'<span class="empty">—</span>';
-  /* money that is signed and still waiting on an invoice — same derivation as Money and
-     the SPX health-check (DB.spxDealUninvoiced), so the three can never disagree */
-  let pendTot=0,pendN=0;
-  deals.forEach(d=>{let p=0;try{p=DB.spxDealUninvoiced(d);}catch(e){}d._pend=p;if(p>0.005){pendTot+=p;pendN++;}});
-  let h=pipe+'<div class="panel"><h3>Signed sponsors <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
-    ' · '+money(tot)+' committed'+(pendN?' · '+money(pendTot)+' still to invoice':'')+'</span></h3>'+
-    '<p class="hint">What sales has sold and what logistics has to deliver — the same rows as the '+
-    '<a href="spx.html">💼 SPX board</a> and Money → Sponsorship, read-only here so the three can never disagree. '+
-    'Totals below are what the event owes its sponsors: '+
-    '<b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'.</p>';
-  if(gaps)h+='<p class="hint" style="color:var(--orange)"><b>'+gaps+' contract'+(gaps===1?' is':'s are')+
-    ' missing delivery details.</b> Sales fills them in on the board — until then logistics is working blind on '+(gaps===1?'it':'them')+'.</p>';
+  const dt=v=>v?esc(ddmmyyyy(v)):'<span class="empty">—</span>';
+  const open=dealsAny().filter(d=>!d.won&&!d.lost);
+
   /* where the money is, contract by contract — same derivation as the board and
      Money → Sponsorship (DB.spxAccounting), never a second opinion */
   const ACC={paid:{t:'✓ paid',c:'#3E8C28',b:'#E6F5E6'},invoiced:{t:'✓ invoiced',c:'#185FA5',b:'#E8F0FA'},
     partpaid:{t:'part paid',c:'#C77800',b:'#FFF3E0'},partial:{t:'part invoiced',c:'#C77800',b:'#FFF3E0'},
     none:{t:'not invoiced',c:'#8a8a86',b:'#F1F0EC'}};
+  const ACCORD={paid:1,invoiced:2,partpaid:3,partial:4,none:5};   // sorts money state by how done it is
   const accCell=d=>{const a=ACC[d.acc]||ACC.none;
     return '<span style="background:'+a.b+';color:'+a.c+';border-radius:20px;padding:2px 8px;white-space:nowrap;font-weight:600;font-size:12px">'+a.t+'</span>';};
-  /* Package and "what was sold" (contents) were on the board but not here — the two
-     things logistics asks first when a lanyard order lands. Added 6 Aug 2026 with the
-     "still to invoice" column, so this tab now carries EVERYTHING the board holds. */
-  h+='<div style="overflow-x:auto"><table>'+
-    '<tr><th>Sponsor</th><th>Package</th><th class="num">Amount</th><th>Signed</th><th>Money</th>'+
-    '<th class="num" title="Signed and not invoiced yet">To invoice</th>'+
-    '<th>Branding</th><th class="num">Att.</th><th class="num">Spk.</th><th>Stand</th><th>Branded items</th><th>Notes for logistics</th><th>Sales</th></tr>';
-  deals.forEach(d=>{
-    h+='<tr'+(d.complete?'':' style="background:#FFF6EF"')+'>'+
-      '<td><b>'+esc(d.company)+'</b>'+(d.contents?'<div class="hint" style="margin:0">'+esc(d.contents)+'</div>':'')+'</td>'+
-      '<td>'+txt(d.packageTier)+'</td>'+
-      '<td class="num">'+money(d.eur)+'</td>'+
-      '<td>'+(d.signedAt?esc(ddmmyyyy(d.signedAt)):'<span class="empty">—</span>')+'</td>'+
-      '<td>'+accCell(d)+'</td>'+
-      '<td class="num"'+(d._pend>0.005?' style="color:#C77800;font-weight:600"':'')+'>'+(d._pend>0.005?money(d._pend):'<span class="empty">—</span>')+'</td>'+
-      '<td>'+txt(d.branding)+'</td>'+
-      '<td class="num">'+(d.attendeesN==null?'<span class="empty">—</span>':d.attendeesN)+'</td>'+
-      '<td class="num">'+(d.speakersN==null?'<span class="empty">—</span>':d.speakersN)+'</td>'+
-      '<td>'+yn(d.stand)+'</td>'+
-      '<td>'+txt(d.brandedItems)+'</td>'+
-      '<td>'+txt(d.notes)+'</td>'+
-      '<td>'+esc(d.owner||'')+'</td></tr>';
+
+  let pendTot=0,pendN=0;
+  deals.forEach(d=>{let p=0;try{p=DB.spxDealUninvoiced(d);}catch(e){}d._pend=p;if(p>0.005){pendTot+=p;pendN++;}});
+  const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
+  const gaps=deals.filter(d=>!d.complete).length;
+  const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
+  const spk=deals.reduce((a,d)=>a+(+d.speakersN||0),0);
+  const stands=deals.filter(d=>d.stand).length;
+
+  /* ================= SIGNED FIRST =================
+     Belén, 6 Aug 2026: "Most important is that at the top we see the info of the contracts
+     that are already signed, invoiced etc since logistics needs it for their work."
+     The pipeline used to sit above this; it is speculative and logistics cannot act on it,
+     so it moved below. */
+  let h='';
+  if(!deals.length){
+    h+='<div class="panel"><h3>Signed sponsors</h3><span class="empty">Nothing signed for this event yet'+
+      (open.length?' — the proposals below are still out.':'. When sales signs one, it lands here with everything logistics needs to deliver it.')+
+      '</span><p class="hint" style="margin-top:8px">Selling happens on the <a href="spx.html">💼 SPX board</a>.</p></div>';
+  }else{
+    const SCOLS=[
+      {key:'company',label:'Sponsor',val:d=>d.company,
+        cell:d=>'<b>'+esc(d.company)+'</b>'+(d.contents?'<div class="hint" style="margin:0">'+esc(d.contents)+'</div>':'')},
+      {key:'packageTier',label:'Package',val:d=>d.packageTier,cell:d=>txt(d.packageTier)},
+      {key:'eur',label:'Amount',num:true,type:'num',val:d=>d.eur,cell:d=>money(d.eur)},
+      {key:'signedAt',label:'Signed',val:d=>d.signedAt,cell:d=>dt(d.signedAt)},
+      {key:'acc',label:'Money',val:d=>ACCORD[d.acc]||9,type:'num',cell:d=>accCell(d)},
+      {key:'_pend',label:'To invoice',num:true,type:'num',title:'Signed and not invoiced yet',val:d=>d._pend,
+        style:d=>d._pend>0.005?'color:#C77800;font-weight:600':'',
+        cell:d=>d._pend>0.005?money(d._pend):'<span class="empty">—</span>'},
+      {key:'branding',label:'Branding',val:d=>d.branding,cell:d=>txt(d.branding)},
+      {key:'attendeesN',label:'Att.',num:true,type:'num',val:d=>d.attendeesN,
+        cell:d=>d.attendeesN==null?'<span class="empty">—</span>':d.attendeesN},
+      {key:'speakersN',label:'Spk.',num:true,type:'num',val:d=>d.speakersN,
+        cell:d=>d.speakersN==null?'<span class="empty">—</span>':d.speakersN},
+      {key:'stand',label:'Stand',val:d=>d.stand?1:0,type:'num',cell:d=>yn(d.stand)},
+      {key:'brandedItems',label:'Branded items',val:d=>d.brandedItems,cell:d=>txt(d.brandedItems)},
+      {key:'notes',label:'Notes for logistics',val:d=>d.notes,cell:d=>txt(d.notes)},
+      {key:'owner',label:'Sales',val:d=>d.owner,cell:d=>esc(d.owner||'')},
+    ];
+    h+='<div class="panel"><h3>✅ Signed — what logistics has to deliver <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
+      ' · '+money(tot)+' committed'+(pendN?' · '+money(pendTot)+' still to invoice':'')+'</span></h3>'+
+      '<p class="hint">The same rows as the <a href="spx.html">💼 SPX board</a> and Money → Sponsorship, read-only here so the three can never disagree. '+
+      '<b>Click any column heading to sort</b> — by sponsor, by amount, by the date it was signed, by whether it is invoiced. '+
+      'What the event owes its sponsors: <b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+
+      ' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'.</p>';
+    if(gaps)h+='<p class="hint" style="color:var(--orange)"><b>'+gaps+' contract'+(gaps===1?' is':'s are')+
+      ' missing delivery details.</b> Sales fills them in on the board — until then logistics is working blind on '+(gaps===1?'it':'them')+'.</p>';
+    h+=dealTable(deals,SCOLS,'signed',
+      {company:'TOTAL',eur:money(tot),_pend:(pendTot>0.005?money(pendTot):''),attendeesN:att,speakersN:spk,stand:stands});
+    if(pendN)h+='<p class="hint" style="margin-top:8px;color:#C77800"><b>'+money(pendTot)+'</b> is signed and not invoiced yet ('+pendN+
+      ' contract'+(pendN===1?'':'s')+'). Real money for the event, not yet money for accounting — it is billed in <a href="facturacion.html">🧾 Invoicing</a>.</p>';
+    h+='</div>';
+  }
+
+  /* ---- then the pipeline: who is working the event and what is on the table ---- */
+  if(open.length){
+    const owners=[];open.forEach(d=>{if(d.owner&&owners.indexOf(d.owner)<0)owners.push(d.owner);});
+    const PCOLS=[
+      {key:'company',label:'Company',val:d=>d.company,cell:d=>'<b>'+esc(d.company)+'</b>'},
+      {key:'eur',label:'Value',num:true,type:'num',val:d=>d.eur,cell:d=>money(d.eur)},
+      /* the stored stage is still 'Won'; everyone reads "Signed" (keep in sync with spx.html stageLabel) */
+      {key:'stage',label:'Stage',val:d=>d.stage==='Won'?'Signed':d.stage,cell:d=>esc(d.stage==='Won'?'Signed':(d.stage||'—'))},
+      {key:'sentAt',label:'Sent',val:d=>d.sentAt,cell:d=>dt(d.sentAt)},
+      {key:'followAt',label:'Follow-up',val:d=>d.followAt,cell:d=>dt(d.followAt)},
+      {key:'owner',label:'Sales',val:d=>d.owner,cell:d=>esc(d.owner||'')},
+    ];
+    h+='<div class="panel"><h3>⏳ In the pipeline <span class="hint">— '+open.length+' proposal'+(open.length===1?'':'s')+
+      ' out · '+money(open.reduce((a,d)=>a+(+d.eur||0),0))+' on the table'+
+      (owners.length?' · sold by '+esc(owners.join(', ')):'')+'</span></h3>'+
+      '<p class="hint">Nothing here is committed — it is who is working this event and what they have offered. '+
+      'It moves up into Signed the moment sales marks it Signed on the <a href="spx.html">SPX board</a>. Sortable too.</p>'+
+      dealTable(open,PCOLS,'pipe',null)+'</div>';
+  }
+  S.innerHTML=h;
+  /* one click handler for both tables: same column again flips the direction */
+  S.querySelectorAll('[data-sort]').forEach(th=>th.onclick=()=>{
+    const [which,col]=th.dataset.sort.split(':');
+    const st=spxSort[which];
+    if(st.col===col)st.dir=-st.dir; else {st.col=col;st.dir=(col==='company'||col==='owner'||col==='stage')?1:-1;}
+    renderSpxTab();
   });
-  h+='<tr style="font-weight:700;border-top:2px solid var(--line)"><td>TOTAL</td><td></td><td class="num">'+money(tot)+
-    '</td><td></td><td></td><td class="num"'+(pendTot>0.005?' style="color:#C77800"':'')+'>'+(pendTot>0.005?money(pendTot):'')+'</td>'+
-    '<td></td><td class="num">'+att+'</td><td class="num">'+spk+'</td><td>'+stands+'</td><td></td><td></td><td></td></tr>';
-  h+='</table></div>';
-  if(pendN)h+='<p class="hint" style="margin-top:8px;color:#C77800"><b>'+money(pendTot)+'</b> is signed and not invoiced yet ('+pendN+
-    ' contract'+(pendN===1?'':'s')+'). Real money for the event, not yet money for accounting — it is billed in <a href="facturacion.html">🧾 Invoicing</a>.</p>';
-  S.innerHTML=h+'</div>';
 }
 function ddmmyyyy(iso){const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 
@@ -684,7 +738,14 @@ function renderEuroTab(){
   if(lastMoney)soFar=+lastMoney.soFarEur;
   if(!f&&!rows.length){S.innerHTML='<div class="panel"><span class="empty">No financial data for this event yet — it will populate as the event advances (€ Dashboard → Add event figures, or the weekly Excel import).</span></div>';return;}
   const res=finResult({invoiced:soFar,stretch:stretch,year:ymd(ev.date).getFullYear()});
-  let h='<div class="panel"><h3>€ Results so far</h3><div class="cards">'+
+  /* ================= SALES HEALTH CHECK (Belén, 6 Aug 2026) =================
+     "In the tab RESULTS please have the sales health check for each event, it will be
+     useful to see how much has been sold so far."
+     The same numbers and the same curve as the SPX board's health check and the Money
+     event card — all three read evPaceCard()/DB.spxAccounting, so none of them can hold
+     a private opinion about how this event is doing. */
+  let h=healthCheckHtml(f,target,stretch,soFar);
+  h+='<div class="panel"><h3>€ Results so far</h3><div class="cards">'+
     '<div class="cardk"><div class="v">'+finFmt(soFar)+'</div><div class="k">So far</div></div>'+
     '<div class="cardk"><div class="v">'+finFmt(target)+'</div><div class="k">Target</div></div>'+
     '<div class="cardk"><div class="v">'+finFmt(stretch)+'</div><div class="k">Stretch</div></div>'+
@@ -706,6 +767,49 @@ function renderEuroTab(){
     h+='</table></div>';
   }
   S.innerHTML=h;
+  /* the chart is drawn after the HTML lands, and never allowed to take the tab down */
+  if(f)try{dcPaceChart('evHcChart',f);}catch(e){console.warn('health chart:',e.message||e);}
+}
+/* how much has actually been sold, and how that compares with where this event should be.
+   Signed comes from the SPX board, invoiced from the invoice book, and the curve from the
+   weekly series — three sources, one picture, no re-derivation here. */
+function healthCheckHtml(f,target,stretch,soFar){
+  const money=v=>(v==null||v==='')?'—':finFmt(v);
+  const deals=wonDeals();
+  const signed=deals.reduce((a,d)=>a+(+d.eur||0),0);
+  let pend=0;deals.forEach(d=>{try{pend+=DB.spxDealUninvoiced(d)||0;}catch(e){}});
+  const invoiced=f?DB.finInvoiced(f):null;
+  const pipe=dealsAny().filter(d=>!d.won&&!d.lost).reduce((a,d)=>a+(+d.eur||0),0);
+  const tgt=+target||+stretch||0;
+  const pct=tgt?Math.round((+soFar||0)/tgt*100):null;
+  /* where a typical event stands at this same week — the honest "are we behind?" */
+  let vs='';
+  if(f){try{
+    const pace=evPaceCard(f);
+    const nowRow=(pace.cur||[]).filter(r=>r.date&&r.date<=new Date().toISOString().slice(0,10)).slice(-1)[0];
+    if(nowRow&&pace.tgt&&pace.finishedN){
+      const s=pace.medShare(+nowRow.week);
+      if(s!=null){
+        const should=s*pace.tgt, have=+nowRow.soFarEur||0;
+        const d=have-should, ahead=d>=0;
+        vs='<p class="hint" style="margin-top:2px;color:'+(ahead?'#3E8C28':'#C77800')+'"><b>At W'+nowRow.week+'</b>, a typical event of this size has '+
+           finFmt(should)+' in. This one has '+finFmt(have)+' — <b>'+(ahead?'ahead by ':'behind by ')+finFmt(Math.abs(d))+'</b>. '+
+           '<span style="color:var(--muted)">Based on '+pace.finishedN+' finished edition'+(pace.finishedN===1?'':'s')+'.</span></p>';
+      }
+    }
+  }catch(e){}}
+  return '<div class="panel"><h3>🩺 Sales health check <span class="hint">— how much has been sold so far</span></h3>'+
+    '<div class="cards">'+
+      '<div class="cardk"><div class="v">'+money(signed)+'</div><div class="k">Signed ('+deals.length+')</div></div>'+
+      '<div class="cardk"><div class="v">'+money(invoiced)+'</div><div class="k">Invoiced</div></div>'+
+      '<div class="cardk"><div class="v"'+(pend>0.005?' style="color:#C77800"':'')+'>'+(pend>0.005?money(pend):'—')+'</div><div class="k">Signed, to invoice</div></div>'+
+      '<div class="cardk"><div class="v">'+(pipe?money(pipe):'—')+'</div><div class="k">Still on the table</div></div>'+
+      '<div class="cardk"><div class="v">'+money(target)+'</div><div class="k">Target</div></div>'+
+      '<div class="cardk"><div class="v">'+(pct==null?'—':pct+'%')+'</div><div class="k">of target</div></div>'+
+    '</div>'+vs+
+    '<div style="height:230px;margin-top:10px"><canvas id="evHcChart"></canvas></div>'+
+    '<p class="hint">This edition against the previous one and against a typical event scaled to this target. '+
+    'The board itself is on <a href="spx.html#health">💼 SPX</a>.</p></div>';
 }
 /* ---- Impact tab: this event's funnel vs previous editions ---- */
 function renderImpactTab(){
@@ -757,8 +861,13 @@ function canEditDelegate(d){
 function canTickMarketing(){const me=DB.currentUser;return !!(me&&(me.role==='Marketing'||DB.canBill()||DB.canManage()));}
 function canAddSpeaker(){const me=DB.currentUser;return !!(me&&(me.role==='PM'||DB.canBill()||DB.canManage()));}
 const DELSRC={ticket:'🎟️ Ticket',sponsor:'🤝 Sponsor',speaker:'🎤 Speaker',freebie:'🎁 Freebie'};
+/* ⚠ UNHOOKED 6 Aug 2026. Belén: "for now you can delete the tab 'delegates' as it looks
+   like we won't be using the dispatch for this." The tab button, its section and its
+   click handler are gone; this renderer is kept whole so turning it back on is a button
+   plus one line in SECS, not a rebuild. It bails out safely if #sec-del is absent. */
 function renderDelegatesTab(){
   const S=document.getElementById('sec-del');
+  if(!S)return;
   if(!DB.billReady()){S.innerHTML='<div class="panel"><span class="empty">The invoicing module is not active yet — run <b>dispatch_facturacion.sql</b> in Supabase, then reload.</span></div>';return;}
   const f=DB.financeFor(ev.id);
   if(!f){S.innerHTML='<div class="panel"><span class="empty">This event has no € Dashboard row yet — link it in 💶 Money (Add event figures) first; the delegate list hangs off that row.</span></div>';return;}

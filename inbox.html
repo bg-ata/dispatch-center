@@ -105,8 +105,13 @@
     <p class="cnt" id="cnt"></p>
     <div id="list"></div>
   </div>
+  <!-- 📮 mail view — the mailing centre's read side (Belén, 6 Aug 2026). The Dispatch
+       had never sent an email; the sender now exists but stays in dry run until a
+       Resend key is set, so this is where you READ what it composed and decide who
+       gets what. Composing and sending arrive the day sending is switched on. -->
+  <div id="view-mail" style="display:none"></div>
 </div>
-<script src="store.js?v=114"></script>
+<script src="store.js?v=115"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('inbox');
 function refreshNav(){document.getElementById('nav').innerHTML=navBar('inbox');try{decorateNav();}catch(e){}}
@@ -115,9 +120,11 @@ function refreshNav(){document.getElementById('nav').innerHTML=navBar('inbox');t
 const SUBS={notif:'Answers to your requests, team notices and time-off decisions — everything the Dispatch Center wants you to see, in one place. Opening this page marks what is here as seen, so the 🔔 badge only ever counts what has arrived since.',
             arch:'Read notifications older than two months. Nothing is deleted — they just stop crowding the inbox.',
             req:'The team request box for the Dispatch Center itself — bugs, clunky bits, change requests and ideas. Everyone can open one and comment; Belén & Carlos set status and priority. Check the list before opening a new one — maybe it’s already here.'};
-const TITLES={notif:'🔔 Notifications',arch:'🗄 Archive',req:'💡 Requests'};
-function activeView(){const h=location.hash;return h==='#requests'?'req':(h==='#archive'?'arch':'notif');}
-function setView(v){location.hash=(v==='req'?'#requests':v==='arch'?'#archive':'#notifications');}
+SUBS.mail='Email the Dispatch Center sends out — what it wrote, to whom, and whether it actually went. Everyone sees their own; Belén sees everybody’s.';
+const TITLES={notif:'🔔 Notifications',arch:'🗄 Archive',req:'💡 Requests',mail:'📮 Mail'};
+function activeView(){const h=location.hash;
+  return h==='#requests'?'req':(h==='#archive'?'arch':(h==='#mail'?'mail':'notif'));}
+function setView(v){location.hash=(v==='req'?'#requests':v==='arch'?'#archive':v==='mail'?'#mail':'#notifications');}
 window.addEventListener('hashchange',()=>render());
 function renderTabs(){
   let v=activeView();
@@ -130,18 +137,21 @@ function renderTabs(){
   document.getElementById('viewtabs').innerHTML=
     '<button class="'+(v==='notif'?'on':'')+'" data-v="notif">🔔 Notifications'+(unread?'<span class="tbadge">'+unread+'</span>':'')+'</button>'+
     (old?'<button class="'+(v==='arch'?'on':'')+'" data-v="arch">🗄 Archive <span class="tbadge" style="background:#9b978d">'+old+'</span></button>':'')+
-    '<button class="'+(v==='req'?'on':'')+'" data-v="req">💡 Requests'+(newReq?'<span class="tbadge">'+newReq+'</span>':'')+'</button>';
+    '<button class="'+(v==='req'?'on':'')+'" data-v="req">💡 Requests'+(newReq?'<span class="tbadge">'+newReq+'</span>':'')+'</button>'+
+    '<button class="'+(v==='mail'?'on':'')+'" data-v="mail">📮 Mail</button>';
   document.querySelectorAll('#viewtabs [data-v]').forEach(b=>b.onclick=()=>setView(b.dataset.v));
   document.getElementById('pageH1').textContent=TITLES[v];
   document.getElementById('pageSub').textContent=SUBS[v];
-  document.getElementById('view-notif').style.display=v==='req'?'none':'';
+  document.getElementById('view-notif').style.display=(v==='req'||v==='mail')?'none':'';
   document.getElementById('view-req').style.display=v==='req'?'':'none';
+  document.getElementById('view-mail').style.display=v==='mail'?'':'none';
   document.title='RENMAD Dispatch Center — '+TITLES[v].replace(/^\S+\s/,'');
   return v;
 }
 function render(){
   const v=renderTabs();
   const warn=document.getElementById('warnbox');
+  if(v==='mail'){warn.innerHTML='';renderMail();return;}
   if(v==='req'){
     if(!DB.tickReady()){warn.innerHTML='<div class="warn">The requests module is not switched on yet — Belén needs to run <b>dispatch_tickets.sql</b> in Supabase. Nothing else is affected.</div>';document.getElementById('list').innerHTML='';return;}
     warn.innerHTML='';renderTickets();
@@ -149,6 +159,151 @@ function render(){
     if(!DB.inboxReady()){warn.innerHTML='<div class="warn">Notifications need one database step — run <b>dispatch_me_inbox.sql</b> in the Supabase SQL editor.</div>';return;}
     warn.innerHTML='';renderInbox(v==='arch');
   }
+}
+
+/* ================= 📮 MAIL — the mailing centre's read side =================
+   Belén, 6 Aug 2026. The Dispatch had never sent an email in its life. The sender
+   (dc-mail) and the 08:00 digest (dc-digest, hourly cron, Madrid 08:00 weekdays)
+   now exist, but with no RESEND_API_KEY they COMPOSE and stop: every message is
+   written to dc_mail_log as `dry_run` and nothing leaves the building.
+
+   So this tab is deliberately the READ side first. Belén's own worry about task
+   notices was "tú piensas que está saliendo y a lo mejor no está saliendo" — the
+   answer to that is a log you can look at, not a Send button you have to trust.
+   A compose box lands the day sending is switched on; putting one here now would
+   be a button that cannot do what it says.
+
+   Not in the boot snapshot on purpose — body_html holds a whole email per row.
+   Fetched when the tab is opened, same pattern as the venue floor plans. */
+const MAIL_KINDS={
+  digest_morning:{label:'Your morning list',when:'Weekday mornings, 08:00 (Madrid)',pref:true,
+    what:'Everything on you today — tasks that are overdue, tasks due this week, and anything you were tagged in. '+
+         'If nothing is on you, no email is sent at all.'},
+  compose:{label:'A message written by a colleague',when:'When someone sends it',pref:false,
+    what:'A one-to-one email written by hand from inside the Dispatch. Arrives with the compose box.'},
+};
+const MAIL_STATUS={
+  sent:{t:'✓ sent',c:'#3E8C28',b:'#E6F5E6'},
+  queued:{t:'sending…',c:'#C77800',b:'#FFF3E0'},
+  dry_run:{t:'composed, not sent',c:'#8a8a86',b:'#F1F0EC'},
+  skipped:{t:'skipped',c:'#8a8a86',b:'#F1F0EC'},
+  failed:{t:'✗ failed',c:'#A32D2D',b:'#FBE9E7'},
+};
+let mailRows=null, mailPrefs=null, mailOpen=null;   // mailOpen = the id whose body is expanded
+
+async function renderMail(){
+  const box=document.getElementById('view-mail');
+  if(!USE_SUPABASE){box.innerHTML='<div class="panel"><span class="empty">The mail log lives in the database — it is not available offline.</span></div>';return;}
+  if(mailRows===null){
+    box.innerHTML='<div class="panel"><span class="empty">Loading…</span></div>';
+    try{
+      const r=await sb.from('dc_mail_log').select('*').order('id',{ascending:false}).limit(300);
+      if(r.error)throw r.error;
+      mailRows=r.data||[];
+      const q=await sb.from('dc_mail_prefs').select('*');
+      mailPrefs=q.error?[]:(q.data||[]);
+    }catch(e){
+      /* the tables ship with the code; if they are missing say so plainly rather than
+         showing an empty log, which would read as "no mail has ever been sent" */
+      box.innerHTML='<div class="panel"><div class="warn">Could not read the mail log: '+esc(e.message||e)+'</div></div>';
+      mailRows=null;return;
+    }
+  }
+  const admin=DB.isAdmin();
+  const me=DB.currentUser;
+  /* Is it actually sending? Read it off the last thing the system tried, rather than
+     asserting it — the page cannot see the server's secrets, and a claim it cannot
+     check is exactly the kind of thing this tab exists to stop. */
+  const last=mailRows[0];
+  const live=!!last&&(last.status==='sent'||last.status==='queued');
+
+  let h='';
+  if(!live){
+    h+='<div class="panel" style="border-left:4px solid #C77800">'
+      +'<h2 style="margin-top:0">Sending is not switched on yet</h2>'
+      +'<p class="hint">The Dispatch composes its emails and writes them down, but does not send them: there is no '
+      +'<b>Resend</b> account connected. Everything below was <b>written and not sent</b>. Nobody has received anything.</p>'
+      +'<p class="hint" style="margin-bottom:0">To turn it on: create a Resend account, verify a sending domain, then paste the key into '
+      +'<b>Supabase → Edge Functions → Secrets</b> as <code>RESEND_API_KEY</code>. Nothing else changes — the next morning run sends for real. '
+      +'The full plan is in <i>PROPOSAL - Mailing Centre.md</i>.</p></div>';
+  }else{
+    h+='<div class="panel" style="border-left:4px solid #3E8C28"><h2 style="margin-top:0">Sending is live</h2>'
+      +'<p class="hint" style="margin-bottom:0">Emails below marked <b>sent</b> really left the building. '
+      +'If something needs stopping in a hurry, set <code>MAIL_PAUSED</code> to <code>1</code> in Supabase → Edge Functions → Secrets '
+      +'and everything goes back to being written down without being sent.</p></div>';
+  }
+
+  /* ---- what goes out automatically, in words, with the off switch beside it ---- */
+  h+='<div class="panel"><h2>What goes out automatically</h2>'
+    +'<p class="hint">Every scheduled email the Dispatch sends. One email a day at most — never one per task.</p>';
+  Object.keys(MAIL_KINDS).filter(k=>MAIL_KINDS[k].pref).forEach(k=>{
+    const K=MAIL_KINDS[k];
+    const off=me?mailPrefs.some(p=>p.personId==me.id&&p.kind===k&&p.enabled===false):false;
+    h+='<div style="border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px">'
+      +'<div style="font-weight:700">'+esc(K.label)+' <span class="hint" style="font-weight:400">— '+esc(K.when)+'</span></div>'
+      +'<div class="hint" style="margin:4px 0 8px">'+esc(K.what)+'</div>'
+      +'<label style="font-size:13px;cursor:pointer"><input type="checkbox" data-mailpref="'+k+'"'+(off?'':' checked')+'> Send it to me</label>';
+    if(admin){
+      const offNames=mailPrefs.filter(p=>p.kind===k&&p.enabled===false)
+        .map(p=>{const q=DB.people.find(x=>x.id==p.personId);return q?q.name:('#'+p.personId);});
+      h+='<div class="hint" style="margin-top:6px">'+(offNames.length
+        ? 'Turned off by: <b>'+offNames.map(esc).join(', ')+'</b>'
+        : 'Nobody has turned this off.')+'</div>';
+    }
+    h+='</div>';
+  });
+  h+='</div>';
+
+  /* ---- the log ---- */
+  h+='<div class="panel"><h2>'+(admin?'Everything the Dispatch has written':'Mail written to you')+'</h2>'
+    +'<p class="hint">'+(admin?'Newest first. ':'Newest first — you see your own; Belén sees everybody’s. ')
+    +'<b>Click a row</b> to read the email exactly as it was written.</p>';
+  if(!mailRows.length){
+    h+='<span class="empty">Nothing yet. The morning list runs on weekdays at 08:00 and only writes an email for people who actually have something on them.</span>';
+  }else{
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<tr style="text-align:left;color:var(--muted)">'
+      +['When','What','To','Subject','Status'].map(t=>'<th style="padding:6px 8px;border-bottom:1px solid var(--line)">'+t+'</th>').join('')
+      +'</tr>';
+    mailRows.forEach(r=>{
+      const S=MAIL_STATUS[r.status]||MAIL_STATUS.dry_run;
+      const K=MAIL_KINDS[r.kind];
+      h+='<tr data-mailrow="'+r.id+'" style="cursor:pointer;border-bottom:1px solid var(--line)">'
+        +'<td style="padding:6px 8px;white-space:nowrap">'+esc(fmtWhen((''+(r.created_at||'')).replace('T',' ')))+'</td>'
+        +'<td style="padding:6px 8px">'+esc(K?K.label:r.kind)+'</td>'
+        +'<td style="padding:6px 8px">'+esc(r.to_email||'')+'</td>'
+        +'<td style="padding:6px 8px">'+esc(r.subject||'')+'</td>'
+        +'<td style="padding:6px 8px"><span style="background:'+S.b+';color:'+S.c+';border-radius:20px;padding:2px 8px;white-space:nowrap;font-weight:600">'+S.t+'</span>'
+        +(r.error?'<div class="hint" style="margin:2px 0 0">'+esc(r.error)+'</div>':'')+'</td></tr>';
+      if(mailOpen===r.id)
+        h+='<tr><td colspan="5" style="padding:0 8px 14px;background:#FBFAF8">'
+          +'<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;max-width:700px">'
+          +(r.body_html||'<span class="empty">No body recorded.</span>')+'</div></td></tr>';
+    });
+    h+='</table></div>';
+  }
+  h+='</div>';
+  box.innerHTML=h;
+
+  box.querySelectorAll('[data-mailrow]').forEach(tr=>tr.onclick=()=>{
+    const id=+tr.dataset.mailrow;
+    mailOpen=(mailOpen===id)?null:id;
+    renderMail();
+  });
+  box.querySelectorAll('[data-mailpref]').forEach(cb=>cb.onchange=async()=>{
+    if(!me)return;
+    const kind=cb.dataset.mailpref, enabled=cb.checked;
+    try{
+      const r=await sb.from('dc_mail_prefs')
+        .upsert({personId:me.id,kind:kind,enabled:enabled,updated_at:new Date().toISOString()},{onConflict:'personId,kind'});
+      if(r.error)throw r.error;
+      mailPrefs=mailPrefs.filter(p=>!(p.personId==me.id&&p.kind===kind)).concat([{personId:me.id,kind:kind,enabled:enabled}]);
+      renderMail();
+    }catch(e){
+      cb.checked=!enabled;
+      alert('Could not save that: '+(e.message||e));
+    }
+  });
 }
 
 /* ================= 🔔 notifications ================= */

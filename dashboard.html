@@ -220,7 +220,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=114"></script>
+<script src="store.js?v=115"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -743,22 +743,12 @@ function evCardHtml(f){
     '</div>'+
     '<div class="evc-foot">'+links.join(' · ')+'</div>';
 }
+/* the chart itself moved to store.js as dcPaceChart() on 6 Aug 2026 — the event page's
+   € Results tab wanted the same picture and a third copy is how three views start to
+   disagree. This stays as the call site. */
 function drawEvCard(f){
   const cid='evc_ch_'+f.id;if(!document.getElementById(cid))return;
-  const pace=evPaceCard(f);
-  const wmin=Math.min(-26,...pace.cur.map(r=>+r.week),...(pace.prev?pace.prev.rows.map(r=>+r.week):[0]));
-  const weeks=[];for(let w=Math.max(-40,wmin);w<=1;w++)weeks.push(w);
-  const series=rows=>weeks.map(w=>{const r=rows.find(x=>+x.week===w);return (r&&r.soFarEur!=null&&r.soFarEur!=='')?+r.soFarEur:null;});
-  const ds=[{label:'This edition',data:series(pace.cur),borderColor:'#FF4A00',backgroundColor:'#FF4A00',borderWidth:3,pointRadius:0,spanGaps:true,tension:.25}];
-  if(pace.prev)ds.push({label:prevLabel(pace.prev),data:series(pace.prev.rows),borderColor:'#9a978e',backgroundColor:'#9a978e',borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
-  if(pace.tgt&&pace.finishedN){
-    ds.push({label:'Average event → target',data:weeks.map(w=>{const s=pace.medShare(w);return s==null?null:s*pace.tgt;}),borderColor:'#29ACE3',borderDash:[6,4],borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
-    ds.push({label:'Target',data:weeks.map(()=>pace.tgt),borderColor:'#2B2B2B',borderDash:[2,3],borderWidth:1.5,pointRadius:0});
-  }
-  mkChart(cid,{type:'line',data:{labels:weeks.map(w=>'W'+w),datasets:ds},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{labels:{boxWidth:14,font:{size:10}}},tooltip:{callbacks:{}}},
-      scales:{y:{ticks:{callback:v=>finFmt(v)}},x:{ticks:{maxTicksLimit:14}}}}});
+  dcPaceChart(cid,f);
 }
 function renderYear(){
   const canF=DB.canFinance();
