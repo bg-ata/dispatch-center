@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=115"></script>
+<script src="store.js?v=116"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 /* STCOL now lives in store.js — the shared Me/Team task list needs it too (6 Aug 2026) */
@@ -221,6 +221,28 @@ function panelSummary(id){
       const n=DB.tasksOf(me.id).filter(taskLive).length;
       return n?n+' open task'+(n===1?'':'s'):'';
     }
+    /* ---- the three that started folding on 6 Aug 2026 ----
+       A closed header has to be worth reading on its own, or folding just hides things.
+       These summaries are what you see when the panel is shut, so they carry the counts
+       that would otherwise make you open it. */
+    if(id==='alarmPanel'){
+      const n=document.querySelectorAll('#alarmPanel .alarm, #alarmPanel li').length;
+      return n?'<span class="hot">'+n+' need'+(n===1?'s':'')+' you</span>':'nothing to flag';
+    }
+    if(id==='pendPanel'){
+      const R=taskRunway(me.id);
+      const late=R.overdue.length, soon=R.today.length+R.days.length;
+      const nw=DB.tasksOf(me.id).filter(t=>taskStatus(t)==='Assigned').length;
+      const bits=[];
+      if(nw)bits.push('<span class="hot">'+nw+' new</span>');
+      if(late)bits.push('<span class="hot">'+late+' overdue</span>');
+      if(soon)bits.push(soon+' due soon');
+      return bits.length?bits.join(' · '):'nothing due';
+    }
+    if(id==='calPanel'){
+      const n=dctcEvents(me.id).length;
+      return n?n+' event'+(n===1?'':'s'):'';
+    }
   }catch(e){}
   return '';
 }
@@ -228,7 +250,10 @@ function wirePanelFolds(){
   /* first visit: desktop opens the clock (the everyday action), phones open nothing —
      the full menu of headers IS the point. After that, each person's choices stick. */
   const phone=innerWidth>0&&innerWidth<=680; /* explicit: a 0-width probe (headless pane) must not read as phone */
-  const st=pfoldState()||(phone?{}:{clockPanel:true});
+  /* the clock no longer folds (6 Aug 2026), so the old "open the clock" default is moot.
+     Desktop now opens ⏳ Pending instead — the one panel that asks you to do something —
+     and phones still open nothing, because the menu of headers IS the point. */
+  const st=pfoldState()||(phone?{}:{pendPanel:true});
   document.querySelectorAll('.panel.mefold').forEach(p=>{
     const h=p.querySelector('h3');
     if(!h||p.style.display==='none')return;      // e.g. Messages hides itself when the module is off
@@ -241,6 +266,7 @@ function wirePanelFolds(){
       const closed=p.classList.toggle('closed');
       const cur=pfoldState()||{};cur[p.id]=!closed;pfoldSave(cur);
       const arr=h.querySelector('.parr');if(arr)arr.textContent=closed?'▸':'▾';
+      if(!closed)panelOpened(p.id);
     };
   });
   /* the clock summary stays live while the panel is closed */
@@ -249,12 +275,25 @@ function wirePanelFolds(){
     const h=p.querySelector('h3 .psum');if(h)h.innerHTML=panelSummary('clockPanel');
   },30000);
 }
+/* a panel that draws something measured must redraw when it is UNFOLDED: a hidden
+   element has zero width, so anything positioned at render time lands wrong. The
+   calendar is the case — it scrolls itself to today, and while closed that scroll goes
+   nowhere, so it would open showing the far past instead of this week. */
+function panelOpened(id){
+  if(id==='calPanel'){
+    /* redraw ONLY the calendar host — re-running renderMyCalendar() would rewrite the
+       panel's <h3> and take the fold arrow and its click handler with it */
+    const host=document.getElementById('calHost'),me=DB.currentUser;
+    if(host&&me)try{dcTaskCalendar(host,me.id);}catch(e){}
+  }
+}
 function openPanel(id){
   const p=document.getElementById(id);if(!p)return;
   if(p.classList.contains('closed')){
     p.classList.remove('closed');
     const cur=pfoldState()||{};cur[id]=true;pfoldSave(cur);
     const arr=p.querySelector('h3 .parr');if(arr)arr.textContent='▾';
+    panelOpened(id);
   }
   p.scrollIntoView({block:'start',behavior:'smooth'});
 }
@@ -294,20 +333,27 @@ function render(){
       (svcAcct?'':foldHtml('monthFold','📆 My month'+visDot('you + HR')))+
       foldHtml('profFold','👤 My profile'+visDot('everyone'))+
     '</div>'+
-    /* 🔔 first, full-width: the one block that must never be below the fold (29 Jul UX round) */
-    '<div class="panel" id="alarmPanel"></div>'+
-    /* ⏳ PENDING, then the calendar right under it — Belén, 6 Aug 2026, after the logistics
-       meeting: "un bloque de Pending más arriba en la página Mí, y el calendario justo
-       debajo". The point is that you can change a status from here: until today you had to
-       go into the event, then the lane, then the stage, project by project. */
-    (svcAcct?'':'<div class="panel" id="pendPanel"></div>')+
-    (svcAcct?'':'<div class="panel" id="calPanel"></div>')+
-    /* the rest are collapsible rows — Belén, 29 Jul: "you see all options and pick what
-       you need, all in one easy line of sight, even on the phone". Headers always visible,
-       each carries a live one-line summary; open/closed choices are remembered per person. */
+    /* ================= THE CLOCK IS PINNED, EVERYTHING ELSE FOLDS =================
+       Belén, 6 Aug 2026: "the clock should always be up… everything but the watch needs
+       to be collapsable, otherwise there is too much info."
+       So the clock is the only panel on this page WITHOUT .mefold — it is the thing
+       everyone touches twice a day, and it must never be one click away. Every other
+       panel is a header with a live one-line summary, opened only when wanted.
+       Order: clock · 🔔 alarms · ⏳ Pending · 📅 calendar · the rest. */
+    '<div class="panel" id="clockPanel"></div>'+
+    '<div class="panel mefold" id="alarmPanel"></div>'+
+    /* ⏳ PENDING, then the calendar right under it — her earlier rule from the logistics
+       meeting ("un bloque de Pending más arriba, y el calendario justo debajo") still
+       holds; both simply fold now. */
+    (svcAcct?'':'<div class="panel mefold" id="pendPanel"></div>')+
+    (svcAcct?'':'<div class="panel mefold" id="calPanel"></div>')+
+    /* Belén, 29 Jul: "you see all options and pick what you need, all in one easy line of
+       sight, even on the phone." Headers always visible, each carrying a live summary;
+       open/closed choices are remembered per person. */
     '<div class="grid2">'+
-      '<div><div class="panel mefold" id="clockPanel"></div><div class="panel mefold" id="allocPanel"></div></div>'+
-      '<div><div class="panel mefold" id="msgPanel"></div><div class="panel mefold" id="todoPanel"></div>'+
+      '<div><div class="panel mefold" id="allocPanel"></div>'+
+        '<div class="panel mefold" id="msgPanel"></div></div>'+
+      '<div><div class="panel mefold" id="todoPanel"></div>'+
         (svcAcct?'':'<div class="panel mefold" id="holPanel"></div>')+'</div>'+
     '</div>'+
     (svcAcct?'':'<div class="panel mefold" id="evPanel"></div>');
