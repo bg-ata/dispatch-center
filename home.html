@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=113"></script>
+<script src="store.js?v=114"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 /* STCOL now lives in store.js — the shared Me/Team task list needs it too (6 Aug 2026) */
@@ -218,7 +218,7 @@ function panelSummary(id){
       return pend?'<span class="hot">'+pend+' pending</span>':'';
     }
     if(id==='evPanel'){
-      const n=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
+      const n=DB.tasksOf(me.id).filter(taskLive).length;
       return n?n+' open task'+(n===1?'':'s'):'';
     }
   }catch(e){}
@@ -326,10 +326,10 @@ function render(){
    reads is the failure mode the whole request flow exists to kill. */
 function renderPending(){
   const me=DB.currentUser,box=document.getElementById('pendPanel');if(!me||!box)return;
-  const openT=DB.tasksOf(me.id).filter(t=>t.status!=='Done');
-  const mon=+monday(new Date());
-  const late=openT.filter(t=>(+taskDate(t))<mon);
-  const thisWk=openT.filter(t=>{const d=+taskDate(t);return d>=mon&&d<mon+7*86400000;});
+  const openT=DB.tasksOf(me.id).filter(taskLive);
+  const R=taskRunway(me.id);
+  const late=R.overdue, thisWk=R.today.concat(R.days);
+  const fresh2=openT.filter(t=>taskStatus(t)==='Assigned');
   /* requests I asked for that logistics has come back on */
   let answered=[];
   try{if(DB.reqReady())answered=DB.requests.filter(r=>!r.deleted&&r.personId==me.id&&r.status==='answered');}catch(e){}
@@ -340,11 +340,14 @@ function renderPending(){
   const fresh=newEventNotices(me);
 
   let h='<h3>⏳ Pending'+visBadge('you')+' <span class="hint" style="font-weight:400">— '+
-    (openT.length?(openT.length+' open task'+(openT.length===1?'':'s')+
-      (late.length?(' · <b style="color:var(--orange)">'+late.length+' overdue</b>'):'')+
-      (thisWk.length?(' · '+thisWk.length+' this week'):'')):'nothing open')+'</span></h3>';
+    (openT.length?((late.length?('<b style="color:#D32230">'+late.length+' overdue</b> · '):'')+
+      thisWk.length+' in the next few days · '+openT.length+' open in all'):'nothing open')+'</span></h3>';
 
   const notes=[];
+  /* "N new tasks assigned to you" — the message type Belén asked for, batched. It clears
+     itself the moment the runway below is drawn, because drawing it IS her looking. */
+  if(fresh2.length)notes.push('<b>'+fresh2.length+' new task'+(fresh2.length===1?'':'s')+' assigned to you</b> — '+
+    esc(fresh2.slice(0,3).map(t=>t.title).join(', '))+(fresh2.length>3?(' and '+(fresh2.length-3)+' more'):'')+'.');
   /* the weekly digest, in the app. Belén ruled out one email per task (200 material tasks
      land at once) and ruled out a per-task "notify? yes/no" tick, because you can never
      tell whether it actually went out. One summary, always current, always here. */
@@ -361,12 +364,16 @@ function renderPending(){
   if(notes.length)h+='<div style="background:#FFF3EC;border:1px solid #F3D9B8;border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:13px">'+
     notes.map(n=>'<div style="margin:2px 0">'+n+'</div>').join('')+'</div>';
 
-  h+='<p class="hint">Change a status or jot a note right here — you no longer have to open the event, the lane and the stage to tick something off.</p>';
-  h+=dcTaskListHtml(me.id,{tasks:openT,limit:20,empty:'Nothing open — all done. 🎉'});
+  h+='<p class="hint">Nearest first. Anything more than two weeks away is folded away until it gets close — '+
+     'change a status or jot a note right here, without opening the event, the lane and the stage.</p>';
+  h+=dcRunwayHtml(me.id,{empty:'Nothing on your runway — all clear. 🎉'});
   box.innerHTML=h;
   wireTaskList(box,()=>{renderPending();renderMyCalendar();renderEvents();});
   const seen=document.getElementById('pendSeen');
   if(seen)seen.onclick=e=>{e.preventDefault();markEventsSeen(me);renderPending();};
+  /* seeing your own runway IS opening your tasks: Assigned → Pending, no click.
+     Done AFTER the paint so the NEW chips are visible on the render that clears them. */
+  if(fresh2.length)setTimeout(()=>{if(taskSeenAll(fresh2))DB.saveNow();},1200);
 }
 /* ---- "there is a new event" (Belén, 6 Aug) ----
    When Carlos creates an event, logistics wants to know so they can start moving their
@@ -731,7 +738,7 @@ function renderAlarms(){
         ' — time for a word.',href:'hr.html#clock'});
     }
   }
-  const myOpenTasks=DB.tasksOf(me.id).filter(t=>t.status!=='Done').length;
+  const myOpenTasks=DB.tasksOf(me.id).filter(taskLive).length;
   box.innerHTML='<h3>🔔 Needs you</h3>'+
     (a.length?a.map(x=>'<div class="alarm">⏰ <a href="'+(x.href||'#')+'"'+(x.fold?' data-openfold="'+x.fold+'"':'')+(x.scroll?' data-scrollto="'+x.scroll+'"':'')+'>'+x.t+'</a>'+
       (x.ack?' <button class="btn" style="font-size:11.5px;padding:3px 10px;margin-left:6px" id="tcAckBtn">I understand</button>':'')+'</div>').join('')

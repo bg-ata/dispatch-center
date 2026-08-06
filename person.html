@@ -54,7 +54,7 @@
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
 <div id="tip"></div>
-<script src="store.js?v=113"></script>
+<script src="store.js?v=114"></script>
 <script>
 const WEEKW=24, TASKH=17, TGAP=3, ROWPAD=7, TOPH=34;
 document.getElementById('nav').innerHTML=navBar('people');
@@ -76,11 +76,11 @@ function render(){
   DB.events.forEach(ev=>{if((ev.team||[]).some(m=>m.personId==person.id))evIds.add(ev.id);});
   if(person.access==='admin')DB.events.forEach(e=>evIds.add(e.id)); // admins oversee every event
   const events=DB.events.filter(e=>evIds.has(e.id)).sort((a,b)=>ymd(a.date)-ymd(b.date));
-  const done=myTasks.filter(t=>t.status==='Done').length, prog=myTasks.filter(t=>t.status==='In progress').length;
+  const done=myTasks.filter(taskDone).length, prog=myTasks.filter(t=>taskStatus(t)==='Assigned').length;
   const acc=person.access||'member', accBg=acc==='admin'?'#FF4A00':acc==='manager'?'#E8A13C':'#eceae3', accCol=acc==='member'?'#5f5e5a':'#fff';
 
   let head='<h1>'+esc(person.name)+' <span class="rolepill">'+esc(person.role)+'</span> <span class="rolepill" style="background:'+accBg+';color:'+accCol+'">'+(ACCESS_LABEL[acc]||acc)+'</span></h1>'+
-    '<p class="sub">'+esc(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' in progress) across '+events.length+' events'+
+    '<p class="sub">'+esc(person.email||'no email yet')+' &nbsp;·&nbsp; '+myTasks.length+' tasks ('+done+' done, '+prog+' not looked at yet) across '+events.length+' events'+
     ' &nbsp;·&nbsp; <a href="people.html">← Personnel</a> &nbsp;·&nbsp; <a href="#" id="xls">⬇ Excel</a></p>';
   head+='<div class="evchips">'+events.map(e=>'<a class="evchip" href="event.html?id='+e.id+'"><span class="chip" style="background:'+(TOPICS[e.topic]||'#999')+'"></span>'+esc(e.name)+'</a>').join('')+'</div>';
   /* the lane legend used to be written out here — dcTaskCalendar draws its own now */

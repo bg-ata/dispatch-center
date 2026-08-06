@@ -74,11 +74,62 @@ const CRIT={research:[3,7],prep:[4,17],marketing:[16,27]};
 const ROLES=['Lead','PM','Sales','Marketing','Logistics','Admin','HR','Accounts'];
 /* access tiers (permission level, separate from job role): member = own lane; manager = stage/release; admin = everything */
 /* task-status colours. Lifted out of home.html on 6 Aug 2026 so the shared task list
-   (🙋 Me and 👥 Team) can use them — it was the only page that owned them. */
-const STCOL={'To do':'#9AA0A8','In progress':'#C77800','Done':'#3E8C28'};
+   (🙋 Me and 👥 Team) can use them — it was the only page that owned them.
+   The two legacy keys stay as a fallback: a browser holding a cached row from before
+   the migration must still render a colour rather than a blank chip. */
+const STCOL={'Assigned':'#FF4A00','Pending':'#9AA0A8','Done':'#3E8C28','Cancelled':'#b9b6ad',
+             'To do':'#9AA0A8','In progress':'#9AA0A8'};
 const ACCESS=['member','manager','admin'];
 const ACCESS_LABEL={member:'Member',manager:'Manager',admin:'Admin (full)'};
-const STATUS=['To do','In progress','Done'];
+/* ================= THE FOUR TASK STATES (Belén, 6 Aug 2026) =================
+   Assigned  — it is yours and you have not looked at it yet. Fires the "assigned to
+               you" message; flips to Pending automatically the moment you open it, so
+               it is never a chore.
+   Pending   — unowned, or seen and live on your runway.
+   Done      — finished.
+   Cancelled — decided against, with a reason. NOT the same as deleting: delete means
+               "this should not exist", cancel means "we decided not to do this", and
+               the second one is worth keeping on the record.
+   "In progress" was removed. It had no consequence — nothing behaved differently — so
+   nobody maintained it: 1 task in 116, by one person, in a month. Belén: "if you change
+   status you change it to done, so what is to do after changing status?"
+   ORDER MATTERS: this array is the dropdown. */
+const STATUS=['Assigned','Pending','Done','Cancelled'];
+const STATUS_LIVE=['Assigned','Pending'];        // "open" — still to be done
+/* legacy rows (pre-migration caches) read as Pending so nothing falls off a list */
+function taskStatus(t){const s=(t&&t.status)||'Pending';
+  return (s==='To do'||s==='In progress')?'Pending':s;}
+function taskLive(t){return STATUS_LIVE.indexOf(taskStatus(t))>=0;}
+function taskDone(t){return taskStatus(t)==='Done';}
+function taskCancelled(t){return taskStatus(t)==='Cancelled';}
+/* ---- the runway (Belén: "X tasks 2 weeks away, 1 week away and then days") ----
+   A task can sit in the books for months before its deadline, so a flat list of
+   everything open is noise — Julián's would open on 90 rows. The bands make the list
+   finishable: everything past two weeks collapses to a single number and only
+   surfaces as it climbs. */
+function taskDueDate(t){return (t&&t.deadline)?ymd(t.deadline):taskDate(t);}
+function taskDaysAway(t){
+  const d=taskDueDate(t);if(!d)return 9999;
+  const a=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  const n=new Date();const b=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  return Math.round((+a-+b)/86400000);
+}
+const TASK_BANDS=[
+  {key:'overdue',label:'Overdue',    color:'#D32230', test:d=>d<0},
+  {key:'today',  label:'Today',      color:'#FF4A00', test:d=>d===0},
+  {key:'days',   label:'In days',    color:'#C77800', test:d=>d>=1&&d<=6},
+  {key:'week1',  label:'1 week away',color:'#B08900', test:d=>d>=7&&d<=13},
+  {key:'week2',  label:'2 weeks away',color:'#7c7c78',test:d=>d>=14&&d<=20},
+  {key:'later',  label:'Further out',color:'#a9a79f', test:d=>d>=21},
+];
+function taskBand(t){const d=taskDaysAway(t);return TASK_BANDS.find(b=>b.test(d))||TASK_BANDS[TASK_BANDS.length-1];}
+/* group a person's live tasks into the bands, soonest first within each */
+function taskRunway(personId){
+  const out={};TASK_BANDS.forEach(b=>out[b.key]=[]);
+  DB.tasksOf(personId).filter(taskLive).forEach(t=>out[taskBand(t).key].push(t));
+  Object.keys(out).forEach(k=>out[k].sort((a,b)=>taskDaysAway(a)-taskDaysAway(b)));
+  return out;
+}
 /* finance result bands: invoiced / STRETCH target. <b0 = Under, <b1 = On target, >=b1 = Stretch.
    Derived from the S1 2026 Calculation sheet (all 2026 rows reproduce). */
 const FIN_BANDS={2025:[0.75,1],default:[0.8,1]};
@@ -1759,6 +1810,104 @@ function notifySend(to,kind,text,link){
    She is not told about her own edits. RLS is what makes this work for everyone else:
    dc_inbox lets any signed-in person write to another person's inbox, while letting them
    read only their own — so a PM's notification reaches her and nobody else sees it. */
+/* ================= TASK STATE TRANSITIONS (6 Aug 2026) =================
+   Everything that moves a task between the four states lives here, so the rules cannot
+   drift between the event page, 🙋 Me and 👥 Team. */
+
+/* Assigned → Pending, automatically, when the owner actually opens it.
+   Belén chose automatic over a manual "accept": a click you have to remember is a click
+   that rots, which is exactly how "In progress" ended up on one task in a hundred.
+   Only the OWNER opening it counts — a manager reading the list does not clear it for
+   them, or the "nobody has looked at this" signal would be worthless. */
+function taskSeen(t){
+  try{
+    const me=DB.currentUser;
+    if(!me||!t||taskStatus(t)!=='Assigned')return false;
+    if(!DB.taskIsMine(t,me.id))return false;
+    t.status='Pending';
+    DB.save();
+    return true;
+  }catch(e){return false;}
+}
+/* mark every Assigned task in a list as seen in one pass — used when a person opens
+   their own runway, because that IS them looking at them */
+function taskSeenAll(tasks){
+  const me=DB.currentUser;if(!me)return 0;
+  let n=0;(tasks||[]).forEach(t=>{if(taskStatus(t)==='Assigned'&&DB.taskIsMine(t,me.id)){t.status='Pending';n++;}});
+  if(n)DB.save();
+  return n;
+}
+/* Cancelled needs a reason — the same rule as denying a holiday. Without one, a
+   cancelled task is indistinguishable from work that quietly vanished, which is the
+   opposite of what a record is for. */
+function cancelTask(t,reason){
+  if(!t)return false;
+  const why=(''+(reason||'')).trim();
+  if(!why)return false;
+  t.status='Cancelled';t.cancelReason=why;
+  DB.save();
+  return true;
+}
+/* ---- "N new tasks assigned to you", batched ----
+   One message per (recipient, event, lane, who assigned, day). Valeria loading 80
+   material tasks sends Julián ONE line, not eighty — the volume problem Belén refused
+   to solve with a per-task toggle ("es terrible porque tú piensas que está saliendo y a
+   lo mejor no está saliendo"). A second assignment the same day finds the unread row
+   and re-counts it. */
+function notifyAssigned(task,recipientIds){
+  try{
+    if(!DB.inboxReady()||!DB.currentUser||!task)return 0;
+    const me=DB.currentUser, ev=DB.event(task.eventId);
+    const day=toISO(new Date());
+    const ids=(recipientIds||[]).filter(id=>id&&id!=me.id);
+    if(!ids.length)return 0;
+    DB.data.inbox=DB.data.inbox||[];
+    ids.forEach(pid=>{
+      const key='asg:'+task.eventId+':'+task.lane+':'+me.id+':'+day;
+      const row=DB.inbox.find(x=>!x.deleted&&x.personId==pid&&x.batchKey===key&&x.isRead!==true);
+      /* count what this person actually has from this batch, so the number is true
+         even if some were assigned minutes apart */
+      const n=DB.tasks.filter(x=>x.eventId==task.eventId&&x.lane===task.lane
+                 &&DB.taskIsMine(x,pid)&&taskStatus(x)==='Assigned').length;
+      const where=(ev?DB.evMasterName(ev):'an event')+' · '+(LANE_LABEL[task.lane]||task.lane);
+      const text=(n>1?(n+' new tasks for you on '):'A new task for you on ')+where+
+                 (n>1?'':' — '+(task.title||''))+' (from '+me.name+')';
+      if(row){row.text=text;row.created=toISO(new Date())+' '+nowHMS().slice(0,5);}
+      else DB.data.inbox.push({id:DB.newId(),personId:pid,kind:'task',text:text,
+        link:'event.html?id='+task.eventId,isRead:false,fromName:me.name,
+        batchKey:key,created:toISO(new Date())+' '+nowHMS().slice(0,5)});
+    });
+    return ids.length;
+  }catch(e){return 0;}
+}
+/* set who is on a task, and raise the message for anyone newly put on it.
+   The single place assignment happens, so Assigned can never be forgotten. */
+function setTaskPeople(t,ids){
+  if(!t)return;
+  const before=DB.taskPeople(t);
+  const after=(ids||[]).filter((v,i,a)=>v!=null&&a.indexOf(v)===i).map(Number);
+  const added=after.filter(id=>before.indexOf(id)<0);
+  t.assignees=after.slice();
+  t.assignee=after.length?after[0]:null;
+  /* an unowned task is Pending — nothing is "assigned to" nobody. The moment a name
+     goes on it, it becomes Assigned until that person opens it (Belén's rule). */
+  if(!after.length){ if(taskLive(t))t.status='Pending'; }
+  else if(added.length&&taskLive(t)) t.status='Assigned';
+  DB.save();
+  if(added.length)notifyAssigned(t,added);
+}
+/* who changed the status of this task, and when. The record already existed —
+   dc_audit has logged it since 7 Jul — but dc_audit also holds holidays, the time
+   clock and the invoice book, so it stays shut and this reads one task through a
+   narrow security-definer function (dc_task_history). */
+async function taskHistory(taskId){
+  if(!USE_SUPABASE)return null;                 // offline rig: no audit log to read
+  try{
+    const r=await sb.rpc('dc_task_history',{task_id:taskId});
+    if(r.error)throw r.error;
+    return r.data||[];
+  }catch(e){console.warn('task history:',e.message||e);return null;}
+}
 /* ---------------- the request thread (6 Aug 2026) ----------------
    Same {who,when,text|sys} shape dc_tickets already uses, so the rendering is shared.
    sys = something the system recorded (a status change), text = somebody typing. */
@@ -1801,14 +1950,14 @@ function digestFor(personId,fromISO){
   };
   const fresh=mine.filter(isNew);
   const mon=+monday(new Date());
-  const open=mine.filter(t=>t.status!=='Done');
+  const open=mine.filter(taskLive);   // Cancelled must not keep nagging
   return {
     from:from,
     added:fresh,
     open:open.length,
     overdue:open.filter(t=>(+taskDate(t))<mon).length,
     thisWeek:open.filter(t=>{const d=+taskDate(t);return d>=mon&&d<mon+7*86400000;}),
-    done:mine.filter(t=>t.status==='Done'&&(''+(t.doneAt||'')).slice(0,10)>=from).length,
+    done:mine.filter(t=>taskDone(t)&&(''+(t.doneAt||'')).slice(0,10)>=from).length,
   };
 }
 /* one line per event, so "80 lanyard tasks" reads as one sentence and not eighty */
@@ -2189,7 +2338,7 @@ function buildSeed(){
     Object.keys(PLAN).forEach(lane=>Object.keys(PLAN[lane]).forEach(stage=>{
       PLAN[lane][stage].forEach((nm,i)=>{const sub={id:sid++,eventId:ev.id,lane,stage,name:nm,order:i};subs.push(sub);
         const who=lane==='sales'?byName(ev.sales):lane==='logistics'?byName(ev.log||'Julian Uribe'):lane==='marketing'?byName(ev.mkt||'Maria Mendicute'):byName(ev.pm);
-        tasks.push({id:tid++,eventId:ev.id,lane,stage,substageId:sub.id,title:nm,assignee:who,deadline:'',status:'To do'});});
+        tasks.push({id:tid++,eventId:ev.id,lane,stage,substageId:sub.id,title:nm,assignee:who,deadline:'',status:'Pending'});});
     }));
   });
   /* finance seed mirrors the real "S1 2026 Calculation" sheet (local/demo mode only) */
@@ -2295,7 +2444,7 @@ const COLS={
      teams that use them as the steps of the stage; Belén: "os voy a dar los dos".
      assignee = the primary owner (every alarm, person page and digest reads it);
      assignees = the whole list, primary included. notes = the short note per task. */
-  tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status','assignees','notes'],
+  tasks:['id','eventId','lane','stage','substageId','title','assignee','deadline','status','assignees','notes','cancelReason'],
   /* per-event stage overrides: where a stage STARTS (weeks before the event), how wide it
      is, and what it is called here. Its own table rather than more jsonb on dc_events
      because dc_events is manager-only writable and Julián is a member — a stage row
@@ -2360,7 +2509,8 @@ const COLS={
   todos:['id','personId','text','due','done','doneAt','color','sort','created'], // color tolerant (1-line SQL: dispatch_todos_color.sql)
   /* notifications inbox (🔔): ticket answers, HR notices, alarms. kind = ticket|notice|holiday.
      personId = recipient; fromName = display name of the sender; isRead toggled by the recipient. */
-  inbox:['id','personId','kind','text','link','isRead','fromName','created'],
+  /* batchKey collapses a burst into one message — see notifyAssigned() */
+  inbox:['id','personId','kind','text','link','isRead','fromName','created','batchKey'],
   /* messages ON a holiday request. Approvers talk to each other here; the requester never
      sees those. toRequester=true flips a message into a note they DO see.
      personId = the REQUESTER (denormalised so the RLS policy stays a one-liner).
@@ -4428,7 +4578,16 @@ function dctcCss(){
   '.dctl input,.dctl select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);width:100%}'+
   '.dctl .st{font-size:11px;font-weight:700;border-radius:10px;padding:1px 8px;color:#fff;white-space:nowrap}'+
   '.dctl .empty{color:var(--muted);font-style:italic}'+
-  '.dctl .hint{font-size:11px;color:var(--muted)}';
+  '.dctl .hint{font-size:11px;color:var(--muted)}'+
+  /* the runway bands + the NEW chip + the 🕘 history pop-out */
+  '.dctl-band{display:flex;align-items:center;gap:8px;margin:12px 0 2px;font-size:13px}'+
+  '.dctl-band .dot{width:9px;height:9px;border-radius:3px;flex:0 0 auto}'+
+  '.dctl-band .hint{font-size:11.5px;color:var(--muted);font-weight:400}'+
+  '.dctl-new{background:var(--orange);color:#fff;border-radius:9px;padding:0 6px;font-size:9.5px;font-weight:800;letter-spacing:.4px;vertical-align:1px}'+
+  '.dctl-hist{background:none;border:none;cursor:pointer;font-size:13px;opacity:.45;padding:2px}'+
+  '.dctl-hist:hover{opacity:1}'+
+  '.dctl-histpop{position:absolute;z-index:70;background:var(--card);border:1px solid var(--line);border-radius:10px;'+
+    'box-shadow:0 8px 24px rgba(0,0,0,.16);padding:10px 12px;min-width:300px;max-width:420px;max-height:300px;overflow:auto;font-size:12.5px}';
   document.head.appendChild(s);
   const t=document.createElement('div');t.id='dctcTip';document.body.appendChild(t);
 }
@@ -4499,9 +4658,11 @@ function dcTaskCalendar(host,personId,opts){
       const w0l=document.createElement('div');w0l.className='dctc-w0lab';w0l.style.cssText='left:'+(evCol*W+3)+'px;top:2px';w0l.textContent='EVENT';body.appendChild(w0l);}
     if(todayIdx>=0&&todayIdx<NW){const tln=document.createElement('div');tln.className='dctc-today';tln.style.cssText='left:'+(todayIdx*W)+'px;height:'+bodyH+'px';body.appendChild(tln);}
     items.forEach(it=>{const t=it.t, col=stageColor(t.lane,t.stage,ev);
-      const el=document.createElement('div');el.className='dctc-task'+(t.status==='Done'?' done':t.status==='In progress'?' prog':'');
+      /* .prog is the orange edge — it now marks ASSIGNED (nobody has looked at it yet),
+         which is the state that actually deserves the eye */
+      const el=document.createElement('div');el.className='dctc-task'+(taskDone(t)||taskCancelled(t)?' done':taskStatus(t)==='Assigned'?' prog':'');
       el.style.cssText='left:'+(it.x+2)+'px;top:'+(DCTC_ROWPAD+it.row*(DCTC_TASKH+DCTC_TGAP))+'px;width:'+(it.w)+'px;height:'+DCTC_TASKH+'px;background:'+col+';color:'+(col==='#111111'?'#fff':'#2b2b2b');
-      el.textContent=(t.status==='Done'?'✓ ':'')+t.title;
+      el.textContent=(taskDone(t)?'✓ ':taskCancelled(t)?'✕ ':'')+t.title;
       const sub=DB.substages.find(s=>s.id==t.substageId);
       const who=DB.taskPeople(t).map(id=>DB.personName(id)).join(', ');
       el.addEventListener('mousemove',e=>dctcTip(e.clientX,e.clientY,'<b>'+esc(t.title)+'</b><br>'+esc(ev.name)+' · '+esc(stageName(t.lane,t.stage,ev))+
@@ -4519,29 +4680,68 @@ function dcTaskCalendar(host,personId,opts){
 /* ---- the editable task list, shared by 🙋 Me and 👥 Team (Belén, 6 Aug 2026) ----
    "desde ahí no se puede cambiar el estatus — hay que entrar proyecto por proyecto."
    Status and notes are editable right here; everything else stays where it is decided. */
+function dctlRow(t,personId){
+  const e=DB.event(t.eventId), canS=DB.canEditStatus(t), st=taskStatus(t);
+  const d=taskDaysAway(t), band=taskBand(t);
+  const others=DB.taskPeople(t).filter(id=>id!=personId);
+  const when=t.deadline?deIso(t.deadline):('wk '+fmtD(taskDate(t)));
+  const rel=taskLive(t)?(d<0?(-d)+'d late':d===0?'today':d===1?'tomorrow':d<=20?('in '+d+'d'):''):'';
+  return '<tr'+(taskCancelled(t)?' style="opacity:.55"':'')+'>'+
+    '<td style="font-weight:600;color:var(--charcoal)">'+
+      '<a href="event.html?id='+t.eventId+'" data-dtlopen="'+t.id+'" style="color:inherit;text-decoration:none'+(taskCancelled(t)?';text-decoration:line-through':'')+'">'+esc(t.title||'')+'</a>'+
+      (st==='Assigned'?' <span class="dctl-new">NEW</span>':'')+
+      (others.length?'<div class="hint" style="font-weight:400">with '+esc(others.map(id=>DB.personName(id)).join(', '))+'</div>':'')+
+      (taskCancelled(t)&&t.cancelReason?'<div class="hint" style="font-weight:400">cancelled — '+esc(t.cancelReason)+'</div>':'')+
+    '</td>'+
+    '<td>'+esc(e?e.name:'—')+'</td>'+
+    '<td'+(taskLive(t)&&d<0?' style="color:#D32230;font-weight:700"':'')+'>'+when+
+      (rel?'<div class="hint" style="color:'+band.color+'">'+rel+'</div>':'')+'</td>'+
+    '<td>'+(canS?'<input data-dtl="notes" data-id="'+t.id+'" value="'+esc(t.notes||'')+'" placeholder="short note">'
+                :(t.notes?esc(t.notes):'<span class="empty">—</span>'))+'</td>'+
+    '<td>'+(canS?('<select data-dtl="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===st?'selected':'')+'>'+s+'</option>').join('')+'</select>')
+                :('<span class="st" style="background:'+(STCOL[st]||'#9AA0A8')+'">'+esc(st)+'</span>'))+'</td>'+
+    '<td><button class="dctl-hist" data-dtlhist="'+t.id+'" title="Who changed this, and when">🕘</button></td></tr>';
+}
+function dctlHead(){
+  return '<tr><th>Task</th><th>Event</th><th style="width:120px">When</th>'+
+    '<th style="width:170px">Notes</th><th style="width:130px">Status</th><th style="width:28px"></th></tr>';
+}
+/* The runway view: bands, soonest first, everything past two weeks collapsed to one
+   number. Belén, 6 Aug: "X tasks 2 weeks away, 1 week away and then days" — because a
+   task can sit in the books for months and a flat open-list is unreadable. */
+function dcRunwayHtml(personId,opts){
+  opts=opts||{};
+  const R=taskRunway(personId);
+  const live=TASK_BANDS.reduce((a,b)=>a+R[b.key].length,0);
+  if(!live)return '<p class="empty" style="padding:8px 2px">'+(opts.empty||'Nothing on your runway — all clear. 🎉')+'</p>';
+  const near=TASK_BANDS.filter(b=>b.key!=='later');
+  let h='';
+  near.forEach(b=>{
+    const rows=R[b.key];if(!rows.length)return;
+    h+='<div class="dctl-band"><span class="dot" style="background:'+b.color+'"></span>'+
+       '<b>'+b.label+'</b><span class="hint">'+rows.length+' task'+(rows.length===1?'':'s')+'</span></div>'+
+       '<table class="dctl">'+dctlHead()+rows.map(t=>dctlRow(t,personId)).join('')+'</table>';
+  });
+  const later=R.later;
+  if(later.length){
+    h+='<div class="dctl-band" style="margin-top:10px"><span class="dot" style="background:#a9a79f"></span>'+
+       '<b>Further out</b><span class="hint">'+later.length+' task'+(later.length===1?'':'s')+' more than two weeks away — '+
+       '<a href="#" data-dtlmore="1">show them</a></span></div>'+
+       '<div id="dctlLater" style="display:none"><table class="dctl">'+dctlHead()+later.map(t=>dctlRow(t,personId)).join('')+'</table></div>';
+  }
+  if(!near.some(b=>R[b.key].length))
+    h='<p class="hint" style="padding:4px 2px">Nothing due in the next two weeks. '+later.length+' task'+(later.length===1?'':'s')+' further out.</p>'+h;
+  return h;
+}
 function dcTaskListHtml(personId,opts){
   opts=opts||{};
   const tasks=(opts.tasks||DB.tasksOf(personId)).slice()
-    .sort((a,b)=>(+taskDate(a))-(+taskDate(b)));
+    .sort((a,b)=>(+taskDueDate(a))-(+taskDueDate(b)));
   const lim=opts.limit||0;
   const shown=lim?tasks.slice(0,lim):tasks;
-  let h='<table class="dctl"><tr><th>Task</th><th>Event</th><th style="width:110px">When</th>'+
-    '<th style="width:170px">Notes</th><th style="width:120px">Status</th></tr>';
-  if(!shown.length)h+='<tr><td colspan="5" class="empty">'+(opts.empty||'Nothing open — all done. 🎉')+'</td></tr>';
-  shown.forEach(t=>{
-    const e=DB.event(t.eventId), canS=DB.canEditStatus(t);
-    const late=t.status!=='Done'&&(+taskDate(t))<(+monday(new Date()));
-    const others=DB.taskPeople(t).filter(id=>id!=personId);
-    h+='<tr>'+
-      '<td style="font-weight:600;color:var(--charcoal)"><a href="event.html?id='+t.eventId+'" style="color:inherit;text-decoration:none">'+esc(t.title||'')+'</a>'+
-        (others.length?'<div class="hint" style="font-weight:400">with '+esc(others.map(id=>DB.personName(id)).join(', '))+'</div>':'')+'</td>'+
-      '<td>'+esc(e?e.name:'—')+'</td>'+
-      '<td'+(late?' style="color:var(--orange);font-weight:600"':'')+'>'+(t.deadline?('due '+deIso(t.deadline)):('wk '+fmtD(taskDate(t))))+'</td>'+
-      '<td>'+(canS?'<input data-dtl="notes" data-id="'+t.id+'" value="'+esc(t.notes||'')+'" placeholder="short note">'
-                  :(t.notes?esc(t.notes):'<span class="empty">—</span>'))+'</td>'+
-      '<td>'+(canS?('<select data-dtl="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>')
-                  :('<span class="st" style="background:'+(STCOL[t.status]||'#9AA0A8')+'">'+esc(t.status||'')+'</span>'))+'</td></tr>';
-  });
+  let h='<table class="dctl">'+dctlHead();
+  if(!shown.length)h+='<tr><td colspan="6" class="empty">'+(opts.empty||'Nothing here.')+'</td></tr>';
+  shown.forEach(t=>{h+=dctlRow(t,personId);});
   h+='</table>';
   if(lim&&tasks.length>lim)h+='<p class="hint" style="margin-top:6px">Showing '+lim+' of '+tasks.length+
     ' — <a href="person.html?id='+personId+'">see all →</a></p>';
@@ -4549,12 +4749,57 @@ function dcTaskListHtml(personId,opts){
 }
 function wireTaskList(box,after){
   if(!box)return;
+  const redraw=()=>{if(typeof after==='function')after();};
   box.querySelectorAll('[data-dtl]').forEach(el=>el.onchange=async()=>{
     const t=DB.tasks.find(x=>x.id==el.dataset.id);if(!t)return;
-    t[el.dataset.dtl]=el.value;
+    if(el.dataset.dtl==='status'){
+      const v=el.value;
+      if(v==='Cancelled'){
+        const why=prompt('Why is this cancelled? Everyone on the task will see this.');
+        if(why===null||!(''+why).trim()){el.value=taskStatus(t);return;}   // no reason, no cancel
+        cancelTask(t,why);
+      }else{t.status=v;if(v!=='Cancelled')t.cancelReason=null;}
+    }else t[el.dataset.dtl]=el.value;
     await DB.saveNow();
-    if(typeof after==='function')after();
+    redraw();
   });
+  /* opening the task IS reading it — that is what clears Assigned (automatic, never a click) */
+  box.querySelectorAll('[data-dtlopen]').forEach(a=>a.addEventListener('click',()=>{
+    const t=DB.tasks.find(x=>x.id==a.dataset.dtlopen);if(t)taskSeen(t);
+  }));
+  box.querySelectorAll('[data-dtlhist]').forEach(b=>b.onclick=e=>{e.preventDefault();openTaskHistory(b,b.dataset.dtlhist);});
+  const more=box.querySelector('[data-dtlmore]');
+  if(more)more.onclick=e=>{e.preventDefault();
+    const box2=document.getElementById('dctlLater');
+    if(!box2)return;
+    const open=box2.style.display!=='none';
+    box2.style.display=open?'none':'';
+    more.textContent=open?'show them':'hide them';};
+}
+/* the 🕘 button: who moved this task, and when */
+async function openTaskHistory(btn,taskId){
+  document.querySelectorAll('.dctl-histpop').forEach(x=>x.remove());
+  const pop=document.createElement('div');pop.className='dctl-histpop';
+  pop.innerHTML='<div class="hint">Loading the record…</div>';
+  document.body.appendChild(pop);
+  const r=btn.getBoundingClientRect();
+  pop.style.left=Math.max(8,Math.min(r.left+window.scrollX-180,window.scrollX+document.documentElement.clientWidth-330))+'px';
+  pop.style.top=(r.bottom+window.scrollY+5)+'px';
+  const close=e=>{if(pop.contains(e.target))return;pop.remove();document.removeEventListener('mousedown',close);};
+  setTimeout(()=>document.addEventListener('mousedown',close),0);
+  const t=DB.tasks.find(x=>x.id==taskId);
+  const rows=await taskHistory(taskId);
+  let h='<div style="font-weight:700;margin-bottom:6px">'+esc((t&&t.title)||'This task')+'</div>';
+  if(rows===null)h+='<div class="hint">The record is only readable on the live site.</div>';
+  else if(!rows.length)h+='<div class="hint">No status change recorded yet — it has not moved since it was created.</div>';
+  else h+='<table class="dctl"><tr><th>When</th><th>Who</th><th>Change</th></tr>'+
+    rows.map(x=>{
+      const who=(DB.people.find(p=>(p.email||'').toLowerCase()===(''+(x.actor||'')).toLowerCase())||{}).name||x.actor||'—';
+      const from=x.from_status||'created', to=x.to_status||'—';
+      return '<tr><td style="white-space:nowrap">'+esc((''+x.at).slice(0,16).replace('T',' '))+'</td>'+
+             '<td>'+esc(who)+'</td><td>'+esc(from)+' → <b>'+esc(to)+'</b></td></tr>';}).join('')+'</table>';
+  if(t&&taskCancelled(t)&&t.cancelReason)h+='<div class="hint" style="margin-top:6px">Cancelled because: '+esc(t.cancelReason)+'</div>';
+  pop.innerHTML=h;
 }
 /* resizeImage() centre-CROPS to a square, which is right for an avatar and wrong for
    anything you actually have to read. This one fits the whole image inside maxDim and

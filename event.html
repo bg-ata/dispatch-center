@@ -99,7 +99,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=113"></script>
+<script src="store.js?v=114"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
@@ -1048,18 +1048,23 @@ function taskRow(t,mg,showWhere){
   const canS=DB.canEditStatus(t);
   const who=DB.taskPeople(t);
   const sub=t.substageId?DB.substages.find(s=>s.id==t.substageId):null;
-  return '<tr>'+
+  const st=taskStatus(t);
+  return '<tr'+(taskCancelled(t)?' style="opacity:.55"':'')+'>'+
     '<td>'+(mg?'<input data-tf="title" data-id="'+t.id+'" value="'+esc(t.title||'')+'">':esc(t.title||''))+
-      (showWhere?'<div class="hint" style="margin-top:2px">'+(sub?esc(sub.name||'item'):'directly on the stage')+'</div>':'')+'</td>'+
+      (st==='Assigned'?' <span class="dctl-new">NEW</span>':'')+
+      (showWhere?'<div class="hint" style="margin-top:2px">'+(sub?esc(sub.name||'item'):'directly on the stage')+'</div>':'')+
+      (taskCancelled(t)&&t.cancelReason?'<div class="hint">cancelled — '+esc(t.cancelReason)+'</div>':'')+'</td>'+
     '<td>'+(mg?('<div class="whobox" data-who="'+t.id+'">'+peopleChecks(t)+'</div>')
               :(who.length?who.map(id=>'<a href="person.html?id='+id+'" style="color:inherit">'+esc(DB.personName(id))+'</a>').join(', ')
                           :'<span class="empty">—</span>'))+'</td>'+
     '<td>'+(mg?'<input type="date" data-tf="deadline" data-id="'+t.id+'" value="'+(t.deadline||'')+'">':(t.deadline?deIso(t.deadline):'—'))+'</td>'+
     '<td>'+(canS?('<input data-tf="notes" data-id="'+t.id+'" value="'+esc(t.notes||'')+'" placeholder="short note">')
                 :(t.notes?esc(t.notes):'<span class="empty">—</span>'))+'</td>'+
-    '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===t.status?'selected':'')+'>'+s+'</option>').join('')+'</select>')
-                :('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+(t.status||'')+'</span>'))+'</td>'+
-    '<td>'+(mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';
+    '<td>'+(canS?('<select data-tf="status" data-id="'+t.id+'">'+STATUS.map(s=>'<option '+(s===st?'selected':'')+'>'+s+'</option>').join('')+'</select>')
+                :('<span class="rostat" style="font-size:12px;color:#6f6e6a">'+esc(st)+'</span>'))+'</td>'+
+    '<td style="white-space:nowrap">'+
+      '<button class="dctl-hist" data-dtlhist="'+t.id+'" title="Who changed this, and when">🕘</button>'+
+      (mg?'<button class="del" data-deltask="'+t.id+'">×</button>':'')+'</td></tr>';
 }
 /* several owners per task. A dropdown cannot hold two names, so the cell is the primary
    owner plus a "+ more" pop-out of tick boxes; the first person ticked stays the primary
@@ -1119,7 +1124,7 @@ function renderStageTasks(p){
   const flat=DB.tasksOnStage(ev.id,lane,key);
   const all=DB.tasksForStage(ev.id,lane,key);
   const nested=all.filter(t=>t.substageId!=null);
-  const done=all.filter(t=>t.status==='Done').length;
+  const done=all.filter(taskDone).length;
   const st=stageStart(ev,lane,key);
   const wide=def?stageDur(ev,lane,def):1;
   let h='<div class="subedit"><b style="color:var(--muted);font-size:11px;text-transform:uppercase">'+(LANE_LABEL[lane]||lane)+'</b>'+
@@ -1165,17 +1170,33 @@ function renderStageTasks(p){
 }
 /* one place that makes a task, so a stage-level one and a substage one can never drift */
 function newTask(lane,stage,substageId){
+  /* born unowned, so it starts Pending — nothing is "assigned to" nobody (Belén's rule).
+     It becomes Assigned the moment a name goes on it, via setTaskPeople(). */
   const t={id:DB.newId(),eventId:ev.id,lane:lane,stage:stage,substageId:substageId,
-           title:'New task',assignee:null,assignees:[],deadline:'',status:'To do',notes:''};
+           title:'New task',assignee:null,assignees:[],deadline:'',status:'Pending',notes:'',cancelReason:null};
   DB.tasks.push(t);DB.save();renderTasks();
 }
 function wireTaskRows(p){
   p.querySelectorAll('[data-tf]').forEach(el=>el.onchange=()=>{
     const t=DB.tasks.find(x=>x.id==el.dataset.id);if(!t)return;
+    if(el.dataset.tf==='status'){
+      const v=el.value;
+      if(v==='Cancelled'){
+        /* a cancelled task with no reason is indistinguishable from work that quietly
+           vanished — the same rule as denying a holiday */
+        const why=prompt('Why is this cancelled? Everyone on the task will see this.');
+        if(why===null||!(''+why).trim()){el.value=taskStatus(t);return;}
+        cancelTask(t,why);
+      }else{t.status=v;if(v!=='Cancelled')t.cancelReason=null;DB.save();}
+      renderTasks();return;
+    }
     let v=el.value;if(el.dataset.tf==='assignee')v=v?+v:null;
     t[el.dataset.tf]=v;DB.save();});
-  p.querySelectorAll('[data-deltask]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this task?'))return;DB.data.tasks=DB.tasks.filter(t=>t.id!=b.dataset.deltask);DB.save();renderTasks();});
+  p.querySelectorAll('[data-deltask]').forEach(b=>b.onclick=()=>{if(!confirm('Delete this task? To keep it on the record instead, set it to Cancelled.'))return;DB.data.tasks=DB.tasks.filter(t=>t.id!=b.dataset.deltask);DB.save();renderTasks();});
   p.querySelectorAll('[data-whobtn]').forEach(b=>b.onclick=e=>{e.stopPropagation();openWhoPicker(b,DB.tasks.find(x=>x.id==b.dataset.whobtn));});
+  p.querySelectorAll('[data-dtlhist]').forEach(b=>b.onclick=e=>{e.preventDefault();openTaskHistory(b,b.dataset.dtlhist);});
+  /* opening a stage/substage panel IS the owner looking at their tasks — clears Assigned */
+  try{taskSeenAll([...p.querySelectorAll('[data-tf="status"]')].map(el=>DB.tasks.find(x=>x.id==el.dataset.id)).filter(Boolean));}catch(e){}
 }
 /* the "several people on one task" pop-out */
 function openWhoPicker(btn,t){
@@ -1197,9 +1218,10 @@ function openWhoPicker(btn,t){
     const id=+cb.dataset.wp;
     let list=DB.taskPeople(t);
     if(cb.checked){if(list.indexOf(id)<0)list.push(id);}else list=list.filter(x=>x!==id);
-    t.assignees=list.slice();
-    t.assignee=list.length?list[0]:null;   // the primary owner is the first one ticked
-    DB.save();renderTasks();
+    /* setTaskPeople owns the rule: a name going on a task makes it Assigned and raises
+       the batched "assigned to you" message. Never set assignee/assignees by hand. */
+    setTaskPeople(t,list);
+    renderTasks();
     const nb=document.querySelector('[data-whobtn="'+t.id+'"]');if(nb)openWhoPicker(nb,t);
   });
   const close=e=>{if(pop.contains(e.target))return;pop.remove();document.removeEventListener('mousedown',close);};
