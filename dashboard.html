@@ -220,7 +220,7 @@
 </div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=112"></script>
+<script src="store.js?v=113"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('dashboard');
 let charts={};
@@ -384,7 +384,7 @@ function render(){
    with Jesús's info, to be automatically filling in both the weekly reports and the SPX
    reporting"). The money side of the weekly Excel now writes itself into dc_weekly for
    the CURRENT week, one row per selling event:
-     DERIVED  — sponsors new/acc (SPX board Won), tickets new/acc + delegates (invoice
+     DERIVED  — sponsors new/acc (SPX board, signed), tickets new/acc + delegates (invoice
                 ticket lines & passes), recordings + site visits (invoice lines by
                 product), totals, target/stretch (the Money row).
      NOT DERIVABLE, deliberately untouched — topicLeads / eventLeads / telesales: those
@@ -434,9 +434,14 @@ function spxDealsHtml(r,money){
   const gaps=deals.filter(d=>!d.complete);
   const billed=deals.filter(d=>d.acc==='invoiced'||d.acc==='paid'||d.acc==='partial'||d.acc==='partpaid').length;
   const paid=deals.filter(d=>d.acc==='paid').length;
+  /* the queue, said out loud: signed money nobody has billed yet */
+  let pendTot=0,pendN=0;
+  deals.forEach(d=>{let p=0;try{p=DB.spxDealUninvoiced(d);}catch(e){}if(p>0.005){pendTot+=p;pendN++;}});
   let h='<div style="'+pad+'">'+
     '<div style="font-size:13px;margin-bottom:8px"><b>'+deals.length+' signed contract'+(deals.length===1?'':'s')+'</b> · '+money(tot)+
-    ' committed · <b>'+billed+'</b> invoiced (<b>'+paid+'</b> paid in full) · the event owes its sponsors <b>'+att+'</b> pass'+(att===1?'':'es')+
+    ' committed · <b>'+billed+'</b> invoiced (<b>'+paid+'</b> paid in full)'+
+    (pendN?' · <b style="color:#C77800">'+money(pendTot)+'</b> signed and still to invoice ('+pendN+')':'')+
+    ' · the event owes its sponsors <b>'+att+'</b> pass'+(att===1?'':'es')+
     ', <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' and <b>'+stands+'</b> stand'+(stands===1?'':'s')+'.</div>';
   if(gaps.length)h+='<div style="font-size:12.5px;color:#8a4a12;background:#FFF3E8;border:1px solid #F3C49B;border-radius:8px;padding:7px 10px;margin-bottom:8px">'+
     '<b>'+gaps.length+' contract'+(gaps.length===1?' does':'s do')+' not say what was sold</b> — logistics is working blind on '+(gaps.length===1?'it':'them')+'. '+
@@ -488,8 +493,11 @@ function renderSpxStatus(){
   const pc=(a,b)=>b>0?Math.round(100*a/b)+'%':'—';
   const inv=r=>{try{if(r.financeId==null)return null;const f=DB.finance.find(x=>x.id==r.financeId);return f?DB.finInvoiced(f):null;}catch(e){return null;}};
   const gapsFor=r=>{try{return (DB.wonDealsForSpxKey(r.key)||[]).filter(d=>!d.complete).length;}catch(e){return 0;}};
+  /* money signed on the board that invoicing has not billed yet (Belén, 6 Aug 2026).
+     Sits BESIDE Invoiced, never inside it: BD counts it, accounting does not. */
+  const pendFor=r=>{try{return r.financeId==null?null:DB.signedUninvoicedForFin(r.financeId);}catch(e){return null;}};
   const rowHtml=r=>{
-    const iv=inv(r),reach=r.spTarget>0?r.won/r.spTarget:null;
+    const iv=inv(r),reach=r.spTarget>0?r.won/r.spTarget:null,pend=pendFor(r);
     const open=!!_spxOpen[r.key],gaps=gapsFor(r);
     return '<tr class="evrow" data-ev="'+esc(r.key||'')+'" style="cursor:pointer" title="'+(open?'Hide':'Show')+' the signed contracts and what logistics has to deliver">'+
       '<td style="text-align:left"><span style="color:var(--orange);display:inline-block;width:12px">'+(open?'▾':'▸')+'</span> <b>'+esc(r.name)+'</b>'+
@@ -505,21 +513,26 @@ function renderSpxStatus(){
       '<td class="num">'+(r.totTarget?money(r.totTarget):'—')+
         (r.restTarget?'<div style="font-size:10.5px;color:#7c7c78;font-weight:400" title="The rest of the target — what tickets and everything else have to bring: total − SPX">resto '+money(r.restTarget)+'</div>':'')+'</td>'+
       '<td class="num">'+(iv==null?'—':money(iv))+'</td>'+
+      '<td class="num" style="color:'+((pend&&pend.total>0.005)?'#C77800':'#b3b1aa')+'"'+
+        ((pend&&pend.total>0.005)?' title="'+pend.rows.length+' signed contract'+(pend.rows.length===1?'':'s')+' waiting for an invoice: '+esc(pend.rows.map(d=>d.company).join(', '))+'"':'')+'>'+
+        ((pend&&pend.total>0.005)?money(pend.total):'—')+'</td>'+
       '<td><a href="spx.html?ev='+encodeURIComponent(r.key||'')+'#dashboard" style="color:var(--orange);text-decoration:none;font-size:12px" title="Open this event on the SPX board">board →</a></td></tr>'+
-      (open?'<tr class="evdet"><td colspan="10" style="padding:0;background:#FBFAF8;border-bottom:2px solid var(--line)">'+spxDealsHtml(r,money)+'</td></tr>':'');
+      (open?'<tr class="evdet"><td colspan="11" style="padding:0;background:#FBFAF8;border-bottom:2px solid var(--line)">'+spxDealsHtml(r,money)+'</td></tr>':'');
   };
   const sec=(title,list)=>{
     if(!list.length)return '';
-    const T={won:0,sent:0,silent:0,lost:0,spT:0,totT:0,rest:0};
-    list.forEach(r=>{T.won+=r.won;T.sent+=r.sent;T.silent+=r.silent;T.lost+=r.lost;T.spT+=r.spTarget||0;T.totT+=r.totTarget||0;T.rest+=r.restTarget||0;});
+    const T={won:0,sent:0,silent:0,lost:0,spT:0,totT:0,rest:0,pend:0};
+    list.forEach(r=>{T.won+=r.won;T.sent+=r.sent;T.silent+=r.silent;T.lost+=r.lost;T.spT+=r.spTarget||0;T.totT+=r.totTarget||0;T.rest+=r.restTarget||0;
+      const pd=pendFor(r);T.pend+=pd?pd.total:0;});
     return '<h3 style="margin:16px 0 6px">'+title+'</h3><div class="wstbl"><table>'+
-      '<tr><th style="text-align:left">Event</th><th class="num">Won (signed)</th><th class="num">Pipeline (Sent)</th><th class="num">Silent</th><th class="num">Lost</th><th class="num" title="The sponsorship target — the only one the SPX board holds">SPX target</th><th class="num">% SPX</th><th class="num" title="The event total from Money; underneath, the rest = total − SPX">Total target</th><th class="num">Invoiced</th><th></th></tr>'+
+      '<tr><th style="text-align:left">Event</th><th class="num" title="Contracts signed on the board — counted from the moment they are signed, invoiced or not">Signed</th><th class="num">Pipeline (Sent)</th><th class="num">Silent</th><th class="num">Lost</th><th class="num" title="The sponsorship target — the only one the SPX board holds">SPX target</th><th class="num">% SPX</th><th class="num" title="The event total from Money; underneath, the rest = total − SPX">Total target</th><th class="num">Invoiced</th><th class="num" title="Signed and not yet invoiced — real money for BD, not yet money for accounting">Not invoiced yet</th><th></th></tr>'+
       list.map(rowHtml).join('')+
       '<tr class="total"><td style="text-align:left">Total</td><td class="num">'+money(T.won)+'</td><td class="num">'+money(T.sent)+'</td><td class="num">'+money(T.silent)+'</td><td class="num">'+money(T.lost)+'</td><td class="num">'+money(T.spT)+'</td><td class="num">'+pc(T.won,T.spT)+'</td><td class="num">'+money(T.totT)+
-        (T.rest?'<div style="font-size:10.5px;color:#7c7c78;font-weight:400">resto '+money(T.rest)+'</div>':'')+'</td><td class="num"></td><td></td></tr>'+
+        (T.rest?'<div style="font-size:10.5px;color:#7c7c78;font-weight:400">resto '+money(T.rest)+'</div>':'')+'</td><td class="num"></td>'+
+        '<td class="num" style="color:'+(T.pend>0.005?'#C77800':'inherit')+'">'+(T.pend>0.005?money(T.pend):'')+'</td><td></td></tr>'+
       '</table></div>';
   };
-  C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Won</b> counts the moment a deal is marked Won. <b>Click any event</b> to open its signed contracts: what was sold, whether it is invoiced and paid, and what logistics has to deliver. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+
+  C.innerHTML='<p class="hint" style="margin:2px 0 4px">Where sponsorship sales are at, straight off the 💼 SPX board — <b>Signed</b> counts the moment a contract is signed, whether or not it has been invoiced; <b>Not invoiced yet</b> is the part of it still waiting on Jesús. <b>Click any event</b> to open its signed contracts: what was sold, whether it is invoiced and paid, and what logistics has to deliver. Selling and editing happen on the board; this is the money-side window. Tickets &amp; total invoiced live in <a href="#year" style="color:var(--orange)">Year status</a>.</p>'+
     sec('Selling now',rows.filter(r=>r.current))+
     sec('Before (finished / parked)',rows.filter(r=>!r.current));
   document.querySelectorAll('#content a[href="#year"]').forEach(a=>a.onclick=e=>{e.preventDefault();location.hash='year';render();});
@@ -596,16 +609,35 @@ function finRowHtml(f,canF){
      actually we don't need it — the targets can go on the SPX dashboard." Since v105 the
      board keeps one target (SPX) and derives the rest by subtraction, so this column had
      nothing left to show. Targets live in Money (the event total) and on the SPX board. */
+  /* ---- SIGNED, NOT YET INVOICED (Belén, 6 Aug 2026) ----
+     "I want to be able to consider money already signed even if it is not invoiced… for
+     the health check of the event and for the comparisons. In terms of BD this money is
+     as good as invoiced, but obviously for accounting purposes it isn't."
+     So it gets its OWN column next to Invoiced and is never folded into it — Result is
+     still invoiced vs stretch, the accountant's number, untouched. The amber figure is
+     the queue: contracts signed on the SPX board that nobody has billed yet. */
+  const sp=signedPendCell(f);
   if(!canF){
     return '<tr><td class="evname" '+(f.notes?'title="'+esc(f.notes)+'"':'')+'>'+caret+nameRO+ed+warn+'</td>'+descr+
-      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+
+      '<td class="num">'+finFmt(f.target)+'</td><td class="num">'+finFmt(f.stretch)+'</td>'+invRO+sp+
       '<td>'+chipHtml(finResult(fx))+'</td><td class="num">'+finFmt(f.spex)+'</td><td></td></tr>';
   }
   const mny=fld=>'<td class="num"><span class="mval" data-mf="'+fld+'" data-id="'+f.id+'" title="Click to edit">'+finFmt(f[fld])+'</span></td>';
   return '<tr><td>'+caret+nameRO+ed+warn+'</td>'+descr+
-    mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+
+    mny('target')+mny('stretch')+(fromLines?invRO:mny('invoiced'))+sp+
     '<td>'+chipHtml(finResult(fx))+'</td>'+mny('spex')+
     '<td><button class="del" data-fdel="'+f.id+'" title="Delete (recoverable)">×</button></td></tr>';
+}
+/* the amber "signed, waiting on an invoice" cell — one definition, used by the row, the
+   subtotals and the event card. Never editable: it is derived from the SPX board. */
+function signedPend(f){
+  try{return f?DB.signedUninvoicedForFin(f.id):null;}catch(e){return null;}
+}
+function signedPendCell(f){
+  const p=signedPend(f);
+  if(!p||p.total<=0.005)return '<td class="num" style="color:#c9c6bd">—</td>';
+  const who=p.rows.map(d=>d.company+' '+finFmt(d.pending)).join(' · ');
+  return '<td class="num" style="color:#C77800;font-weight:600" title="'+esc(p.rows.length+' signed contract'+(p.rows.length===1?'':'s')+' with no invoice yet: '+who)+'">'+finFmt(p.total)+'</td>';
 }
 /* PM and Sales only need enough name to be unambiguous — the full one is a tooltip away
    and eats the width the money columns need. First name alone, unless two people on the
@@ -662,9 +694,12 @@ function evCardHtml(f){
   if(ev&&ev.date){const wk=Math.round((monday(new Date())-monday(ymd(ev.date)))/(7*864e5));
     bits.push('<b>'+(wk<=0?'today: W'+wk:'held '+wk+' wk ago')+'</b>');}
   const box=(v,k,c)=>'<div class="evc-box"><div class="v"'+(c?' style="color:'+c+'"':'')+'>'+v+'</div><div class="k">'+k+'</div></div>';
+  const pend=signedPend(f);
   let boxes=box(finFmt(f.target),'Target')+box(finFmt(DB.finInvoiced(f)),'Invoiced 🧾')+
     box(finFmt(m.cob),'Collected','#3E8C28')+box(finFmt(m.pen),'Outstanding',m.pen>0.005?'#D32230':null);
-  if(st)boxes+=box(finFmt(st.won),'Won (specs)','#3E8C28')+box(finFmt(st.sent),'Sent · pipeline','#C77800')+
+  /* signed and still to bill — the BD number that Invoiced cannot show (Belén, 6 Aug) */
+  if(pend&&pend.total>0.005)boxes+=box(finFmt(pend.total),'Signed ⧗ to invoice','#C77800');
+  if(st)boxes+=box(finFmt(st.won),'Signed (specs)','#3E8C28')+box(finFmt(st.sent),'Sent · pipeline','#C77800')+
     box(finFmt(st.silent),'Silent','#8a8a86')+box(finFmt(st.lost),'Lost','#b4b1a8');
   if(m.pases)boxes+=box(m.pases,'Passes sold');
   if((canF||DB.isHRAdmin())&&f.eventId){
@@ -691,6 +726,11 @@ function evCardHtml(f){
   let itbl='<div class="evc-sc" style="max-height:180px"><table><tr><th>Invoice</th><th>Date</th><th>Company</th><th class="num">€ (this event)</th><th>Status</th></tr>';
   if(!m.invs.length)itbl+='<tr><td colspan="5" style="color:var(--muted)">No invoices allocated to this event yet.</td></tr>';
   m.invs.forEach(x=>{itbl+='<tr><td><b>'+esc(x.iv.numero_factura||'')+'</b></td><td>'+dmyS(x.iv.fecha)+'</td><td>'+esc(x.iv.razon_social||'')+'</td><td class="num">'+finFmt(x.eur)+'</td><td>'+esc(INV_STATUS[x.iv.status]||x.iv.status||'')+'</td></tr>';});
+  /* …and, underneath the invoices, the contracts that ought to become invoices. Jesús
+     reads this list; it is the whole point of the column (Belén, 6 Aug). */
+  if(pend&&pend.rows.length)pend.rows.forEach(d=>{
+    itbl+='<tr style="background:#FFF6EF"><td style="color:#C77800">⧗ signed</td><td>'+dmyS(d.signedAt)+'</td><td>'+esc(d.company)+
+      '</td><td class="num" style="color:#C77800">'+finFmt(d.pending)+'</td><td style="color:#C77800">not invoiced yet · '+esc(d.owner||'')+'</td></tr>';});
   itbl+='</table></div>';
   return '<div class="evc-head">'+bits.join(' · ')+'</div>'+
     '<div class="evc-boxes">'+boxes+'</div>'+
@@ -731,7 +771,8 @@ function renderYear(){
     (canF?'<button class="btn" id="fillBtn" title="Write this week\'s dc_weekly row per selling event from the SPX board + Jesús\'s invoicing — leads stay yours" style="font-size:12px;padding:4px 10px">⟳ Fill this week</button> ':'')+
     '<button class="btn" id="repBtn" style="font-size:12px;padding:4px 10px">📧 Weekly report</button></h3>'+
     '<p class="hint">Event, where, when, PM and salesperson 🔗 <b>come from the timeline</b> — change them in 📅 Events and they land here. Invoiced 🧾 is the sum of the Invoicing lines. '+
-    (canF?'The only figures typed here are the <b>target, stretch and SPEX</b> — click one to change it; every change is recorded. The sponsorship split of the target lives on the <a href="spx.html#health" style="color:var(--orange)">💼 SPX board</a>.':'Read-only · targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target.</p>'+
+    (canF?'The only figures typed here are the <b>target, stretch and SPEX</b> — click one to change it; every change is recorded. The sponsorship split of the target lives on the <a href="spx.html#health" style="color:var(--orange)">💼 SPX board</a>.':'Read-only · targets &amp; SPEX are maintained by the accountant.')+' Result = invoiced vs stretch target. '+
+    '<b>Signed ⧗</b> is money already signed on the SPX board that nobody has invoiced yet — for BD it is as good as in, for accounting it is not, so it stays out of Invoiced and out of Result.</p>'+
     liveStamp()+
     '<div class="ftbl"><table id="ftbl"></table></div></div>'+
     yearAnalysis()+
@@ -742,17 +783,21 @@ function renderYear(){
   ys.onchange=()=>{yearFilter=ys.value;renderYear();};
   const g=finGrouped();
   let h='<tr><th>Event</th><th>Where</th><th>When</th><th class="who">PM</th><th class="who">Sales</th>'+
-    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th><th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
+    '<th class="num">Target</th><th class="num">Stretch</th><th class="num">Invoiced</th>'+
+    '<th class="num" title="Signed on the SPX board and not invoiced yet. Real money for BD, not yet money for accounting — it is deliberately NOT added to Invoiced or to Result.">Signed ⧗</th>'+
+    '<th>Result</th><th class="num">SPEX</th><th style="width:30px"></th></tr>';
   const keys=Object.keys(g);
-  if(!keys.length)h+='<tr><td colspan="11" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
+  if(!keys.length)h+='<tr><td colspan="12" class="wsempty">No figures for this year yet'+(canF?' — add the first event.':'.')+'</td></tr>';
   keys.forEach(k=>{
     const list=g[k];
-    h+='<tr class="semhead"><td colspan="11">'+k.replace('·',' — ')+'</td></tr>';
+    h+='<tr class="semhead"><td colspan="12">'+k.replace('·',' — ')+'</td></tr>';
     list.forEach(f=>{h+=finRowHtml(f,canF);
-      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="11">'+evCardHtml(f)+'</td></tr>';});
+      if(evxOpen.has(f.id))h+='<tr class="evcard"><td colspan="12">'+evCardHtml(f)+'</td></tr>';});
     const agg={year:list[0].year,stretch:fSum(list,'stretch'),invoiced:list.some(f=>{const v=DB.finInvoiced(f);return v!=null&&v!=='';})?list.reduce((a,f)=>a+(+DB.finInvoiced(f)||0),0):null};
+    const pendSum=list.reduce((a,f)=>{const p=signedPend(f);return a+(p?p.total:0);},0);
     h+='<tr class="subtotal"><td>'+k.replace('·',' ')+' TOTAL</td><td></td><td></td><td></td><td></td>'+
       '<td class="num">'+finFmt(fSum(list,'target'))+'</td><td class="num">'+finFmt(fSum(list,'stretch'))+'</td><td class="num">'+finFmt(agg.invoiced)+'</td>'+
+      '<td class="num"'+(pendSum>0.005?' style="color:#C77800"':'')+'>'+(pendSum>0.005?finFmt(pendSum):'')+'</td>'+
       '<td>'+chipHtml(finResult(agg))+'</td><td class="num">'+finFmt(fSum(list,'spex'))+'</td><td></td></tr>';
   });
   document.getElementById('ftbl').innerHTML=h;

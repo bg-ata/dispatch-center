@@ -99,7 +99,7 @@
 </head>
 <body>
 <div class="app"><div id="nav"></div><div id="content"></div></div>
-<script src="store.js?v=112"></script>
+<script src="store.js?v=113"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
@@ -246,11 +246,14 @@ function render(){
       return '<p class="sub" style="margin-top:-8px">€ <a href="dashboard.html#year" style="color:inherit">Target '+finFmt(f.target)+' · Stretch '+finFmt(f.stretch)+' · Facturado '+finFmt(fx.invoiced)+
       (r?' · <b style="color:'+r.color+'">'+r.label+'</b>':'')+' · Margin '+finFmt(finMargin(fx))+'</a></p>';})()+
     '<div class="etabs"><button class="on" data-et="time">Timeline</button>'+(evKind(ev)!=='external'?'<button data-et="eur">€ Results</button>'+
-      /* 6 Aug 2026: the Won gate is GONE. It was the rulebook's "no tab ships empty" read
-         too literally — an event with proposals out and nothing signed yet showed no tab,
-         and Belén had to go to reporting to find who was selling it. The tab now appears
-         as soon as sales has touched the event at all, Won or not. */
-      (dealsAny().length?'<button data-et="spx">💼 Sales</button>':'')+
+      /* 6 Aug 2026 (morning): the Won gate went — an event with proposals out and nothing
+         signed showed no tab at all, and Belén had to go to reporting to find who was on it.
+         6 Aug 2026 (evening): the LAST gate goes too. Belén: "I want EACH of the events to
+         have a tab that says SPX." Logistics should never have to wonder whether the absence
+         of a tab means nothing is sold or means the tab is hidden — on a RENMAD event the
+         tab is always there, and when it is empty it says so in words. (External projects
+         are not sold, so they keep no SPX tab.) */
+      '<button data-et="spx">💼 SPX</button>'+
       '<button data-et="imp">Impact</button><button data-et="del">Delegates</button>'+
       '<button data-et="ven">🏛 Venue</button>'+
       '<button data-et="req">🙋 Requests'+reqBadge()+'</button>':'')+'</div>'+
@@ -318,17 +321,19 @@ function renderSpxTab(){
       ' out · '+money(open.reduce((a,d)=>a+(+d.eur||0),0))+' on the table'+
       (owners.length?' · sold by '+esc(owners.join(', ')):'')+'</span></h3>'+
       '<p class="hint">Nothing here is committed yet — it is who is working this event and what they have offered. '+
-      'It becomes a signed row below the moment sales marks it Won on the <a href="spx.html">SPX board</a>.</p>'+
+      'It becomes a signed row below the moment sales marks it Signed on the <a href="spx.html">SPX board</a>.</p>'+
       '<div style="overflow-x:auto"><table><tr><th>Company</th><th class="num">Value</th><th>Stage</th><th>Sent</th><th>Follow-up</th><th>Sales</th></tr>'+
       open.map(d=>'<tr><td><b>'+esc(d.company)+'</b></td><td class="num">'+money(d.eur)+'</td>'+
-        '<td>'+esc(d.stage||'—')+'</td>'+
+        /* the stored stage is still 'Won'; everyone reads "Signed" (keep in sync with spx.html stageLabel) */
+        '<td>'+esc(d.stage==='Won'?'Signed':(d.stage||'—'))+'</td>'+
         '<td>'+(d.sentAt?esc(ddmmyyyy(d.sentAt)):'<span class="empty">—</span>')+'</td>'+
         '<td>'+(d.followAt?esc(ddmmyyyy(d.followAt)):'<span class="empty">—</span>')+'</td>'+
         '<td>'+esc(d.owner||'')+'</td></tr>').join('')+'</table></div></div>';
   }
   if(!deals.length){
-    S.innerHTML=pipe+'<div class="panel"><span class="empty">Nothing signed for this event yet'+
-      (open.length?' — the proposals above are still out.':'.')+'</span></div>';return;}
+    S.innerHTML=pipe+'<div class="panel"><h3>Signed sponsors</h3><span class="empty">Nothing signed for this event yet'+
+      (open.length?' — the proposals above are still out.':'. When sales signs one, it lands here with everything logistics needs to deliver it.')+
+      '</span><p class="hint" style="margin-top:8px">Selling happens on the <a href="spx.html">💼 SPX board</a>.</p></div>';return;}
   const tot=deals.reduce((a,d)=>a+(+d.eur||0),0);
   const gaps=deals.filter(d=>!d.complete).length;
   const att=deals.reduce((a,d)=>a+(+d.attendeesN||0),0);
@@ -336,11 +341,16 @@ function renderSpxTab(){
   const stands=deals.filter(d=>d.stand).length;
   const yn=v=>v==null?'<span class="empty">—</span>':(v?'<b>Yes</b>':'No');
   const txt=v=>v?esc(v):'<span class="empty">—</span>';
+  /* money that is signed and still waiting on an invoice — same derivation as Money and
+     the SPX health-check (DB.spxDealUninvoiced), so the three can never disagree */
+  let pendTot=0,pendN=0;
+  deals.forEach(d=>{let p=0;try{p=DB.spxDealUninvoiced(d);}catch(e){}d._pend=p;if(p>0.005){pendTot+=p;pendN++;}});
   let h=pipe+'<div class="panel"><h3>Signed sponsors <span class="hint">— '+deals.length+' contract'+(deals.length===1?'':'s')+
-    ' · '+money(tot)+' committed</span></h3>'+
-    '<p class="hint">What sales has sold and what logistics has to deliver. Totals below are what the event owes its sponsors: '+
-    '<b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'. '+
-    'Edit any row on the <a href="spx.html">SPX board</a>.</p>';
+    ' · '+money(tot)+' committed'+(pendN?' · '+money(pendTot)+' still to invoice':'')+'</span></h3>'+
+    '<p class="hint">What sales has sold and what logistics has to deliver — the same rows as the '+
+    '<a href="spx.html">💼 SPX board</a> and Money → Sponsorship, read-only here so the three can never disagree. '+
+    'Totals below are what the event owes its sponsors: '+
+    '<b>'+att+'</b> attendee pass'+(att===1?'':'es')+' · <b>'+spk+'</b> speaker slot'+(spk===1?'':'s')+' · <b>'+stands+'</b> stand'+(stands===1?'':'s')+'.</p>';
   if(gaps)h+='<p class="hint" style="color:var(--orange)"><b>'+gaps+' contract'+(gaps===1?' is':'s are')+
     ' missing delivery details.</b> Sales fills them in on the board — until then logistics is working blind on '+(gaps===1?'it':'them')+'.</p>';
   /* where the money is, contract by contract — same derivation as the board and
@@ -350,14 +360,21 @@ function renderSpxTab(){
     none:{t:'not invoiced',c:'#8a8a86',b:'#F1F0EC'}};
   const accCell=d=>{const a=ACC[d.acc]||ACC.none;
     return '<span style="background:'+a.b+';color:'+a.c+';border-radius:20px;padding:2px 8px;white-space:nowrap;font-weight:600;font-size:12px">'+a.t+'</span>';};
+  /* Package and "what was sold" (contents) were on the board but not here — the two
+     things logistics asks first when a lanyard order lands. Added 6 Aug 2026 with the
+     "still to invoice" column, so this tab now carries EVERYTHING the board holds. */
   h+='<div style="overflow-x:auto"><table>'+
-    '<tr><th>Sponsor</th><th class="num">Amount</th><th>Signed</th><th>Money</th><th>Branding</th><th class="num">Att.</th><th class="num">Spk.</th><th>Stand</th><th>Branded items</th><th>Notes</th><th>Sales</th></tr>';
+    '<tr><th>Sponsor</th><th>Package</th><th class="num">Amount</th><th>Signed</th><th>Money</th>'+
+    '<th class="num" title="Signed and not invoiced yet">To invoice</th>'+
+    '<th>Branding</th><th class="num">Att.</th><th class="num">Spk.</th><th>Stand</th><th>Branded items</th><th>Notes for logistics</th><th>Sales</th></tr>';
   deals.forEach(d=>{
     h+='<tr'+(d.complete?'':' style="background:#FFF6EF"')+'>'+
-      '<td><b>'+esc(d.company)+'</b></td>'+
+      '<td><b>'+esc(d.company)+'</b>'+(d.contents?'<div class="hint" style="margin:0">'+esc(d.contents)+'</div>':'')+'</td>'+
+      '<td>'+txt(d.packageTier)+'</td>'+
       '<td class="num">'+money(d.eur)+'</td>'+
       '<td>'+(d.signedAt?esc(ddmmyyyy(d.signedAt)):'<span class="empty">—</span>')+'</td>'+
       '<td>'+accCell(d)+'</td>'+
+      '<td class="num"'+(d._pend>0.005?' style="color:#C77800;font-weight:600"':'')+'>'+(d._pend>0.005?money(d._pend):'<span class="empty">—</span>')+'</td>'+
       '<td>'+txt(d.branding)+'</td>'+
       '<td class="num">'+(d.attendeesN==null?'<span class="empty">—</span>':d.attendeesN)+'</td>'+
       '<td class="num">'+(d.speakersN==null?'<span class="empty">—</span>':d.speakersN)+'</td>'+
@@ -366,9 +383,13 @@ function renderSpxTab(){
       '<td>'+txt(d.notes)+'</td>'+
       '<td>'+esc(d.owner||'')+'</td></tr>';
   });
-  h+='<tr style="font-weight:700;border-top:2px solid var(--line)"><td>TOTAL</td><td class="num">'+money(tot)+
-    '</td><td></td><td></td><td></td><td class="num">'+att+'</td><td class="num">'+spk+'</td><td>'+stands+'</td><td></td><td></td><td></td></tr>';
-  S.innerHTML=h+'</table></div></div>';
+  h+='<tr style="font-weight:700;border-top:2px solid var(--line)"><td>TOTAL</td><td></td><td class="num">'+money(tot)+
+    '</td><td></td><td></td><td class="num"'+(pendTot>0.005?' style="color:#C77800"':'')+'>'+(pendTot>0.005?money(pendTot):'')+'</td>'+
+    '<td></td><td class="num">'+att+'</td><td class="num">'+spk+'</td><td>'+stands+'</td><td></td><td></td><td></td></tr>';
+  h+='</table></div>';
+  if(pendN)h+='<p class="hint" style="margin-top:8px;color:#C77800"><b>'+money(pendTot)+'</b> is signed and not invoiced yet ('+pendN+
+    ' contract'+(pendN===1?'':'s')+'). Real money for the event, not yet money for accounting — it is billed in <a href="facturacion.html">🧾 Invoicing</a>.</p>';
+  S.innerHTML=h+'</div>';
 }
 function ddmmyyyy(iso){const p=(''+iso).slice(0,10).split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:(''+iso);}
 

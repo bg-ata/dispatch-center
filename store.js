@@ -2005,7 +2005,7 @@ function spxDeliveryAlarms(){
   const key='spx.html?fill=me:'+wk;                          // one nudge per person per week
   if((DB.inbox||[]).some(m=>m.personId==me.id&&m.link===key))return 0;
   const n=mine.length;
-  return notifySend(me.id,'alarm','📦 '+n+' won contract'+(n===1?'':'s')+' of yours '+(n===1?'has':'have')+
+  return notifySend(me.id,'alarm','📦 '+n+' signed contract'+(n===1?'':'s')+' of yours '+(n===1?'has':'have')+
     ' no delivery details — logistics cannot deliver a stand from a signature. Open the board and fill '+(n===1?'it':'them')+' in.',key);
 }
 
@@ -3360,6 +3360,38 @@ const DB={
       if(!(this.invoiceAllocs||[]).some(a=>a.invoice_id==i.id&&scope.some(x=>x==a.eventId)))return;
       inv=true;if(i.status==='pagado'||i.fecha_cobro)paid=true;});
     return {state:paid?'paid':inv?'invoiced':'none',linked:true};},
+  /* ================= SIGNED, NOT YET INVOICED (Belén, 6 Aug 2026) =================
+     "I want to be able to consider money already signed even if it is not invoiced, as
+     it has already come into the system… In terms of BD this money is as good as
+     invoiced, but obviously for accounting purposes it isn't."
+     So it is never added to an invoiced figure — it is its own number, next to it.
+     ONE definition, here, because Money, the SPX health-check, the event page and the
+     reporting export all show it and must not disagree.
+     The proportional step matters: `eur` is this event's slice of the contract, while
+     `accNet` is what has been invoiced across the WHOLE contract (a multi-event deal
+     bills once). Subtracting the whole from the slice would report a two-event contract
+     as fully invoiced on the first event and fully pending on the second. */
+  spxDealUninvoiced(d){
+    if(!d)return 0;
+    const v=+d.eur||0;if(v<=0)return 0;
+    if(d.acc==='paid'||d.acc==='invoiced')return 0;     // fully billed, nothing pending
+    const whole=+d.accVal||v;                           // the contract's full value
+    const billed=+d.accNet||0;                          // invoiced across the whole contract
+    const share=whole>0?Math.min(1,v/whole):1;          // this event's slice of it
+    return Math.max(0,v-billed*share);},
+  /* every signed contract on a Money row that still owes an invoice, and what it owes.
+     Keyed off the SPX registry rows pointing at this dc_finance id (an event can have
+     more than one registry row; a contract is only counted once). */
+  signedUninvoicedForFin(finId){
+    if(finId==null||!this.spxReady||!this.spxReady())return {total:0,rows:[]};
+    const regs=(this.spxEventReg||[]).filter(r=>!r.deleted&&r.financeId!=null&&r.financeId==finId);
+    const seen={},rows=[];
+    regs.forEach(r=>{(this.wonDealsForSpxKey(r.eventKey)||[]).forEach(d=>{
+      if(seen[d.id])return;seen[d.id]=1;
+      const pending=this.spxDealUninvoiced(d);
+      if(pending>0.005)rows.push(Object.assign({pending:pending},d));});});
+    rows.sort((a,b)=>b.pending-a.pending);
+    return {total:rows.reduce((a,d)=>a+d.pending,0),rows:rows};},
   /* has this won contract said what was actually sold? The ONE definition of
      "complete" — the Won dialog, the board's ⚠, the event list and the nudges all
      ask this, so they can never disagree about who still owes what. */

@@ -96,7 +96,7 @@
 
 <div id="modal"><div class="card"><div id="modalbody"></div></div></div>
 
-<script src="store.js?v=112"></script>
+<script src="store.js?v=113"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('fact');
 let editingId=null, allocRows=[], flt={item:'all',prod:'all',status:'all',text:'',from:'',to:'',year:(new Date().getFullYear()+'')};
@@ -654,8 +654,9 @@ function wireProductos(){
 }
 
 /* ---------- add / edit modal ---------- */
-/* contracts to link an invoice to = live WON proposals (the one already
-   linked stays listed even if its status later changes, so edits never wipe it) */
+/* contracts to link an invoice to = live SIGNED proposals (the one already
+   linked stays listed even if its status later changes, so edits never wipe it).
+   NOTE the stored stage value is still 'Won' — only the label changed (6 Aug 2026). */
 function spxContractOpts(sel){
   const won=(DB.spxProps||[]).filter(p=>p.active!==false&&!p.superseded&&(p.salesStatus==='Confirmed'||(sel&&p.id==sel)))
     .sort((a,b)=>(''+(a.company||'')).localeCompare(''+(b.company||'')));

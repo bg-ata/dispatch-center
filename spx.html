@@ -11,7 +11,14 @@
   :root{--orange:#FF4A00;--charcoal:#2B2B2B;--ink:#2B2B2B;--muted:#7c7c78;--bg:#f3f2ee;--card:#fff;--line:#e3e1da;--green:#0CA30C;--amber:#B26A10;--blue:#2A78D6;--violet:#4A3AA7;--grey:#8A8781}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:#3a3a3a;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
-  .app{padding:16px 22px 80px;max-width:1200px;margin:0 auto}
+  /* ---- the board uses the whole screen (Belén, 6 Aug 2026) ----
+     "make sure the horizontal lines are as large as possible (like in the invoice) so
+     that ideally we don't have to scroll sideways — use all available real estate."
+     The invoice book runs to 1500px; the SPX board has more columns than it does, so it
+     goes fluid: every pixel of the window minus the page gutters. Prose is kept readable
+     by capping the paragraphs (.sub/.lead/.hint), not the page. */
+  .app{padding:16px 22px 80px;max-width:none;margin:0}
+  .app>h1,.app>.sub{max-width:98ch}
   .nav{display:flex;align-items:center;gap:3px;margin-bottom:8px}
   .nav a{text-decoration:none;color:var(--muted);font-weight:600;font-size:12.5px;padding:5px 8px;border-radius:8px}
   .nav a.on{background:var(--orange);color:#fff}
@@ -177,19 +184,19 @@
     </div>
   </div>
   <div class="wf"><span class="werr" id="w_err"></span>
-    <span class="ro-note" id="w_gatenote" style="margin-right:auto;max-width:250px">A deal cannot be Won without this.</span>
+    <span class="ro-note" id="w_gatenote" style="margin-right:auto;max-width:250px">A deal cannot be Signed without this.</span>
     <button class="btn" id="w_cancel">Cancel</button>
     <button class="btn p" id="w_save">Save</button></div>
 </div></div>
 
-<script src="store.js?v=112"></script>
+<script src="store.js?v=113"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='spx.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('spx');
 
 /* ---------- constants & small helpers ---------- */
 const SALES_STATUSES=['Sent','Confirmed','Lost'];   // derived axis — Health-Check / Reporting / Invoiced-Paid all key on this
-const ST_EN={Sent:'Sent',Confirmed:'Won',Lost:'Lost'};
+const ST_EN={Sent:'Sent',Confirmed:'Signed',Lost:'Lost'};
 const ST_CLASS={Sent:'st-sent',Confirmed:'st-approved',Lost:'st-lost'};
 /* ---- Zoho-mirrored picklists (2026-07-14 — the SPX team's Zoho CRM options,
    translated to English). The Stage picklist is the primary status; the legacy
@@ -205,6 +212,15 @@ const PACKAGE_TIERS=['Multi-event','General','Diamond','Gold','Silver','Bronze',
 const LOSS_REASONS=['No Budget','No Response','Timing','Not Relevant','Already Committed','Wrong Contact'];
 function statusOfStage(st){return st==='Won'?'Confirmed':st==='Lost'?'Lost':st?'Sent':null;}
 function stageClass(st){return st==='Won'?'st-approved':st==='Lost'?'st-lost':st==='Silent'?'st-silent':'st-sent';}
+/* ---- "Won" is called SIGNED everywhere a human reads it (Belén, 6 Aug 2026) ----
+   The STORED value stays 'Won'. Nothing was renamed in the database on purpose: the
+   stage string is written by the Proposal Builder, by register.py, by the 2026-07-13
+   import and by every derivation in store.js (spxWonDealsWhere, weeklyAutoRefresh,
+   spxAccounting…). Renaming the data would mean migrating all of that at once and any
+   row written by an old builder client would silently stop counting as signed.
+   So: one label function, applied at every point a stage is PRINTED or offered in a
+   dropdown. If you add a new place that shows a stage, send it through stageLabel(). */
+function stageLabel(st){return st==='Won'?'Signed':(st||'');}
 /* board bucket — Silent is a stage (salesStatus stays 'Sent', DB-valid) shown as its own
    dormant column so it stops blurring the Sent numbers (Belén, 20 Jul). */
 function spxBucket(p){return (p.stage==='Silent')?'Silent':p.salesStatus;}
@@ -439,12 +455,12 @@ function renderProposals(app,scope){
   if(scope!=='before')h+=pendingDeliveryBanner();
   if(scope==='before')h+='<p class="lead">Events where selling is finished — nothing left in the pipeline. Kept for the record; the events you\'re selling now are on the <b>Proposals</b> tab.</p>';
   h+='<div class="tiles">'
-    +tile('Won (specs)',money(firmado),cntB('Confirmed')+' props','good')
+    +tile('Signed (specs)',money(firmado),cntB('Confirmed')+' props','good')
     +tile('Tickets vendidos',money(ticketsSold),'de Facturación')
     +tile('Sent',money(enviado),cntB('Sent')+' props')
     +tile('Silent',money(silente),cntB('Silent')+' dormidas')
     +tile('Lost',money(perdido),cntB('Lost')+' props')
-    +tile('Won + pipeline',money(proceso),'')
+    +tile('Signed + pipeline',money(proceso),'')
     +tile('Target SPX',tgt?money(tgt):'—','the sponsorship target only')
     +tile('% target SPX',reachedT==null?'—':pct(reachedT),reachedT==null?'':'fuera '+pct(Math.max(0,1-reachedT)))
     +'</div>';
@@ -463,7 +479,7 @@ function renderProposals(app,scope){
   const pick=(id,label,list,cur)=>sel(id,label,list.map(s=>[s,s]).concat([['(blank)','(blank — to fill in)']]),cur);
   h+=sel('f_event','Event',scopeEvents.map(e=>[e.key,e.name]),flt.event);
   h+=sel('f_sales','Salesperson',salespeople.map(s=>[s,s]),flt.sales);
-  h+=pick('f_stage','Stage',SPX_STAGES,flt.stage);
+  h+=sel('f_stage','Stage',SPX_STAGES.map(s=>[s,stageLabel(s)]).concat([['(blank)','(blank — to fill in)']]),flt.stage);
   h+=pick('f_atype','Account type',ACCOUNT_TYPES,flt.accountType);
   h+=pick('f_source','Source',SOURCES,flt.source);
   h+=pick('f_ppack','Product/Package',PRODUCT_PACKAGES,flt.productPackage);
@@ -478,12 +494,12 @@ function renderProposals(app,scope){
   h+='<button class="chip" onclick="exportBackup()" title="Download EVERYTHING (all proposals, lines and a per-event summary) — the Friday backup, ignores filters">⬇ Backup (todo)</button>';
   h+='</div>';
 
-  // #3 placement: the health-check as analysis ABOVE the board, for the event in focus (Belén, 22 Jul)
-  if(scope!=='before'){
-    const fk=flt.event||((spxEvents().filter(evCurrent)[0]||{}).key);
-    const fev=fk?spxEvents().find(e=>e.key===fk):null;
-    if(fev)h+='<div style="margin-bottom:18px"><div class="ro-note" style="margin-bottom:6px">📊 Análisis — health-check · <b>'+esc(fev.name)+'</b>'+(flt.event?'':' (filtra por evento para cambiarlo · o abre la pestaña Dashboard)')+'</div>'+healthCard(fev)+'</div>';
-  }
+  /* The health-check card used to sit here too (22 Jul: "analysis above the board").
+     Taken out 6 Aug 2026 — Belén: "the bit at the top that looks like the health check
+     really is repeating the same information as in the health check; we've decided
+     against having it twice." The card now has exactly two homes: the Health-Check tab
+     (one event, in depth) and the Dashboard tab (the at-a-glance summary). Proposals is
+     the LIST — it opens straight onto the board, and the board gets the whole width. */
 
   // table (wrapped in zoom + top-scroll chrome)
   h+=tableChrome(VIEW==='general'?proposalsTableGeneral(props):proposalsTableByEvent(props));
@@ -503,7 +519,7 @@ function exportSpx(){
     const c=(p.contacts||[])[0]||{};
     let acc=null;try{acc=accountingFor(p);}catch(e){}
     return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',
-      Status:p.salesStatus||'',Stage:p.stage||'',Source:p.source||'',
+      Status:stLabel(p.salesStatus),Stage:stageLabel(p.stage),Source:p.source||'',
       'Account type':p.accountType||'','Product/Package':p.productPackage||'',Package:p.packageTier||'',
       'Value €':+p.valueEur||0,Sent:dmy(p.fechaEnvio),'Follow-up':dmy(p.fechaSeguimiento),
       'Reason for loss':p.reasonForLoss||'',
@@ -522,17 +538,18 @@ function exportBackup(){
   const props=liveProps();
   if(!props.length){alert('Nothing to back up yet.');return;}
   const proposals=props.map(p=>{const c=(p.contacts||[])[0]||{};let acc=null;try{acc=accountingFor(p);}catch(e){}
-    return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',Bucket:spxBucket(p),Status:p.salesStatus||'',Stage:p.stage||'',Source:p.source||'',
+    return {Company:p.company||'',Salesperson:p.responsableName||p.responsable||'',Bucket:stLabel(spxBucket(p)),Status:stLabel(p.salesStatus),Stage:stageLabel(p.stage),Source:p.source||'',
       'Account type':p.accountType||'','Product/Package':p.productPackage||'',Package:p.packageTier||'',
       'Value €':propValue(p),Sent:dmy(p.fechaEnvio),'Follow-up':dmy(p.fechaSeguimiento),'Reason for loss':p.reasonForLoss||'',
       Invoicing:(acc&&acc.state&&acc.state!=='none')?acc.state:'',General:p.isGeneral?'yes':'',Created:dmy(p.createdAt),
       'Main contact':(((c.first||'')+' '+(c.last||'')).trim()),'Contact email':c.email||'',Notes:p.notas||''};});
-  const lines=[];props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>lines.push({Company:p.company||'',Bucket:spxBucket(p),Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
+  const lines=[];props.forEach(p=>DB.spxLinesFor(p.id).forEach(l=>lines.push({Company:p.company||'',Bucket:stLabel(spxBucket(p)),Event:l.eventName||l.eventKey||'','Line value €':+l.valueEur||0})));
   const evSummary=spxEvents().map(e=>{const fid=e.financeId;
     const T=eventTargets(e);   // includes the Money-master × specs-% split — raw reg fields would show stale/blank targets
     const won=eventBucketMoney(e.key,'Confirmed'),sent=eventBucketMoney(e.key,'Sent'),silent=eventBucketMoney(e.key,'Silent'),lost=eventBucketMoney(e.key,'Lost');
     const tickets=fid!=null?invoicedPases(fid).total:0;const spT=T.spTarget,tkT=T.tkTarget,totT=T.totTarget;const closed=won+tickets;
-    return {Event:e.name,'SPX target €':spT,'Rest of target €':(tkT==null?'':tkT),'Total target €':totT,'Specs Won €':won,'Tickets sold €':tickets,'Closed total €':closed,
+    const pend=(fid!=null&&DB.signedUninvoicedForFin)?DB.signedUninvoicedForFin(fid).total:0;
+    return {Event:e.name,'SPX target €':spT,'Rest of target €':(tkT==null?'':tkT),'Total target €':totT,'Specs signed €':won,'Signed not invoiced €':pend,'Tickets sold €':tickets,'Closed total €':closed,
       '% target':totT?Math.round(1000*closed/totT)/10+'%':'','Sent €':sent,'Silent €':silent,'Lost €':lost,Current:evCurrent(e)?'yes':''};});
   exportXLSX('RENMAD_SPX_BACKUP_'+toISO(new Date())+'.xlsx',
     [{name:'Proposals (all)',rows:proposals},{name:'Event lines',rows:lines},{name:'Event summary',rows:evSummary}]);
@@ -703,11 +720,11 @@ function eventLineCell(l,editable){
 function stageCell(p,editable){
   if(!editable){
     if(!p.stage)return '<span class="stbadge '+ST_CLASS[p.salesStatus]+'" title="stage not set yet — legacy '+esc(stLabel(p.salesStatus))+' proposal">'+esc(stLabel(p.salesStatus))+' · stage?</span>';
-    return '<span class="stbadge '+stageClass(p.stage)+'">'+esc(p.stage)+'</span>';
+    return '<span class="stbadge '+stageClass(p.stage)+'">'+esc(stageLabel(p.stage))+'</span>';
   }
   return '<select class="stsel" data-stid="'+p.id+'">'
     +'<option value=""'+(p.stage?'':' selected')+'>'+(p.stage?'—':esc(stLabel(p.salesStatus))+' · stage?')+'</option>'
-    +SPX_STAGES.map(s=>'<option value="'+s+'"'+(p.stage===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select>';
+    +SPX_STAGES.map(s=>'<option value="'+s+'"'+(p.stage===s?' selected':'')+'>'+esc(stageLabel(s))+'</option>').join('')+'</select>';
 }
 function probCell(p){const pr=STAGE_PROB[p.stage];return pr==null?'<span style="color:var(--muted)">—</span>':pct(pr);}
 /* Follow up date — red + ⏰ once the next touchpoint has expired on a live deal */
@@ -1097,19 +1114,19 @@ function renderDashboard(app){
   const closed=won+tickets,reached=totTarget?closed/totTarget:null,toGoMoney=Math.max(0,totTarget-closed);
   // TOP block — the general view
   h+='<div class="card"><h3 style="margin:0 0 10px">'+esc(ev.name)+' — resumen</h3><div class="tiles">'
-    +tile('Specs cerrado',money(won),cntEventBucket(ev.key,'Confirmed')+' Won','good')
+    +tile('Specs cerrado',money(won),cntEventBucket(ev.key,'Confirmed')+' firmados','good')
     +tile('Tickets cerrado',money(tickets),'vendidos (Facturación)')
     +tile('Cerrado total',money(closed),'specs + tickets','good')
     +tile('Target del evento',totTarget?money(totTarget):'—',spTarget?('SPX '+money(spTarget)+(tkTarget!=null?' · resto '+money(tkTarget):'')):'donde esté en Money')
     +tile('% target',reached==null?'—':pct(reached),reached==null?'':'fuera '+pct(Math.max(0,1-reached))+' · faltan '+money(toGoMoney))
     +'</div></div>';
-  // BOTTOM block — analysis: Sent / Silent / Lost / Won share of the pipeline
+  // BOTTOM block — analysis: Sent / Silent / Lost / Signed share of the pipeline
   const pipeTotal=sent+silent+lost+won,shareOf=v=>pipeTotal?v/pipeTotal:null;
   h+='<div class="card"><h3 style="margin:0 0 10px">Reparto del pipeline</h3><div class="tiles">'
     +tile('Sent',money(sent),shareOf(sent)==null?'':pct(shareOf(sent))+' · '+cntEventBucket(ev.key,'Sent')+' props')
     +tile('Silent',money(silent),shareOf(silent)==null?'':pct(shareOf(silent))+' · '+cntEventBucket(ev.key,'Silent')+' dormidas')
     +tile('Lost',money(lost),shareOf(lost)==null?'':pct(shareOf(lost))+' · '+cntEventBucket(ev.key,'Lost')+' props')
-    +tile('Won',money(won),shareOf(won)==null?'':pct(shareOf(won))+' · firmadas','good')
+    +tile('Signed',money(won),shareOf(won)==null?'':pct(shareOf(won))+' · firmadas','good')
     +'</div></div>';
   h+='<div class="chartbox"><h3>Evolución semanal del pipeline — '+esc(ev.name)+'</h3><div class="cw"><canvas id="c_dashwk"></canvas></div></div>';
   h+=healthCard(ev);
@@ -1162,8 +1179,8 @@ function healthCard(ev){
   _hcT=t;
   let conv=(t.convByStatus&&t.convByStatus.Sent!=null)?+t.convByStatus.Sent:0.35;
   if(conv>1)conv=conv/100;conv=Math.max(0,Math.min(1,conv));   // "35" means 35%, always a 0–1 fraction
-  /* SIGNED = deals marked Won on the board (sales-declared), counted the moment they're Won
-     — NOT invoiced (Belén, 20 Jul: the Won deal, e.g. 19.275, must count immediately).
+  /* SIGNED = deals marked Signed on the board (sales-declared), counted the moment they are
+     — NOT invoiced (Belén, 20 Jul: the signed deal, e.g. 19.275, must count immediately).
      Invoiced is shown as an "of which" sub-line. Silent proposals never count as pipeline. */
   const wonSpecs=specsMoney(ev.key,'Confirmed');
   const pipeline=specsMoney(ev.key,'Sent');
@@ -1172,7 +1189,7 @@ function healthCard(ev){
   const tickets=fid!=null?invoicedPases(fid):{total:0,paid:0};       // tickets come from Facturación
   const T=eventTargets(ev);                                          // money-master split (or fallback)
   const spTarget=T.spTarget,spStretch=T.spStretch,tkTarget=T.tkTarget,tkStretch=T.tkStretch,totTarget=T.totTarget,totStretch=T.totStretch;
-  const signedNow=wonSpecs+tickets.total;                           // real money in: specs Won + tickets sold
+  const signedNow=wonSpecs+tickets.total;                           // real money in: specs signed + tickets sold
   const projection=wonSpecs+expected+tickets.total;                 // signed + expected pipeline + tickets
   const reached=totTarget?signedNow/totTarget:null,toGo=(reached==null)?null:Math.max(0,1-reached);
   const toGoMoney=Math.max(0,totTarget-signedNow),projPct=totTarget?projection/totTarget:null;
@@ -1181,12 +1198,12 @@ function healthCard(ev){
   const editable=DB.canSalesLead()&&(_hcReg!=null||fid!=null);   // targets editable if the registry or a Money row holds them
 
   let h='<div class="card"><h2>'+esc(ev.name)+' — sales health-check</h2>'
-    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so tickets sold (Facturación) can\'t derive — targets &amp; the Won/pipeline sponsorship figures still work. Link it in <b>⚙ Manage events</b>.</div>':'')
-    +'<p class="lead"><b>Firmado</b> = deals marked <b>Won</b> on the board (the moment they\'re Won) + <b>tickets</b> vendidos (Facturación). La <b>proyección</b> añade el pipeline aún en Sent × conversión.</p>';
+    +(fid==null?'<div class="setupbanner" style="margin:6px 0 10px">Not linked to a <b>Money</b> row yet, so tickets sold (Facturación) can\'t derive — targets &amp; the Signed/pipeline sponsorship figures still work. Link it in <b>⚙ Manage events</b>.</div>':'')
+    +'<p class="lead"><b>Firmado</b> = contratos marcados <b>Signed</b> en el tablero (cuentan desde el minuto uno, estén facturados o no) + <b>tickets</b> vendidos (Facturación). La <b>proyección</b> añade el pipeline aún en Sent × conversión.</p>';
 
   // headline — fixes the "15% of target" mislabel: reached AND still-to-go, both explicit
   h+='<div class="tiles" style="margin-bottom:8px">'
-    +tile('Firmado ahora',money(signedNow),'specs Won + tickets vendidos',(reached!=null&&reached>=1)?'good':'')
+    +tile('Firmado ahora',money(signedNow),'specs firmados + tickets vendidos',(reached!=null&&reached>=1)?'good':'')
     +tile('Alcanzado del target',reached==null?'—':pct(reached),reached==null?'sin target':'de '+money(totTarget))
     +tile('Fuera de target',toGo==null?'—':pct(toGo),toGo==null?'':'faltan '+money(toGoMoney)+' por firmar','bad')
     +tile('Proyección',money(projection),projPct==null?'':pct(projPct)+' del target',gapT>=0?'good':'bad')
@@ -1228,8 +1245,19 @@ function healthCard(ev){
       '</td></tr>';
   }
   h+='<tr class="section"><td colspan="4">Firmado y pipeline</td></tr>';
-  h+='<tr class="row-total"><td>Firmado (Won en el tablero)</td><td class="num">'+money(wonSpecs)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(signedNow)+'</td></tr>';
+  h+='<tr class="row-total"><td>Firmado (Signed en el tablero)</td><td class="num">'+money(wonSpecs)+'</td><td class="num">'+money(tickets.total)+'</td><td class="num">'+money(signedNow)+'</td></tr>';
   h+='<tr><td><span class="ro-note">— del cual facturado</span></td><td class="num">'+money(invSpecs)+'</td><td class="num">'+money(tickets.paid)+'</td><td class="num">'+money(invSpecs+tickets.paid)+'</td></tr>';
+  /* the other half of that sentence (Belén, 6 Aug 2026): money already SIGNED that nobody
+     has invoiced yet. For BD it is as good as in; for accounting it is not. It has always
+     been inside "Firmado" — it just never had a line of its own, so the difference between
+     the two rows above looked like an error instead of a queue. Contract by contract via
+     DB.signedUninvoicedForFin, never wonSpecs−invSpecs (which goes negative the moment an
+     invoice exists without a contract behind it). */
+  const pend=(fid!=null&&DB.signedUninvoicedForFin)?DB.signedUninvoicedForFin(fid):{total:0,rows:[]};
+  if(pend.total>0.005)
+    h+='<tr><td><span class="ro-note" style="color:var(--orange)">— firmado, pendiente de facturar ('+pend.rows.length+')</span></td>'
+      +'<td class="num" style="color:var(--orange)">'+money(pend.total)+'</td><td class="num">—</td>'
+      +'<td class="num" style="color:var(--orange)">'+money(pend.total)+'</td></tr>';
   h+='<tr><td>En pipeline (propuestas Sent)</td><td class="num">'+money(pipeline)+'</td><td class="num">—</td><td class="num">'+money(pipeline)+'</td></tr>';
   h+='<tr><td>% de conversión asumido</td><td class="num">'+convCell(conv,editable)+'</td><td class="num">—</td><td class="num"></td></tr>';
   h+='<tr><td>Ingreso esperado del pipeline</td><td class="num">'+money(expected)+'</td><td class="num">—</td><td class="num">'+money(expected)+'</td></tr>';
@@ -1245,14 +1273,14 @@ function healthCard(ev){
     '</div></div>';
   setTimeout(function(){try{drawHcPace(ev);}catch(e){console.warn('hc pace chart:',e.message||e);}},0);
 
-  // verdicts — projection now includes signed Won (fixes the −25.000 that ignored the Won deal)
+  // verdicts — projection now includes signed contracts (fixes the −25.000 that ignored them)
   h+='<div class="tiles" style="margin-top:16px">'
     +tile('¿Proyección llega a Target?',gapT>=0?'SÍ ✔':'NO ✘',money(totTarget)+' target',gapT>=0?'good':'bad')
     +tile('Diferencia vs Target',money(gapT),gapT>=0?'holgura':'falta por cerrar',gapT>=0?'good':'bad')
     +tile('¿Llega a Stretch?',gapS>=0?'SÍ ✔':'NO ✘',money(totStretch)+' stretch',gapS>=0?'good':'bad')
     +tile('€ propuestas ADIC. → target',addT==null?'—':'+'+money(addT),addT==null?'conversión 0%':'a firmar (÷ conv '+pct(conv)+')')
     +'</div>';
-  h+='<p class="ro-note">«Alcanzado» = lo ya firmado (Won + tickets) sobre el target total. «Fuera de target» = lo que queda por firmar. La proyección añade el pipeline pendiente por su conversión.</p>';
+  h+='<p class="ro-note">«Alcanzado» = lo ya firmado (Signed + tickets) sobre el target total. «Fuera de target» = lo que queda por firmar. La proyección añade el pipeline pendiente por su conversión.</p>';
   h+='</div>';
   return h;
 }
@@ -1474,7 +1502,7 @@ function openPanel(id){
   let b='';
   b+='<div class="sec"><h5>Status</h5>';
   b+='<div class="kv"><span class="k">Stage</span>'+(p.stage
-    ?'<span class="stbadge '+stageClass(p.stage)+'">'+esc(p.stage)+'</span>'
+    ?'<span class="stbadge '+stageClass(p.stage)+'">'+esc(stageLabel(p.stage))+'</span>'
     :'<span class="stbadge '+ST_CLASS[p.salesStatus]+'" title="pre-Zoho proposal — pick its stage below">'+esc(stLabel(p.salesStatus))+' · stage to fill in</span>')+'</div>';
   if(STAGE_PROB[p.stage]!=null)b+='<div class="kv"><span class="k">Probability</span><span>'+pct(STAGE_PROB[p.stage])+'</span></div>';
   if(p.stage==='Lost')b+='<div class="kv"><span class="k">Reason for loss</span><span>'+esc(p.reasonForLoss||'—')+'</span></div>';
@@ -1582,7 +1610,8 @@ function fldSel(label,f,v,opts,hint){
   const list=opts.slice();if(v&&list.indexOf(v)<0)list.unshift(v);
   return '<div class="fld"><label>'+esc(label)+'</label><select data-pf="'+f+'">'
     +'<option value=""'+(v?'':' selected')+'>—'+(hint?' ('+esc(hint)+')':'')+'</option>'
-    +list.map(o=>'<option value="'+esc(o)+'"'+(o===v?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>';
+    /* value = what is stored, text = what is read: 'Won' is offered as "Signed" */
+    +list.map(o=>'<option value="'+esc(o)+'"'+(o===v?' selected':'')+'>'+esc(stageLabel(o))+'</option>').join('')+'</select></div>';
 }
 function fldArea(label,f,v){return '<div class="fld"><label>'+esc(label)+'</label><textarea data-pf="'+f+'">'+esc(v==null?'':v)+'</textarea></div>';}
 function kv(k,v){return '<div class="kv"><span class="k">'+esc(k)+'</span><span>'+esc(v||'—')+'</span></div>';}
@@ -1616,7 +1645,7 @@ function openCreate(){
   if(!DB.isSales()){alert('Only sales, the sales lead or an admin can add proposals.');return;}
   const evs=spxEvents().filter(evCurrent);   // the events being sold now
   window._ncEvOpts='<option value="">— pick event —</option>'+evs.map(e=>'<option value="'+esc(e.key)+'">'+esc(e.name)+'</option>').join('');
-  const zoho=(id,opts,selDefault)=>'<select id="'+id+'"><option value=""'+(selDefault?'':' selected')+'>—</option>'+opts.map(o=>'<option value="'+esc(o)+'"'+(o===selDefault?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>';
+  const zoho=(id,opts,selDefault)=>'<select id="'+id+'"><option value=""'+(selDefault?'':' selected')+'>—</option>'+opts.map(o=>'<option value="'+esc(o)+'"'+(o===selDefault?' selected':'')+'>'+esc(stageLabel(o))+'</option>').join('')+'</select>';
   const b='<div class="sec"><h5>New proposal</h5>'
     +'<div class="fld"><label>Company (marketing name) *</label><input id="nc_company"></div>'
     +'<div class="fld"><label>Owner</label><select id="nc_resp">'+salespeopleOpts()+'</select></div>'
