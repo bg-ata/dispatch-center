@@ -96,7 +96,7 @@
   <div id="nav"></div>
   <h1>📅 Projects</h1>
   <p class="tagline" id="tagline">every RENMAD event on one timeline — where the magic gets orchestrated</p>
-  <div class="ptabs"><button id="pt_renmad" class="on">RENMAD</button><button id="pt_external">Projects</button></div>
+  <div class="ptabs"><button id="pt_renmad" class="on">RENMAD</button><button id="pt_external">Projects</button><button id="pt_req">🙋 Requests<span id="reqPill"></span></button></div>
   <div id="extBanner" style="display:none;background:#FFF3E8;border:1px solid #F3C49B;color:#8a4a12;border-radius:9px;padding:9px 13px;font-size:13px;margin:10px 0 0"></div>
   <div id="okQueue" style="display:none"></div>
   <div class="bar-top">
@@ -115,7 +115,10 @@
   </div>
   <p class="crit" id="critline">Red columns = fixed milestones (G/L) &amp; discount weeks (LD/SE/EB/LC); black = event week — drag a red/black column to reposition it. Resize each lane's stages with the <b>−/+</b> on a bar (independent per lane). <b>×</b> on LD drops it. Click an event name for full detail.</p>
   <div class="gwrap" id="gwrap"><div class="grid" id="grid"></div></div>
-  <p class="note">Stages only — tasks &amp; owners live inside each event. <span class="prov">prov</span> 2027 dates provisional.</p>
+  <p class="note" id="gnote">Stages only — tasks &amp; owners live inside each event. <span class="prov">prov</span> 2027 dates provisional.</p>
+  <!-- 🙋 the cross-event request board (Belén, 7 Aug 2026): every request on every event,
+       always on the page whether it is decided or not, ordered however you want it. -->
+  <div id="reqview" style="display:none"></div>
 </div>
 <div id="tip"></div>
 <div id="modal"><div class="card">
@@ -149,7 +152,7 @@
   </div>
 </div></div>
 
-<script src="store.js?v=117"></script>
+<script src="store.js?v=118"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 let ZOOM=(parseFloat(localStorage.getItem('gZoom'))||1);
@@ -160,12 +163,22 @@ const LANE_LETTER={project:'PM',marketing:'MKT',sales:'SAL',logistics:'LOG'};
 document.getElementById('nav').innerHTML=navBar('overview');
 let dragMk=null, dragW0=null, editingId=null, modalIsExt=false;
 
-/* two tabs: RENMAD (the events machine) vs Projects (external/one-off jobs) */
-let TAB=(location.hash==='#external')?'external':'renmad';
+/* three views: RENMAD (the events machine), Projects (external/one-off jobs) and the
+   request board, which is not a timeline at all — so it hides the whole Gantt chrome. */
+let TAB=(location.hash==='#external')?'external':(location.hash==='#requests'?'requests':'renmad');
 function tabEvents(){return DB.events.filter(e=>evKind(e)===TAB);}
-function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#external':'#renmad');}catch(e){}
+function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#external':(t==='requests'?'#requests':'#renmad'));}catch(e){}
   document.getElementById('pt_renmad').classList.toggle('on',t==='renmad');
   document.getElementById('pt_external').classList.toggle('on',t==='external');
+  document.getElementById('pt_req').classList.toggle('on',t==='requests');
+  const isReq=(t==='requests');
+  ['gwrap','critline','gnote'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=isReq?'none':'';});
+  const bt=document.querySelector('.bar-top');if(bt)bt.style.display=isReq?'none':'';
+  document.getElementById('reqview').style.display=isReq?'':'none';
+  if(isReq){
+    document.getElementById('tagline').textContent='everything anyone has asked logistics for — nothing here is ever deleted';
+    renderReqView();return;
+  }
   document.getElementById('addBtn').textContent=(t==='external'?'+ Add project':'+ Add event');
   /* RENMAD events stay manager-only; ANYONE can add an external/one-off project */
   document.getElementById('addBtn').style.display=(t==='external'||DB.canManage())?'':'none';
@@ -182,6 +195,47 @@ function switchTab(t){TAB=t;try{history.replaceState(null,'',t==='external'?'#ex
     bn.innerHTML='<b>One-time setup:</b> the database is missing the two project columns. Run the 2-line SQL (ask Claude — it pastes it in chat) in the dispatch Supabase SQL editor, then reload. Until then external projects cannot be saved.';}
   else bn.style.display='none';
   render();scrollToToday();
+}
+
+/* ---- 🙋 the request board, every event at once (Belén, 7 Aug 2026) ----
+   "All conversations stay visible in the platform and can be ordered by date, status,
+   requester, etc." Left = the live ones, right = the box to raise a new one. Everything
+   settled keeps its place underneath instead of disappearing off the page.
+   The card, the sorter and every rule live in store.js (dcReqCard / dcReqWire) so this
+   board and the tab inside an event can never behave differently. */
+function reqPill(){
+  const el=document.getElementById('reqPill');if(!el)return;
+  let n=0;try{if(DB.reqReady())n=DB.requestsAll().filter(r=>!reqResolved(r)).length;}catch(e){}
+  el.innerHTML=n?(' <span style="background:var(--orange);color:#fff;border-radius:9px;padding:0 6px;font-size:11px;font-weight:700">'+n+'</span>'):'';
+}
+function renderReqView(){
+  const S=document.getElementById('reqview');
+  if(!DB.reqReady()){S.innerHTML='<div style="padding:26px 22px;color:var(--muted);font-size:13px">The request box is not switched on yet.</div>';return;}
+  const all=DB.requestsAll();
+  const live=all.filter(r=>!reqResolved(r)), done=all.filter(r=>reqResolved(r));
+  const SS=dcReqSortState;
+  const mine=DB.currentUser?live.filter(r=>r.personId==DB.currentUser.id).length:0;
+  const onDesk=DB.canLogistics()?live.filter(r=>reqWaitingOn(r)==='logistics').length:0;
+  const card=r=>dcReqCard(r,{unfolded:dcReqOpen===r.id,showEvent:true});
+  S.innerHTML='<div class="reqcols" style="margin-top:14px">'+
+    '<div>'+
+      '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px">'+
+        '<h3 style="margin:0;font-size:15px">Ongoing <span class="hint" style="font-weight:400">— '+live.length+' not yet decided'+
+          (onDesk?(' · <b style="color:#C77800">'+onDesk+' waiting on logistics</b>'):'')+
+          (mine?(' · '+mine+' of them yours'):'')+'</span></h3>'+
+        '<span style="margin-left:auto">'+dcReqSortBar(SS.col,SS.dir)+'</span>'+
+      '</div>'+
+      (live.length?dcReqSort(live,SS.col,SS.dir).map(card).join('')
+                 :'<p style="color:var(--muted);font-size:13px">Nothing open anywhere — every request has been confirmed or cancelled.</p>')+
+      (done.length?('<h3 style="margin:20px 0 8px;font-size:15px">Decided <span class="hint" style="font-weight:400">— '+done.length+
+        ', kept as history. Nothing is ever deleted.</span></h3>'+dcReqSort(done,SS.col,SS.dir).map(card).join('')):'')+
+    '</div>'+
+    '<div>'+dcReqFormHtml(true,null)+'</div>'+
+  '</div>';
+  dcReqWire(S,()=>{renderReqView();reqPill();});
+  const add=S.querySelector('#rqAdd');
+  if(add)add.onclick=async()=>{const r=await dcReqAdd(S,null);if(r){renderReqView();reqPill();}};
+  reqPill();
 }
 
 function bounds(list){
@@ -484,8 +538,13 @@ document.getElementById('zIn').onclick=()=>setZoom(ZOOM+0.2);
 function scrollToToday(){const wrap=document.getElementById('gwrap');if(!wrap)return;const list=tabEvents();if(!list.length)return;const {start}=bounds(list);const todayIdx=wIdx(new Date(),start);wrap.scrollLeft=Math.max(0,todayIdx*WEEKW);}
 document.getElementById('pt_renmad').onclick=()=>switchTab('renmad');
 document.getElementById('pt_external').onclick=()=>switchTab('external');
-boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));switchTab(TAB);const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}); // addBtn visibility handled per-tab in switchTab
-window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));render();});
+document.getElementById('pt_req').onclick=()=>switchTab('requests');
+boot(()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));switchTab(TAB);reqPill();const zl=document.getElementById('zLbl');if(zl)zl.textContent=Math.round(ZOOM*100)+'%';}); // addBtn visibility handled per-tab in switchTab
+/* a colleague answering a request must land on this board too, not just on the Gantt —
+   the request view is not drawn by render(), so it needs saying explicitly. */
+window.addEventListener('dc-remote',()=>{DB.events.sort((a,b)=>ymd(a.date)-ymd(b.date));
+  if(TAB==='requests')renderReqView();else render();
+  reqPill();});
 </script>
 </body>
 </html>

@@ -102,7 +102,7 @@
 <!-- the € Results tab draws the sales health-check curve (dcPaceChart in store.js).
      Same version as dashboard.html and spx.html so browsers reuse the cached copy. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=117"></script>
+<script src="store.js?v=118"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
@@ -577,138 +577,36 @@ async function renderVenueFiles(){
    somebody IS going to pay — the real question is whether it can be done and what it costs.
    Deliberately NOT an approve/reject pair: Valeria asked for an open answer box, because
    the answer is a quote, not a verdict. */
-let reqOpen=null;   // which ticket's thread is unfolded
 function renderReqTab(){
   const S=document.getElementById('sec-req');
   if(!DB.reqReady()){S.innerHTML='<div class="panel"><span class="empty">The request box is not active yet.</span></div>';return;}
-  const me=DB.currentUser, desk=DB.canLogistics();
   const rows=DB.requestsFor(ev.id);
-  const open=rows.filter(r=>r.status==='open'||r.status==='answered');
-  const settled=rows.filter(r=>r.status!=='open'&&r.status!=='answered');
-  let h='<div class="panel"><h3>Requests to logistics <span class="hint">— '+open.length+' still open'+
+  const open=rows.filter(r=>!reqResolved(r));
+  const settled=rows.filter(r=>reqResolved(r));
+  const SS=dcReqSortState;
+  const card=r=>dcReqCard(r,{unfolded:dcReqOpen===r.id});
+  /* Two columns, the shape Belén asked for on 7 Aug: the live conversations on the left,
+     the box for a new one on the right, always in reach. Settled ones keep their place
+     underneath — "I need requests that have already been logged to stay in the page." */
+  S.innerHTML='<div class="panel"><h3>Requests to logistics <span class="hint">— '+open.length+' open'+
       (settled.length?(' · '+settled.length+' settled'):'')+'</span></h3>'+
-    '<p class="hint">Ask for anything this event needs and logistics answers here with what it is, what it costs and how long it is held for. '+
-    'When it is confirmed the line lands in <a href="#" data-goven="1">Venue</a>. <b>If it is not here, it is not asked for</b> — no side deals.</p>'+
-    '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;background:#faf9f6">'+
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">'+
-      '<input id="rqTitle" placeholder="What do you need? e.g. Room for the sponsor workshop" style="flex:1 1 320px">'+
-      '<select id="rqCat" style="flex:0 0 auto">'+['Venue','AV','Materials & branding','Tech','Suppliers','Other']
-        .map(c=>'<option>'+c+'</option>').join('')+'</select>'+
+    '<p class="hint">Ask for anything this event needs; logistics answers here with what it is, what it costs and how long it is held for. '+
+    'When it is confirmed the line lands in <a href="#" data-goven="1">Venue</a>. Everything stays on this page, decided or not.</p>'+
+    '<div class="reqcols">'+
+      '<div>'+dcReqSortBar(SS.col,SS.dir)+
+        '<div style="margin-top:9px">'+
+        (open.length?dcReqSort(open,SS.col,SS.dir).map(card).join('')
+                   :'<p class="empty">Nothing open — everything asked for has been decided.</p>')+'</div>'+
+        (settled.length?('<h3 style="margin:18px 0 8px;font-size:13px">Settled <span class="hint">— kept as history, nothing is ever deleted</span></h3>'+
+          dcReqSort(settled,SS.col,SS.dir).map(card).join('')):'')+
       '</div>'+
-      '<textarea id="rqDesc" rows="2" placeholder="Anything logistics needs in order to price it — how many people, when, what it has to do" style="width:100%;margin-top:8px;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></textarea>'+
-      '<label style="display:flex;gap:7px;align-items:center;margin-top:8px;font-size:13px;cursor:pointer">'+
-        '<input type="checkbox" id="rqSponsor"> 💰 A sponsor is likely paying for this'+
-        '<span class="hint">— tick it and the question becomes “can we do it and what does it cost”, not “can we afford it”</span></label>'+
-      '<div style="margin-top:8px"><button class="btn primary sm" id="rqAdd">Send to logistics</button></div>'+
-    '</div>';
-  const card=r=>{
-    const mine=me&&r.personId==me.id;
-    const th=Array.isArray(r.thread)?r.thread:[];
-    const unfolded=(reqOpen===r.id);
-    const ST={open:{t:'waiting on logistics',c:'#C77800',b:'#FFF3E0'},answered:{t:'answered — needs confirming',c:'#185FA5',b:'#E8F0FA'},
-              confirmed:{t:'✓ confirmed — it is in Venue',c:'#3E8C28',b:'#E6F5E6'},
-              declined:{t:'not possible',c:'#A32D2D',b:'#FBEAEA'},closed:{t:'closed',c:'#8a8a86',b:'#F1F0EC'}};
-    const s=ST[r.status]||ST.open;
-    let c='<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden">'+
-      '<div class="reqhead" data-req="'+r.id+'" style="display:flex;gap:9px;align-items:center;padding:10px 12px;cursor:pointer;background:'+(unfolded?'#f6f5f1':'transparent')+'">'+
-        '<span style="color:var(--orange);font-weight:700">'+(unfolded?'▾':'▸')+'</span>'+
-        '<b style="flex:1 1 220px">'+esc(r.title||'')+'</b>'+
-        (r.possibleSponsor?'<span title="a sponsor is likely paying">💰</span>':'')+
-        '<span style="background:'+s.b+';color:'+s.c+';border-radius:20px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap">'+s.t+'</span>'+
-        '<span class="hint" style="white-space:nowrap">'+esc(DB.personName(r.personId))+(r.category?' · '+esc(r.category):'')+'</span>'+
-      '</div>';
-    if(unfolded){
-      c+='<div style="padding:0 12px 12px">';
-      if(r.description)c+='<p style="margin:2px 0 10px;white-space:pre-wrap">'+esc(r.description)+'</p>';
-      if(r.reservedUntil||r.costEur!=null&&r.costEur!==''){
-        c+='<p class="hint" style="margin:0 0 10px">'+
-          (r.costEur!=null&&r.costEur!==''?('<b>'+finFmt(r.costEur)+'</b>'):'')+
-          (r.reservedUntil?((r.costEur!=null&&r.costEur!==''?' · ':'')+'held until <b>'+deIso(r.reservedUntil)+'</b>'):'')+'</p>';
-      }
-      c+='<div style="max-height:240px;overflow:auto;margin-bottom:8px">'+
-        (th.length?th.map(m=>'<div style="margin-bottom:7px;padding:7px 10px;border-radius:9px;background:'+(m.sys?'#f1f0ec':'#FFF3EC')+';border:1px solid '+(m.sys?'var(--line)':'#F3D9B8')+'">'+
-          '<div class="hint" style="margin-bottom:2px">'+esc(m.who||'')+' · '+esc(m.when||'')+'</div>'+
-          '<div style="white-space:pre-wrap'+(m.sys?';font-style:italic;color:var(--muted)':'')+'">'+esc(m.sys||m.text||'')+'</div></div>').join('')
-              :'<span class="empty">No answer yet.</span>')+'</div>';
-      /* the open answer box Valeria asked for — anyone in the conversation can write */
-      if(desk||mine)c+='<div style="display:flex;gap:6px;margin-bottom:8px">'+
-        '<input data-rqmsg="'+r.id+'" placeholder="'+(desk?'Room name, capacity, what it includes, cost, until when…':'Add anything that helps them price it…')+'" style="flex:1">'+
-        '<button class="btn sm" data-rqsend="'+r.id+'">Reply</button></div>';
-      if(desk){
-        c+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:9px">'+
-          '<span class="hint">Quote:</span>'+
-          '<input type="number" step="0.01" data-rqcost="'+r.id+'" value="'+(r.costEur==null?'':r.costEur)+'" placeholder="cost €" style="width:110px">'+
-          '<input type="date" data-rquntil="'+r.id+'" value="'+(r.reservedUntil||'')+'" title="held until">'+
-          '<select data-rqcat="'+r.id+'">'+DB.venueCatsFor(ev.id).map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('')+'</select>'+
-          (r.status==='confirmed'?'<span class="hint">✓ already on the venue list</span>'
-            :'<button class="btn primary sm" data-rqok="'+r.id+'">Confirm → add to Venue</button>')+
-          (r.status==='declined'?'':'<button class="btn sm" data-rqno="'+r.id+'" style="color:#A32D2D;border-color:#f0c4c4">Not possible</button>')+
-          '</div>';
-      }
-      if(mine&&!desk&&(r.status==='open'||r.status==='answered'))
-        c+='<div style="margin-top:8px"><button class="btn sm" data-rqclose="'+r.id+'">Cancel this request</button></div>';
-      c+='</div>';
-    }
-    return c+'</div>';
-  };
-  h+=open.length?open.map(card).join(''):'<p class="empty">Nothing open — everything asked for has been settled.</p>';
-  if(settled.length)h+='<h3 style="margin:18px 0 8px;font-size:13px">Settled <span class="hint">— kept as history, nothing is deleted</span></h3>'+settled.map(card).join('');
-  S.innerHTML=h+'</div>';
-
-  const gv=S.querySelector('[data-goven]');if(gv)gv.onclick=e=>{e.preventDefault();const b=document.querySelector('[data-et="ven"]');if(b)b.click();};
-  S.querySelectorAll('.reqhead').forEach(d=>d.onclick=()=>{const id=+d.dataset.req;reqOpen=(reqOpen===id?null:id);renderReqTab();});
-  const add=document.getElementById('rqAdd');
-  if(add)add.onclick=async()=>{
-    const t=(document.getElementById('rqTitle').value||'').trim();
-    if(!t){alert('Say what you need — that is the whole request.');return;}
-    const r={id:DB.newId(),eventId:ev.id,personId:me?me.id:null,title:t,
-      description:(document.getElementById('rqDesc').value||'').trim(),
-      status:'open',thread:[],reservedUntil:null,
-      possibleSponsor:!!document.getElementById('rqSponsor').checked,
-      costEur:null,category:document.getElementById('rqCat').value,venueItemId:null,
-      created:toISO(new Date())+' '+nowHMS().slice(0,5)};
-    reqLog(r,'asked by '+((me&&me.name)||'someone'));
-    DB.data.requests=DB.requests.concat([r]);
-    await DB.saveNow();
-    reqNotify(r,'New request on '+ev.name+': '+t);
-    await DB.saveNow();
-    reqOpen=r.id;renderReqTab();render();   // the tab badge changes too
-  };
-  S.querySelectorAll('[data-rqsend]').forEach(b=>b.onclick=async()=>{
-    const r=DB.requests.find(x=>x.id==b.dataset.rqsend);
-    const inp=S.querySelector('[data-rqmsg="'+b.dataset.rqsend+'"]');
-    const txt=(inp&&inp.value||'').trim();if(!r||!txt)return;
-    reqLog(r,null,txt);
-    if(desk&&r.status==='open')r.status='answered';
-    await DB.saveNow();
-    reqNotify(r,(desk?'Logistics answered':'A note was added to')+' “'+r.title+'” on '+ev.name);
-    await DB.saveNow();renderReqTab();});
-  S.querySelectorAll('[data-rqcost]').forEach(el=>el.onchange=()=>{
-    const r=DB.requests.find(x=>x.id==el.dataset.rqcost);if(!r)return;
-    r.costEur=el.value===''?null:+el.value;DB.save();});
-  S.querySelectorAll('[data-rquntil]').forEach(el=>el.onchange=()=>{
-    const r=DB.requests.find(x=>x.id==el.dataset.rquntil);if(!r)return;
-    r.reservedUntil=el.value||null;reqLog(r,'held until '+(el.value?deIso(el.value):'—'));DB.save();renderReqTab();});
-  S.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{
-    const r=DB.requests.find(x=>x.id==b.dataset.rqok);if(!r)return;
-    const sel=S.querySelector('[data-rqcat="'+b.dataset.rqok+'"]');
-    if(!DB.venueCatsFor(ev.id).length)DB.seedVenue(ev.id);
-    DB.confirmRequest(r,sel&&sel.value?+sel.value:null);
-    await DB.saveNow();
-    reqNotify(r,'Confirmed on '+ev.name+': '+r.title+' — it is now on the venue list');
-    await DB.saveNow();renderReqTab();render();});
-  S.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{
-    const r=DB.requests.find(x=>x.id==b.dataset.rqno);if(!r)return;
-    const why=prompt('Why not? The person who asked will see this.');if(why===null)return;
-    r.status='declined';reqLog(r,'not possible',why||undefined);
-    await DB.saveNow();
-    reqNotify(r,'Not possible on '+ev.name+': '+r.title+(why?(' — '+why):''));
-    await DB.saveNow();renderReqTab();render();});
-  S.querySelectorAll('[data-rqclose]').forEach(b=>b.onclick=async()=>{
-    const r=DB.requests.find(x=>x.id==b.dataset.rqclose);if(!r)return;
-    if(!confirm('Cancel this request? It stays on the record as history.'))return;
-    r.status='closed';reqLog(r,'cancelled by '+((me&&me.name)||'the requester'));
-    await DB.saveNow();renderReqTab();render();});
+      '<div>'+dcReqFormHtml(false,ev.id)+'</div>'+
+    '</div></div>';
+  const gv=S.querySelector('[data-goven]');
+  if(gv)gv.onclick=e=>{e.preventDefault();const b=document.querySelector('[data-et="ven"]');if(b)b.click();};
+  dcReqWire(S,()=>{renderReqTab();render();});
+  const add=S.querySelector('#rqAdd');
+  if(add)add.onclick=async()=>{const r=await dcReqAdd(S,ev.id);if(r){renderReqTab();render();}};
 }
 
 async function uploadVenueFile(file){

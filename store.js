@@ -48,6 +48,10 @@ function esc(s){return (s==null?'':''+s).replace(/[&<>"']/g,c=>({'&':'&amp;','<'
         'input,select,textarea{font-size:16px !important}'+ /* stops the iPhone zoom-on-focus */
         '.panel{overflow-x:auto}'+ /* wide admin tables scroll inside their own box */
       '}'+
+      /* ---- the request board: conversations left, the new-request box right (7 Aug) ----
+         On a phone the form drops underneath rather than squeezing to nothing. */
+      '.reqcols{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}'+
+      '@media(max-width:900px){.reqcols{grid-template-columns:1fr}}'+
       /* ---- mini calendar: what days is this person actually asking for? ---- */
       '.mcw{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 2px}'+
       '.mc{font:11px "Segoe UI",system-ui,sans-serif}'+
@@ -1971,16 +1975,258 @@ function reqLog(req,sys,text){
   req.thread.push({who:(me&&me.name)||'system',when:toISO(new Date())+' '+nowHMS().slice(0,5),
                    sys:sys||undefined,text:text||undefined});
 }
+/* ---------------- the four states (Belén, 7 Aug 2026) ----------------
+   "if they aren't resolved to be in a different colour, if they are resolved they will be
+   either confirmed or cancelled."  So there are exactly TWO resolved states, and everything
+   unresolved shares ONE colour — the sub-label says whose turn it is, the colour does not.
+   'declined' and 'closed' are the pre-7-Aug names; they are read as 'cancelled' forever
+   (normReqStatus) so nothing already logged can fall off the board. */
+const REQ_ST={
+  open     :{label:'waiting on logistics', sub:'nobody has answered yet',        c:'#C77800',b:'#FFF3E0',resolved:false},
+  answered :{label:'in conversation',      sub:'being discussed, not decided',   c:'#C77800',b:'#FFF3E0',resolved:false},
+  confirmed:{label:'✓ confirmed',          sub:'it is on the venue list',        c:'#3E8C28',b:'#E6F5E6',resolved:true},
+  cancelled:{label:'✕ cancelled',          sub:'decided against',                c:'#A32D2D',b:'#FBEAEA',resolved:true}
+};
+function normReqStatus(s){const k=''+(s||'open');return (k==='declined'||k==='closed')?'cancelled':(REQ_ST[k]?k:'open');}
+function reqMeta(r){return REQ_ST[normReqStatus(r&&r.status)];}
+function reqResolved(r){return reqMeta(r).resolved;}
+/* whose turn it is — drives the ⏳ Pending block on Me, which is where the team actually
+   looks (the 🔔 was already a dead letterbox at 50 unread when Belén moved everything
+   to Me on 6 Aug). null once it is decided: a settled request is on nobody's desk. */
+function reqWaitingOn(r){
+  if(!r||reqResolved(r))return null;
+  const th=Array.isArray(r.thread)?r.thread.filter(m=>m&&m.text):[];
+  const last=th[th.length-1];
+  if(!last)return 'logistics';                       // asked, never answered
+  return (last.who&&reqDeskNames().indexOf(last.who)>=0)?'requester':'logistics';
+}
+function reqDeskIds(){
+  /* everyone who may actually decide — the role, Belén, and any per-person override.
+     The old version matched role==='logistics' only, so Belén never heard about a
+     request even though she is the one who can confirm it. Mirrors dc_can_logistics(). */
+  return DB.people.filter(p=>{
+    if(p.deleted)return false;
+    const o=permOverride(p,'logistics.plan');
+    if(o&&o.edit!=null)return !!o.edit;
+    return (''+(p.role||'')).toLowerCase()==='logistics'||isBelenP(p);
+  }).map(p=>p.id);
+}
+function reqDeskNames(){return reqDeskIds().map(id=>DB.personName(id));}
 /* who hears about a request: the asker and the logistics desk, minus whoever just typed.
    Deliberately not "all" — this is the volume problem Belén flagged about task emails. */
 function reqNotify(req,text){
   try{
     if(!req||!DB.inboxReady()||!DB.currentUser)return 0;
     const link='event.html?id='+req.eventId+'#req';
-    const desk=DB.people.filter(p=>!p.deleted&&(''+(p.role||'')).toLowerCase()==='logistics').map(p=>p.id);
-    const ids=desk.concat([req.personId]).filter((id,i,a)=>id!=DB.currentUser.id&&a.indexOf(id)===i);
+    const ids=reqDeskIds().concat([req.personId]).filter((id,i,a)=>id!=DB.currentUser.id&&a.indexOf(id)===i);
     return ids.length?notifySend(ids,'notice',text,link):0;
   }catch(e){return 0;}
+}
+/* ================= THE REQUEST BOARD, SHARED (Belén, 7 Aug 2026) =================
+   One renderer for both homes — the 🙋 tab inside an event and the 🙋 Requests view in
+   Projects — so the two can never drift. Rulebook: one concept, one home, N views.
+   Her rules, encoded here and nowhere else:
+     · nothing ever leaves the board — settled requests stay, below, still readable
+     · unresolved share one colour; resolved are confirmed (green) or cancelled (red)
+     · only logistics confirms or cancels, and the decision is final
+     · the requester's NAME leads the card
+     · both sides can talk until a decision is reached
+   ⚠ KEEP IN SYNC: dc-digest.ts counts unresolved requests by the same rule (reqResolved). */
+const REQ_SORTS={
+  when     :{label:'Date',      val:r=>''+(r.created||r.id)},
+  status   :{label:'Status',    val:r=>({open:0,answered:1,confirmed:2,cancelled:3})[normReqStatus(r.status)]},
+  requester:{label:'Requester', val:r=>DB.personName(r.personId)||''},
+  event    :{label:'Event',     val:r=>{const e=DB.events.find(x=>x.id==r.eventId);return e?e.name:'';}},
+  title    :{label:'What',      val:r=>''+(r.title||'')}
+};
+function dcReqSort(rows,col,dir){
+  const c=REQ_SORTS[col]||REQ_SORTS.when;
+  return rows.slice().sort((a,b)=>{
+    const x=c.val(a),y=c.val(b);
+    let n = (typeof x==='number'&&typeof y==='number') ? (x-y)
+          : (''+x).localeCompare(''+y,undefined,{sensitivity:'base',numeric:true});
+    return n*dir || (b.id-a.id);
+  });
+}
+function dcReqSortBar(col,dir){
+  return '<span class="hint" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap">Order by:'+
+    Object.keys(REQ_SORTS).map(k=>'<a href="#" data-rqsort="'+k+'" style="text-decoration:none;padding:1px 7px;border-radius:20px;'+
+      (k===col?'background:var(--charcoal);color:#fff;font-weight:600':'color:#7c7c78;border:1px solid var(--line)')+'">'+
+      REQ_SORTS[k].label+(k===col?(dir<0?' ▾':' ▴'):'')+'</a>').join('')+'</span>';
+}
+/* one card. showEvent puts the event name on it (the Projects board needs it, the event
+   tab does not). Nothing here decides anything — the buttons only call decideRequest. */
+function dcReqCard(r,o){
+  o=o||{};
+  const st=normReqStatus(r.status), s=REQ_ST[st], done=s.resolved;
+  const me=DB.currentUser, desk=DB.canLogistics(), mine=me&&r.personId==me.id;
+  const th=Array.isArray(r.thread)?r.thread:[];
+  const turn=reqWaitingOn(r);
+  const ev=DB.events.find(x=>x.id==r.eventId);
+  const said=th.filter(m=>m&&m.text).length;
+  let c='<div style="border:1px solid '+(done?'var(--line)':s.c+'55')+';border-left:4px solid '+s.c+
+        ';border-radius:10px;margin-bottom:10px;overflow:hidden;background:'+(done?'#fbfaf8':'#fff')+'">'+
+    '<div class="reqhead" data-req="'+r.id+'" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding:10px 12px;cursor:pointer;background:'+(o.unfolded?'#f6f5f1':'transparent')+'">'+
+      '<span style="color:var(--orange);font-weight:700">'+(o.unfolded?'▾':'▸')+'</span>'+
+      /* her ask: "I need the requestER to leave their name" — it leads the card now,
+         it used to be grey small print at the far right end. */
+      '<b style="white-space:nowrap">'+esc(DB.personName(r.personId)||'—')+'</b>'+
+      '<span style="color:var(--muted)">asks:</span>'+
+      '<b style="flex:1 1 200px">'+esc(r.title||'')+'</b>'+
+      (r.possibleSponsor?'<span title="a sponsor is likely paying">💰</span>':'')+
+      '<span style="background:'+s.b+';color:'+s.c+';border-radius:20px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap">'+s.label+'</span>'+
+      '<span class="hint" style="white-space:nowrap">'+
+        (o.showEvent&&ev?esc(ev.name)+' · ':'')+esc((r.created||'').slice(0,10).split('-').reverse().join('/'))+
+        (said?(' · '+said+' message'+(said===1?'':'s')):'')+'</span>'+
+    '</div>';
+  if(!o.unfolded)return c+'</div>';
+  c+='<div style="padding:0 12px 12px">';
+  if(o.showEvent&&ev)c+='<p class="hint" style="margin:2px 0 8px">On <a href="event.html?id='+ev.id+'#req">'+esc(ev.name)+'</a>'+(r.category?' · '+esc(r.category):'')+'</p>';
+  else if(r.category)c+='<p class="hint" style="margin:2px 0 8px">'+esc(r.category)+'</p>';
+  if(r.description)c+='<p style="margin:2px 0 10px;white-space:pre-wrap">'+esc(r.description)+'</p>';
+  if(r.reservedUntil||(r.costEur!=null&&r.costEur!==''))
+    c+='<p class="hint" style="margin:0 0 10px">'+
+      ((r.costEur!=null&&r.costEur!=='')?('<b>'+finFmt(r.costEur)+'</b>'):'')+
+      (r.reservedUntil?(((r.costEur!=null&&r.costEur!=='')?' · ':'')+'held until <b>'+deIso(r.reservedUntil)+'</b>'):'')+'</p>';
+  c+='<div style="max-height:260px;overflow:auto;margin-bottom:8px">'+
+    (th.length?th.map(m=>'<div style="margin-bottom:7px;padding:7px 10px;border-radius:9px;background:'+(m.sys?'#f1f0ec':'#FFF3EC')+';border:1px solid '+(m.sys?'var(--line)':'#F3D9B8')+'">'+
+      '<div class="hint" style="margin-bottom:2px">'+esc(m.who||'')+' · '+esc(m.when||'')+'</div>'+
+      '<div style="white-space:pre-wrap'+(m.sys?';font-style:italic;color:var(--muted)':'')+'">'+esc(m.sys||m.text||'')+'</div></div>').join('')
+        :'<span class="empty">No answer yet.</span>')+'</div>';
+  if(done){
+    c+='<p class="hint" style="border-top:1px solid var(--line);padding-top:9px;margin:0">'+
+      s.sub+(r.decidedBy?(' by <b>'+esc(DB.personName(r.decidedBy))+'</b>'):'')+(r.decidedAt?(' on '+esc(r.decidedAt)):'')+
+      (r.cancelReason?(' — “'+esc(r.cancelReason)+'”'):'')+
+      '. This conversation is closed; raise a new request if it comes back.</p>';
+    return c+'</div></div>';
+  }
+  /* still live: both sides can talk. Belén: "the requester should be able to reply,
+     until a decision is reached." */
+  if(desk||mine)c+='<div style="display:flex;gap:6px;margin-bottom:8px">'+
+    '<input data-rqmsg="'+r.id+'" placeholder="'+(desk?'Which room, what it includes, what it costs, until when…':'Anything that helps them price it — or answer their question')+'" style="flex:1">'+
+    '<button class="btn sm" data-rqsend="'+r.id+'">Reply</button></div>';
+  else c+='<p class="hint" style="margin:0 0 8px">Only '+esc(DB.personName(r.personId))+' and logistics write on this one.</p>';
+  c+='<p class="hint" style="margin:0 0 8px">'+(turn==='logistics'
+      ? '⏳ Waiting on <b>logistics</b> to answer.' : '⏳ Waiting on <b>'+esc(DB.personName(r.personId))+'</b> to come back.')+'</p>';
+  if(desk){
+    c+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:9px">'+
+      '<span class="hint">Quote:</span>'+
+      '<input type="number" step="0.01" data-rqcost="'+r.id+'" value="'+(r.costEur==null?'':r.costEur)+'" placeholder="cost €" style="width:110px">'+
+      '<input type="date" data-rquntil="'+r.id+'" value="'+(r.reservedUntil||'')+'" title="held until">'+
+      '<select data-rqcat="'+r.id+'">'+DB.venueCatsFor(r.eventId).map(x=>'<option value="'+x.id+'">'+esc(x.name)+'</option>').join('')+'</select>'+
+      '<button class="btn primary sm" data-rqok="'+r.id+'">Confirm → add to Venue</button>'+
+      '<button class="btn sm" data-rqno="'+r.id+'" style="color:#A32D2D;border-color:#f0c4c4">Cancel this request</button>'+
+      '<span class="hint" style="flex:1 1 100%">Both are final — the request stops here and stays on the board as history.</span>'+
+      '</div>';
+  }else{
+    c+='<p class="hint" style="border-top:1px solid var(--line);padding-top:9px;margin:0">Only logistics can confirm or cancel this.</p>';
+  }
+  return c+'</div></div>';
+}
+/* which card is unfolded — module-level so a re-render keeps it open */
+let dcReqOpen=null;
+/* the wiring for a rendered list of cards. Every mutation goes through here, so the
+   rules cannot be half-applied on one page and not the other. redraw() is the page's
+   own re-render. */
+function dcReqWire(root,redraw){
+  const ev=id=>DB.events.find(x=>x.id==id);
+  const evName=r=>{const e=ev(r.eventId);return e?e.name:'the event';};
+  const find=id=>DB.requests.find(x=>x.id==id);
+  root.querySelectorAll('.reqhead').forEach(d=>d.onclick=()=>{
+    const id=+d.dataset.req;dcReqOpen=(dcReqOpen===id?null:id);redraw();});
+  root.querySelectorAll('[data-rqsend]').forEach(b=>b.onclick=async()=>{
+    const r=find(+b.dataset.rqsend);
+    const inp=root.querySelector('[data-rqmsg="'+b.dataset.rqsend+'"]');
+    const txt=((inp&&inp.value)||'').trim();
+    if(!r||!txt)return;
+    if(reqResolved(r)){alert('This request is already settled.');return;}
+    const desk=DB.canLogistics();
+    reqLog(r,null,txt);
+    /* open → answered the first time the desk writes: it is now a conversation, not a
+       silence. Still unresolved, still the same colour — only the sub-label moves. */
+    if(desk&&normReqStatus(r.status)==='open')r.status='answered';
+    await DB.saveNow();
+    reqNotify(r,(desk?'Logistics answered':'A note was added to')+' “'+r.title+'” on '+evName(r));
+    await DB.saveNow();redraw();});
+  root.querySelectorAll('[data-rqcost]').forEach(el=>el.onchange=()=>{
+    const r=find(+el.dataset.rqcost);if(!r)return;
+    r.costEur=el.value===''?null:+el.value;DB.save();});
+  root.querySelectorAll('[data-rquntil]').forEach(el=>el.onchange=()=>{
+    const r=find(+el.dataset.rquntil);if(!r)return;
+    r.reservedUntil=el.value||null;reqLog(r,'held until '+(el.value?deIso(el.value):'—'));DB.save();redraw();});
+  root.querySelectorAll('[data-rqok]').forEach(b=>b.onclick=async()=>{
+    const r=find(+b.dataset.rqok);if(!r)return;
+    const sel=root.querySelector('[data-rqcat="'+b.dataset.rqok+'"]');
+    if(!DB.venueCatsFor(r.eventId).length)DB.seedVenue(r.eventId);
+    if(!confirm('Confirm “'+r.title+'”?\n\nIt goes onto the event\'s Venue list and the request is closed for good.'))return;
+    const res=DB.decideRequest(r,'confirmed',{catId:sel&&sel.value?+sel.value:null});
+    if(!res.ok){alert(res.why);return;}
+    await DB.saveNow();
+    reqNotify(r,'Confirmed on '+evName(r)+': '+r.title+' — it is now on the venue list');
+    await DB.saveNow();redraw();});
+  root.querySelectorAll('[data-rqno]').forEach(b=>b.onclick=async()=>{
+    const r=find(+b.dataset.rqno);if(!r)return;
+    /* a reason is required, exactly like cancelling a task (v114) and denying holiday:
+       "cancelled" without a why is the thing people come and ask you about anyway. */
+    const why=prompt('Why is this cancelled? '+DB.personName(r.personId)+' will see it.');
+    if(why===null)return;
+    const res=DB.decideRequest(r,'cancelled',{reason:why});
+    if(!res.ok){alert(res.why);return;}
+    await DB.saveNow();
+    reqNotify(r,'Cancelled on '+evName(r)+': '+r.title+(why?(' — '+why):''));
+    await DB.saveNow();redraw();});
+  root.querySelectorAll('[data-rqsort]').forEach(a=>a.onclick=e=>{
+    e.preventDefault();const k=a.dataset.rqsort;
+    if(dcReqSortState.col===k)dcReqSortState.dir*=-1;else{dcReqSortState.col=k;dcReqSortState.dir=(k==='when'?-1:1);}
+    redraw();});
+}
+let dcReqSortState={col:'when',dir:-1};
+/* raise a new one. Belén: "should be easy to bring new requests." withPicker adds the
+   event dropdown (the Projects board can be standing anywhere); the event tab knows. */
+function dcReqFormHtml(withPicker,eventId){
+  const evs=DB.events.filter(e=>!e.deleted&&evKind(e)!=='external')
+    .sort((a,b)=>(''+a.date).localeCompare(''+b.date));
+  return '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:#faf9f6">'+
+    '<h3 style="margin:0 0 8px;font-size:14px">🙋 Ask logistics for something</h3>'+
+    (withPicker?'<select id="rqEvent" style="width:100%;margin-bottom:7px">'+
+      evs.map(e=>'<option value="'+e.id+'"'+(e.id==eventId?' selected':'')+'>'+esc(e.name)+'</option>').join('')+'</select>':'')+
+    '<input id="rqTitle" placeholder="What do you need? e.g. Room for the sponsor workshop" style="width:100%;box-sizing:border-box;margin-bottom:7px">'+
+    '<select id="rqCat" style="width:100%;margin-bottom:7px">'+['Venue','AV','Materials & branding','Tech','Suppliers','Other']
+      .map(c=>'<option>'+c+'</option>').join('')+'</select>'+
+    '<textarea id="rqDesc" rows="3" placeholder="Anything logistics needs in order to price it — how many people, when, what it has to do" style="width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px"></textarea>'+
+    '<label style="display:flex;gap:7px;align-items:flex-start;margin-top:8px;font-size:13px;cursor:pointer">'+
+      '<input type="checkbox" id="rqSponsor" style="margin-top:2px"> <span>💰 A sponsor is likely paying for this'+
+      '<span class="hint" style="display:block">then the question is “can we do it and what does it cost”, not “can we afford it”</span></span></label>'+
+    '<button class="btn primary sm" id="rqAdd" style="margin-top:9px;width:100%">Send to logistics</button>'+
+    '<p class="hint" style="margin:8px 0 0">It goes on the board under your name, and logistics answers here. '+
+    '<b>If it is not here, it is not asked for.</b></p></div>';
+}
+/* returns the new request, or null. Shared by both homes. */
+async function dcReqAdd(root,eventId){
+  const me=DB.currentUser;
+  /* her ask again: the name is not optional. If we cannot say who is asking we do not
+     take the request — an unattributed one is exactly what nobody follows up. */
+  if(!me){alert('We cannot tell who you are, so this request would have no name on it. Reload and sign in again.');return null;}
+  const t=((root.querySelector('#rqTitle')||{}).value||'').trim();
+  if(!t){alert('Say what you need — that is the whole request.');return null;}
+  const pick=root.querySelector('#rqEvent');
+  const eid=pick?+pick.value:eventId;
+  if(!eid){alert('Pick which event this is for.');return null;}
+  const r={id:DB.newId(),eventId:eid,personId:me.id,title:t,
+    description:((root.querySelector('#rqDesc')||{}).value||'').trim(),
+    status:'open',thread:[],reservedUntil:null,
+    possibleSponsor:!!(root.querySelector('#rqSponsor')||{}).checked,
+    costEur:null,category:(root.querySelector('#rqCat')||{}).value,venueItemId:null,
+    decidedBy:null,decidedAt:null,cancelReason:null,
+    created:toISO(new Date())+' '+nowHMS().slice(0,5)};
+  reqLog(r,'asked by '+me.name);
+  DB.data.requests=DB.requests.concat([r]);
+  await DB.saveNow();
+  const e=DB.events.find(x=>x.id==eid);
+  reqNotify(r,'New request on '+(e?e.name:'an event')+': '+t);
+  await DB.saveNow();
+  dcReqOpen=r.id;
+  return r;
 }
 /* ================= THE WEEKLY DIGEST (Belén, 6 Aug 2026) =================
    Logistics asked for an email every time a task is assigned. Belén said no, and was
@@ -2508,7 +2754,8 @@ const COLS={
   venueItems:['id','eventId','catId','item','notes','requestId','sort'],
   /* internal requests to logistics, per event: ask → quote in the thread → confirm →
      the item lands in that event's venue list; closing keeps it as history */
-  requests:['id','eventId','personId','title','description','status','thread','reservedUntil','possibleSponsor','costEur','category','venueItemId','created'],
+  requests:['id','eventId','personId','title','description','status','thread','reservedUntil','possibleSponsor','costEur','category','venueItemId','created',
+    'decidedBy','decidedAt','cancelReason'],   // who settled it, when, and why not (7 Aug 2026)
   finance:['id','eventId','name','edition','year','semester','city','when','pm','sales','target','stretch','invoiced','spex','notes'],
   weekly:['id','eventCode','name','year','date','week','topicLeads','eventLeads','sponsorsN','sponsorsEur','spxAcc','delegatesN','ticketsEur','ticketsAcc','telesalesN','telesalesEur','grabacionesEur','siteVisitsEur','totalEur','soFarEur','target','stretch',
     'signedEur','signedAcc'], // signed-but-not-yet-invoiced money (migration signed_money_won_details_accounting_code, 3 Aug)
@@ -3305,9 +3552,48 @@ const DB={
   get requests(){return this.data.requests||[];},
   reqReady(){return !USE_SUPABASE||_reqReady;},
   requestsFor(eventId){return this.requests.filter(r=>!r.deleted&&r.eventId==eventId).sort((a,b)=>b.id-a.id);},
-  /* open = still waiting on logistics. Answered counts: the asker has an answer but the
-     line is not in the venue list yet, so by Belén's rule it is not yet asked-and-settled. */
-  requestsOpen(eventId){return this.requestsFor(eventId).filter(r=>r.status==='open'||r.status==='answered');},
+  /* every request on the board, newest first — the cross-event Requests view in Projects.
+     Belén, 7 Aug: "All conversations stay visible in the platform." */
+  requestsAll(){return this.requests.filter(r=>!r.deleted).sort((a,b)=>b.id-a.id);},
+  /* unresolved = open OR in conversation. Not yet confirmed, not yet cancelled, so by
+     Belén's rule it is not settled and it keeps its colour. */
+  requestsOpen(eventId){return this.requestsFor(eventId).filter(r=>!reqResolved(r));},
+  /* the ONLY place a request is settled — like setTaskPeople is the only place a task is
+     assigned. Logistics-only, and terminal: a decided request cannot be re-decided.
+     (On 7 Aug a confirmed request was flipped to "not possible" six minutes later and
+     nothing stopped it; the venue line it had already created stayed behind.) */
+  decideRequest(req,outcome,opts){
+    const o=opts||{};
+    if(!req)return {ok:false,why:'No request.'};
+    if(!this.canLogistics())return {ok:false,why:'Only logistics can confirm or cancel a request.'};
+    if(reqResolved(req))return {ok:false,why:'This one is already '+reqMeta(req).label.replace(/[✓✕] /,'')+' — raise a new request instead.'};
+    if(outcome==='cancelled'&&!(o.reason||'').trim())
+      return {ok:false,why:'Say why — the person who asked will see it.'};
+    const me=this.currentUser;
+    if(outcome==='confirmed'){
+      let cid=o.catId;
+      if(!cid){
+        const cats=this.venueCatsFor(req.eventId);
+        const want=(req.category||'Other').toLowerCase();
+        const hit=cats.find(c=>(c.name||'').toLowerCase()===want);
+        cid=hit?hit.id:(cats.length?cats[cats.length-1].id:this.addVenueCat(req.eventId,'Other').id);
+      }
+      const money=(req.costEur!=null&&req.costEur!=='')
+        ? (typeof finFmt==='function'?finFmt(req.costEur):(req.costEur+' €')) : '';
+      const notes=[req.description,money,req.reservedUntil?('held until '+deIso(req.reservedUntil)):'']
+                   .filter(Boolean).join(' · ');
+      const row=this.addVenueItem(req.eventId,cid,req.title,notes,req.id);
+      req.venueItemId=row.id;
+    }else{
+      req.cancelReason=(o.reason||'').trim();
+    }
+    req.status=outcome;
+    req.decidedBy=me?me.id:null;
+    req.decidedAt=toISO(new Date())+' '+nowHMS().slice(0,5);
+    reqLog(req,outcome==='confirmed'?'confirmed — added to the venue list':'cancelled',
+           outcome==='cancelled'?req.cancelReason:undefined);
+    return {ok:true};
+  },
   /* the default checklist, dropped into an event the first time somebody opens its Venue
      tab. Returns how many lines it wrote so the page can say so. Never runs twice: an
      event that already has a category is one somebody has already worked on. */
@@ -3337,25 +3623,9 @@ const DB={
   },
   /* the whole point of the request flow: when logistics confirms, the thing that was
      asked for stops living in a conversation and becomes a line on the event.
-     Belén: "si no está ahí, no está pedido." */
-  confirmRequest(req,catId){
-    if(!req||!this.canLogistics())return null;
-    let cid=catId;
-    if(!cid){
-      const cats=this.venueCatsFor(req.eventId);
-      const want=(req.category||'Other').toLowerCase();
-      const hit=cats.find(c=>(c.name||'').toLowerCase()===want);
-      cid=hit?hit.id:(cats.length?cats[cats.length-1].id:this.addVenueCat(req.eventId,'Other').id);
-    }
-    const money=(req.costEur!=null&&req.costEur!=='')
-      ? (typeof finFmt==='function'?finFmt(req.costEur):(req.costEur+' €')) : '';
-    const notes=[req.description,money,req.reservedUntil?('held until '+deIso(req.reservedUntil)):'']
-                 .filter(Boolean).join(' · ');
-    const row=this.addVenueItem(req.eventId,cid,req.title,notes,req.id);
-    req.venueItemId=row.id;req.status='confirmed';
-    reqLog(req,'confirmed — added to the venue list');
-    return row;
-  },
+     Belén: "si no está ahí, no está pedido."
+     ⚠ The confirm/cancel logic itself lives in decideRequest above — this is the only
+     door, so a confirmation can never happen without the venue line, or twice. */
   /* personal to-dos + notifications inbox */
   get todos(){return this.data.todos||[];},
   todoReady(){return !USE_SUPABASE||_todoReady;},

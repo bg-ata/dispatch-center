@@ -151,7 +151,7 @@
   <div id="nav"></div>
   <div id="content"></div>
 </div>
-<script src="store.js?v=117"></script>
+<script src="store.js?v=118"></script>
 <script>
 document.getElementById('nav').innerHTML=navBar('home');
 /* STCOL now lives in store.js — the shared Me/Team task list needs it too (6 Aug 2026) */
@@ -237,6 +237,11 @@ function panelSummary(id){
       if(nw)bits.push('<span class="hot">'+nw+' new</span>');
       if(late)bits.push('<span class="hot">'+late+' overdue</span>');
       if(soon)bits.push(soon+' due soon');
+      /* a folded panel has to be worth reading (6 Aug rule) — and a request waiting on
+         you is exactly the thing that was going unseen. */
+      let rq=0;try{if(DB.reqReady())rq=DB.requests.filter(r=>!r.deleted&&!reqResolved(r)&&
+        (reqWaitingOn(r)==='logistics'?DB.canLogistics():r.personId==me.id)).length;}catch(e){}
+      if(rq)bits.push('<span class="hot">'+rq+' request'+(rq===1?'':'s')+'</span>');
       return bits.length?bits.join(' · '):'nothing due';
     }
     if(id==='calPanel'){
@@ -376,12 +381,15 @@ function renderPending(){
   const R=taskRunway(me.id);
   const late=R.overdue, thisWk=R.today.concat(R.days);
   const fresh2=openT.filter(t=>taskStatus(t)==='Assigned');
-  /* requests I asked for that logistics has come back on */
-  let answered=[];
-  try{if(DB.reqReady())answered=DB.requests.filter(r=>!r.deleted&&r.personId==me.id&&r.status==='answered');}catch(e){}
-  /* requests waiting on ME, if I am the logistics desk */
-  let toAnswer=[];
-  try{if(DB.reqReady()&&DB.canLogistics())toAnswer=DB.requests.filter(r=>!r.deleted&&r.status==='open');}catch(e){}
+  /* Requests, by whose turn it is rather than by raw status (7 Aug). The old version
+     counted status==='open' only, so a request the requester had come back on sat on
+     nobody's list — which is a fair part of why answers were being missed. */
+  let answered=[],toAnswer=[];
+  try{if(DB.reqReady()){
+    const live=DB.requests.filter(r=>!r.deleted&&!reqResolved(r));
+    answered=live.filter(r=>r.personId==me.id&&reqWaitingOn(r)==='requester');
+    if(DB.canLogistics())toAnswer=live.filter(r=>reqWaitingOn(r)==='logistics');
+  }}catch(e){}
   /* events created recently that I have not looked at — see newEventNotices() */
   const fresh=newEventNotices(me);
 
@@ -404,9 +412,10 @@ function renderPending(){
     ' — worth moving your stages onto '+(fresh.length===1?'it':'them')+'. <a href="#" id="pendSeen">Got it</a>');
   if(toAnswer.length)notes.push('<b>'+toAnswer.length+' request'+(toAnswer.length===1?' is':'s are')+' waiting on logistics</b>: '+
     toAnswer.slice(0,4).map(r=>'<a href="event.html?id='+r.eventId+'#req">'+esc(r.title)+'</a>').join(', ')+
-    (toAnswer.length>4?' …':''));
-  if(answered.length)notes.push('<b>Logistics answered you</b> on '+
-    answered.map(r=>'<a href="event.html?id='+r.eventId+'#req">'+esc(r.title)+'</a>').join(', ')+'.');
+    (toAnswer.length>4?' …':'')+' — <a href="gantt.html#requests">the whole board</a>.');
+  if(answered.length)notes.push('<b>Logistics came back to you</b> on '+
+    answered.map(r=>'<a href="event.html?id='+r.eventId+'#req">'+esc(r.title)+'</a>').join(', ')+
+    ' — they are waiting on you now.');
   if(notes.length)h+='<div style="background:#FFF3EC;border:1px solid #F3D9B8;border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:13px">'+
     notes.map(n=>'<div style="margin:2px 0">'+n+'</div>').join('')+'</div>';
 
