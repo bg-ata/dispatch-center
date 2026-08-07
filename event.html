@@ -102,7 +102,7 @@
 <!-- the € Results tab draws the sales health-check curve (dcPaceChart in store.js).
      Same version as dashboard.html and spx.html so browsers reuse the cached copy. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script src="store.js?v=118"></script>
+<script src="store.js?v=119"></script>
 <script>/* not a service account page - store.js boot() sends outside logins home */ window.DC_NEEDS='proj.board';</script>
 <script>
 document.getElementById('nav').innerHTML=navBar('');
@@ -706,7 +706,7 @@ function healthCheckHtml(f,target,stretch,soFar){
       '<div class="cardk"><div class="v">'+(pct==null?'—':pct+'%')+'</div><div class="k">of target</div></div>'+
     '</div>'+vs+
     '<div style="height:230px;margin-top:10px"><canvas id="evHcChart"></canvas></div>'+
-    '<p class="hint">This edition against the previous one and against a typical event scaled to this target. '+
+    '<p class="hint">This edition against the previous one and against a typical event scaled to this target — the vertical line is today. '+
     'The board itself is on <a href="spx.html#health">💼 SPX</a>.</p></div>';
 }
 /* ---- Impact tab: this event's funnel vs previous editions ---- */

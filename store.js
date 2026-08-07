@@ -1782,7 +1782,7 @@ function evPaceCard(f){
 }
 /* ---- the accumulated pace chart, drawn from evPaceCard ----
    This edition (orange) · the previous edition of the franchise (grey) · a typical event
-   scaled to this target (dashed blue) · the target itself (dotted).
+   scaled to this target (dashed blue) · the target itself (dotted) · today (vertical).
    Lifted out of dashboard.html on 6 Aug 2026 when the event page's € Results tab needed
    the same picture: it was already the third place that wanted it, and three copies of a
    chart is how the three quietly start disagreeing.
@@ -1812,11 +1812,44 @@ function dcPaceChart(canvasId,f,opts){
              borderColor:'#29ACE3',borderDash:[6,4],borderWidth:2,pointRadius:0,spanGaps:true,tension:.25});
     ds.push({label:'Target',data:weeks.map(()=>pace.tgt),borderColor:'#2B2B2B',borderDash:[2,3],borderWidth:1.5,pointRadius:0});
   }
+  /* ---- "today", as a line that CREEPS (Belén, 7 Aug 2026) ----
+     W0's Monday is the anchor: the board event's date owns it, and failing that any
+     dated weekly row rebuilds it (a row's own week number says where the anchor sits) —
+     the same fallback order weeklyAutoRefresh uses, because most Money rows are not
+     linked to a board event. Today then lands on a FRACTIONAL week, so the marker moves
+     a seventh of a column every day instead of jumping once a week. Drawn behind the
+     datasets so it never sits on top of a curve, and only when it is inside the plotted
+     range: past the event, no line rather than a line pinned to the edge telling a lie.
+     ⚠ spx.html drawHcPace has its own HOY marker (whole weeks, orange) — that chart is
+     Spanish, has its own axis and stays separate on purpose. */
+  let todayW=null;
+  try{
+    let ev0=null;
+    if(f&&f.eventId!=null){const e=DB.event(f.eventId);if(e&&e.date)ev0=monday(ymd((''+e.date).slice(0,10)));}
+    if(!ev0){let last=null;pace.cur.forEach(r=>{if(r.date&&r.week!=null)last=r;});
+      if(last)ev0=addDays(monday(ymd((''+last.date).slice(0,10))),-7*(+last.week));}
+    if(ev0)todayW=(new Date()-ev0)/6048e5;
+  }catch(e){}
+  const todayLine={id:'dcTodayLine',beforeDatasetsDraw(ch){
+    if(todayW==null)return;
+    const i=todayW-weeks[0];
+    if(i<0||i>weeks.length-1)return;
+    const a=ch.chartArea,x=ch.scales.x.getPixelForValue(i),c=ch.ctx;
+    c.save();
+    c.strokeStyle='#2B2B2B';c.lineWidth=1.5;c.setLineDash([4,3]);
+    c.beginPath();c.moveTo(x,a.top);c.lineTo(x,a.bottom);c.stroke();
+    c.setLineDash([]);
+    const near=x>a.right-42;                       // near the right edge, label to the left
+    c.fillStyle='#2B2B2B';c.font='bold 10px Segoe UI, system-ui, sans-serif';
+    c.textAlign=near?'right':'left';
+    c.fillText(opts.todayLabel||'today',x+(near?-4:4),a.bottom-4);
+    c.restore();}};
   if(_dcCharts[canvasId]){try{_dcCharts[canvasId].destroy();}catch(e){}}
   _dcCharts[canvasId]=new Chart(el,{type:'line',data:{labels:weeks.map(w=>'W'+w),datasets:ds},
     options:{responsive:true,maintainAspectRatio:false,animation:false,
       plugins:{legend:{labels:{boxWidth:14,font:{size:10}}}},
-      scales:{y:{ticks:{callback:v=>finFmt(v)}},x:{ticks:{maxTicksLimit:14}}}}});
+      scales:{y:{ticks:{callback:v=>finFmt(v)}},x:{ticks:{maxTicksLimit:14}}}},
+    plugins:[todayLine]});
   return pace;
 }
 let _wkAutoTimer=null;
